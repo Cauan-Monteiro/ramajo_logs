@@ -1,0 +1,353 @@
+/* ══════════════════════════════════════════════════════════════════════
+   RAMAJO · Tratamento — estilos portados de "App Historico OS v2.dc.html"
+   (Claude Design, projeto 4635a19d-bfec-4db8-ab74-b4461a8781eb).
+
+   Bloco 1: tokens e .table do design system "industry"
+            (_ds/industry-…/styles.css). O _ds_bundle.js do DS está vazio —
+            é um sistema CSS-only, não há runtime a portar.
+   Bloco 2: o <style> do <helmet> do próprio design, tal e qual.
+   Bloco 3: acréscimos deste app (toast, spinner de carregamento).
+   ══════════════════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;700&family=Barlow+Condensed:wght@400;600&display=swap');
+
+:root {
+  --color-bg: #f2f2f3;
+  --color-surface: #e9e9ea;
+  --color-text: #1d1f20;
+  --color-accent: #5980a6;
+  --color-divider: color-mix(in srgb, #1d1f20 16%, transparent);
+
+  --color-neutral-200: #e7e7ea;
+  --color-neutral-300: #d4d4d7;
+  --color-neutral-400: #b7b7ba;
+  --color-neutral-500: #98989b;
+  --color-neutral-700: #5d5d60;
+  --color-neutral-900: #2b2b2d;
+
+  --color-accent-100: #eef6ff;
+  --color-accent-200: #d6ebff;
+  --color-accent-400: #94bce3;
+  --color-accent-600: #597ea3;
+  --color-accent-700: #416180;
+  --color-accent-800: #2c455d;
+  --color-accent-900: #1d2d3d;
+
+  --font-heading: "Barlow Condensed", system-ui, sans-serif;
+  --font-body: "Barlow", system-ui, sans-serif;
+
+  --space-2: 6.8px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+
+/* Convenção: todo `:hover` deste ficheiro vive dentro de `@media (hover:hover)`.
+   Num tablet o realce do rato agarra-se ao elemento depois do toque e passa a
+   confundir-se com o estado real `.sel`. `:active` e `.sel` ficam de FORA — são
+   o retorno que o dedo precisa. Cada regra foi embrulhada no sítio onde estava,
+   e não recolhida para um bloco no fim, porque a ordem importa: `.pick:hover` e
+   `.pick.sel` têm a mesma especificidade, e quem vem depois ganha. */
+
+/* — tables — */
+.table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.table th {
+  text-align: left; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+  padding: var(--space-2); border-bottom: 1px solid var(--color-divider);
+}
+.table td {
+  padding: var(--space-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-text) 8%, transparent);
+}
+@media (hover:hover){.table tbody tr:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); }}
+
+/* ═══ bloco 2 — <style> do design ═══ */
+body{margin:0;background:#c9cacc;font-family:"Barlow",system-ui,sans-serif;display:flex;justify-content:center;padding:26px}
+.tab{width:1180px;min-height:820px;background:#f2f2f3;border:1px solid rgba(0,0,0,.14);box-shadow:0 16px 40px rgba(43,43,45,.26);overflow:hidden;display:flex;flex-direction:column;position:relative}
+.appnav{display:flex;align-items:center;gap:22px;padding:0 26px;height:66px;flex:none;background:#1d2d3d}
+.brand{font:600 19px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.03em;display:flex;align-items:center;gap:10px;color:#f2f2f3}
+.navdiv{width:1px;height:26px;background:rgba(255,255,255,.16)}
+.tabbtn{font:600 15px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.03em;background:none;border:none;border-bottom:2px solid transparent;padding:12px 12px;cursor:pointer}
+.opchip{margin-left:auto;display:flex;align-items:center;gap:11px;color:#f2f2f3}
+.opav{width:34px;height:34px;border:1px solid rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;font:600 15px "Barlow Condensed";color:#94bce3}
+.role-t{font:600 10px "Barlow Condensed";letter-spacing:.1em;text-transform:uppercase;padding:2px 7px;border:1px solid rgba(148,188,227,.5);color:#94bce3}
+.reg-h{font:600 12px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#5980a6;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+.reg-h .ct{margin-left:auto;color:rgba(29,31,32,.45);font-family:"Barlow",system-ui,sans-serif;letter-spacing:.06em}
+.bp{position:relative;border:1px solid rgba(0,0,0,.16);background:transparent}
+.bp>i.corner{position:absolute;width:11px;height:11px;color:rgba(29,31,32,.5)}
+.bp>i.corner::before{content:"";position:absolute;left:5px;top:0;width:1px;height:100%;background:currentColor}
+.bp>i.corner::after{content:"";position:absolute;top:5px;left:0;width:100%;height:1px;background:currentColor}
+.bp>i.tl{top:-6px;left:-6px}.bp>i.tr{top:-6px;right:-6px}.bp>i.bl{bottom:-6px;left:-6px}.bp>i.br{bottom:-6px;right:-6px}
+.big-cta{display:flex;align-items:center;justify-content:center;gap:12px;background:#5980a6;color:#f2f2f3;border:1px solid #5980a6;font:600 26px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.03em;cursor:pointer;transition:background .12s}
+@media (hover:hover){.big-cta:hover{background:#597ea3}}.big-cta:active{background:#416180}
+.scan-b{display:inline-flex;align-items:center;gap:8px;font:600 13px "Barlow Condensed";letter-spacing:.06em;text-transform:uppercase;padding:9px 14px;border:1px dashed rgba(89,128,166,.7);background:#eef6ff;color:#416180;cursor:pointer;transition:.1s}
+@media (hover:hover){.scan-b:hover{background:#e0eefc}}
+.os-num{font:600 24px "Barlow Condensed",system-ui,sans-serif;color:#1d1f20}
+.os-cli{font:500 17px "Barlow",system-ui,sans-serif;color:#1d1f20;line-height:1.15}
+.os-tv{font:400 13px "Barlow",system-ui,sans-serif;color:rgba(29,31,32,.5)}
+.step{display:inline-flex;align-items:center;gap:8px;font:600 16px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.03em;padding:9px 15px;border:1px solid rgba(0,0,0,.16);white-space:nowrap}
+.etp{display:inline-flex;align-items:center;font:600 12px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;padding:4px 9px;color:#f2f2f3;white-space:nowrap}
+.time{font:400 16px "Barlow",system-ui,sans-serif;color:rgba(29,31,32,.55);text-align:right}
+.cg-chip{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font:600 16px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.04em;color:#416180;border:1px solid rgba(89,128,166,.5);background:#eef6ff;min-width:70px;padding:8px 8px;cursor:default}
+.cg-chip .tp{font:600 9px "Barlow Condensed";letter-spacing:.12em;color:rgba(65,97,128,.7)}
+.lote-pill{display:inline-flex;align-items:center;gap:6px;font:600 11px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.05em;text-transform:uppercase;padding:5px 10px;background:#d6ebff;color:#2c455d}
+.live-pill{display:inline-flex;align-items:center;gap:6px;font:600 11px "Barlow Condensed";letter-spacing:.06em;text-transform:uppercase;padding:5px 10px;background:#e7f3e9;color:#2f6b3c}
+.live-dot{width:8px;height:8px;border-radius:50%;background:#3a8f4d;animation:pulse 1.4s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{width:16px;height:16px;border:2px solid rgba(89,128,166,.28);border-top-color:#5980a6;border-radius:50%;animation:spin .7s linear infinite;flex:none}
+.turn-dot{width:9px;height:9px;border-radius:50%;flex:none}
+.osrow{display:flex;align-items:center;gap:18px;padding:18px 20px;cursor:pointer;transition:background .1s}
+@media (hover:hover){.osrow:hover{background:color-mix(in srgb,#5980a6 8%,transparent)}}
+.dlg-bd{position:absolute;inset:0;background:color-mix(in srgb,#1d2d3d 55%,transparent);display:flex;align-items:center;justify-content:center;padding:28px;z-index:20}
+.dlg{width:min(740px,100%);max-height:100%;background:#f2f2f3;border:1px solid rgba(0,0,0,.2);box-shadow:0 20px 50px rgba(0,0,0,.35);display:flex;flex-direction:column}
+.dlg-hd{display:flex;align-items:center;gap:12px;padding:20px 24px;border-bottom:1px solid rgba(0,0,0,.14);background:#1d2d3d;color:#f2f2f3}
+.dlg-hd h3{margin:0;font:600 22px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.02em}
+.dlg-bdy{padding:24px;overflow:auto}
+.dlg-ft{display:flex;gap:12px;padding:18px 24px;border-top:1px solid rgba(0,0,0,.14);background:#e9e9ea;flex-wrap:wrap}
+.btn2{font:600 16px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.03em;padding:13px 22px;border:1px solid rgba(0,0,0,.2);background:transparent;color:#1d1f20;cursor:pointer;transition:background .1s}
+@media (hover:hover){.btn2:hover{background:color-mix(in srgb,#1d1f20 7%,transparent)}}
+.btn2:disabled{opacity:.4;cursor:not-allowed}
+.btn2-p{background:#5980a6;border-color:#5980a6;color:#f2f2f3}@media (hover:hover){.btn2-p:hover{background:#597ea3}}
+.btn2-x{background:#1d2d3d;border-color:#1d2d3d;color:#f2f2f3}@media (hover:hover){.btn2-x:hover{background:#2c455d}}
+.btn2-d{border-color:#b4472e;color:#b4472e}@media (hover:hover){.btn2-d:hover{background:color-mix(in srgb,#b4472e 8%,transparent)}}
+.pick{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid rgba(0,0,0,.14);cursor:pointer;font:500 16px "Barlow",system-ui,sans-serif;transition:background .1s,border-color .1s;text-align:left;background:transparent}
+@media (hover:hover){.pick:hover{background:color-mix(in srgb,#5980a6 7%,transparent)}}
+.pick.sel{border-color:#5980a6;background:#eef6ff}
+.cgtog{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:80px;padding:10px 10px;font:600 17px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.04em;border:1px solid rgba(89,128,166,.5);background:#f2f2f3;color:#416180;cursor:pointer;transition:.1s}
+.cgtog .tp{font:600 9px "Barlow Condensed";letter-spacing:.12em;opacity:.7}
+.cgtog.sel{background:#5980a6;color:#f2f2f3;border-color:#5980a6}
+.seg-b{font:600 15px "Barlow Condensed";letter-spacing:.04em;padding:11px 18px;border:1px solid rgba(0,0,0,.2);background:#f2f2f3;color:#1d1f20;cursor:pointer;transition:.1s}
+@media (hover:hover){.seg-b:hover{background:color-mix(in srgb,#5980a6 8%,transparent)}}
+.seg-b.sel{background:#5980a6;border-color:#5980a6;color:#f2f2f3}
+.inp{width:100%;min-height:48px;padding:10px 14px;font:400 16px "Barlow",system-ui,sans-serif;color:#1d1f20;background:#e9e9ea;border:1px solid rgba(0,0,0,.16);outline:none;box-sizing:border-box}
+.inp:focus{border-color:#5980a6}
+.lbl{display:block;font:600 12px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:rgba(29,31,32,.6);margin:0 0 7px}
+.tline{display:flex;gap:14px;padding:12px 0;border-bottom:1px solid rgba(0,0,0,.08)}
+.openrow{display:flex;align-items:center;gap:12px;padding:13px 15px;border:1px solid rgba(58,143,77,.4);background:#f1f8f2;margin-bottom:10px}
+.repcard{display:flex;flex-direction:column;gap:8px;padding:20px;cursor:pointer;transition:background .1s}
+@media (hover:hover){.repcard:hover{background:color-mix(in srgb,#5980a6 6%,transparent)}}
+.repcard.sel{background:#eef6ff}
+.empty{padding:40px 20px;text-align:center;font:400 15px "Barlow",system-ui,sans-serif;color:rgba(29,31,32,.45)}
+.posbar{display:flex;align-items:center;gap:24px;padding:26px 30px;background:#1d2d3d;color:#f2f2f3;flex:none}
+.posbar .plbl{font:600 12px "Barlow Condensed";letter-spacing:.16em;text-transform:uppercase;color:#94bce3}
+.posbar .pname{font:600 46px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.02em;line-height:.95}
+.posmini{display:flex;flex-direction:column;align-items:center;gap:2px;padding:0 4px}
+.posmini .n{font:600 30px "Barlow Condensed";line-height:1}
+.posmini .t{font:600 10px "Barlow Condensed";letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.55)}
+.hub{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:0;padding:16px 18px 14px;background:transparent;border:1px solid rgba(0,0,0,.16);cursor:pointer;text-align:left;transition:background .12s;min-height:172px}
+@media (hover:hover){.hub:hover{background:color-mix(in srgb,#5980a6 8%,transparent)}}
+.hub:active{background:color-mix(in srgb,#5980a6 15%,transparent)}
+.hub .hicon{color:#5980a6;margin-bottom:auto}
+.hub .htitle{font:600 21px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.01em;color:#1d1f20;margin-top:10px}
+.hub .hsub{font:400 12px "Barlow",system-ui,sans-serif;color:rgba(29,31,32,.5);margin-top:2px}
+.hub.hub-x{background:#5980a6;border-color:#5980a6}
+@media (hover:hover){.hub.hub-x:hover{background:#597ea3}}.hub.hub-x:active{background:#416180}
+.hub.hub-x .hicon,.hub.hub-x .htitle{color:#f2f2f3}
+.hub.hub-x .hsub{color:rgba(255,255,255,.75)}
+.grp-h{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.grp-h span{font:600 13px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#5980a6}
+.grp-h i{flex:1;height:1px;background:rgba(0,0,0,.14)}
+.visbar{width:112px;flex:none;background:#e9e9ea;border-left:1px solid rgba(0,0,0,.16);display:flex;flex-direction:column;gap:4px;padding:16px 10px}
+.visb{display:flex;flex-direction:column;align-items:center;gap:8px;padding:15px 6px;border:1px solid transparent;background:transparent;cursor:pointer;text-align:center;transition:background .12s}
+@media (hover:hover){.visb:hover{background:color-mix(in srgb,#5980a6 12%,transparent)}}
+.visb:active{background:color-mix(in srgb,#5980a6 20%,transparent)}
+.visb svg{color:#5980a6}
+.visb span{font:600 11px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#1d1f20;line-height:1.05}
+.visb b{font:400 11px "Barlow",system-ui,sans-serif;color:rgba(29,31,32,.5)}
+.clhead{display:grid;grid-template-columns:32px 1.3fr .9fr 2fr .8fr;gap:14px;padding:10px 16px;background:#1d2d3d;color:#cfe0f0;font:600 11px "Barlow Condensed";letter-spacing:.1em;text-transform:uppercase;flex:none;align-items:center}
+.clrow{display:grid;grid-template-columns:32px 1.3fr .9fr 2fr .8fr;gap:14px;align-items:center;padding:11px 16px;border-bottom:1px solid rgba(0,0,0,.08);cursor:pointer;transition:background .1s}
+.clrow.sel{background:color-mix(in srgb,#5980a6 12%,transparent)}
+.ckbox{width:20px;height:20px;flex:none;border:1.5px solid rgba(29,31,32,.3);display:flex;align-items:center;justify-content:center;cursor:pointer;color:transparent;background:transparent}
+.clhead .ckbox{border-color:rgba(255,255,255,.5)}
+.ckbox.on{background:#5980a6;border-color:#5980a6;color:#f2f2f3}
+.hub:disabled{opacity:.38;cursor:not-allowed}
+@media (hover:hover){.hub:disabled:hover{background:transparent}}
+@media (hover:hover){.hub.hub-x:disabled:hover{background:#5980a6}}
+.passocell{display:flex;align-items:center;gap:9px;min-width:0;padding:5px 12px 5px 8px;border:1px solid transparent}
+.passotxt{font:600 15px "Barlow Condensed";overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (hover:hover){.clrow:hover{background:color-mix(in srgb,#5980a6 7%,transparent)}}
+.clrow .cnome{font:600 16px "Barlow Condensed";color:#1d1f20}
+.clrow .cmuted{font:400 13px "Barlow";color:rgba(29,31,32,.55)}
+.pager{display:flex;align-items:center;gap:14px;padding:12px 4px 2px;flex:none}
+.pgb{padding:12px 18px;border:1px solid rgba(0,0,0,.2);background:transparent;font:600 13px "Barlow Condensed";letter-spacing:.06em;text-transform:uppercase;cursor:pointer;color:#1d1f20}
+@media (hover:hover){.pgb:hover:not(:disabled){background:color-mix(in srgb,#5980a6 12%,transparent)}}
+.pgb:disabled{opacity:.4;cursor:not-allowed}
+
+/* ═══ classes extraídas de `style` inline ═══
+   Mesmos valores que estavam inline — o desktop não muda. Existem como classe
+   só porque estilo inline vence CSS, e o modo mobile precisa sobrepô-las. */
+.dash-body{flex:1;display:flex;min-height:0}
+.dash-main{flex:1;display:flex;flex-direction:column;padding:22px 24px;gap:18px;min-height:0}
+.hub-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;flex:none}
+.cargas-body{flex:1;display:flex;flex-direction:column;padding:26px 30px;gap:18px;min-height:0}
+.rel-body{flex:1;display:flex;min-height:0}
+.rel-side{width:340px;flex:none;background:#e9e9ea;border-right:1px solid rgba(0,0,0,.16);padding:24px 0;display:flex;flex-direction:column}
+.rel-main{flex:1;padding:28px 32px;overflow:auto;min-height:0}
+.login-card{width:440px;padding:38px 40px}
+.nc-acoes{display:flex;gap:14px;align-items:flex-end;margin-top:16px}
+.cvinc{font:600 15px "Barlow Condensed";color:#416180}
+.navtabs{display:flex;align-items:center;gap:22px}
+.sair-b{padding:12px 14px;font-size:13px;border-color:rgba(255,255,255,.28);color:#cfe0f0;background:transparent}
+.modo-b{display:inline-flex;align-items:center;padding:12px 12px;border-color:rgba(255,255,255,.28);color:#cfe0f0;background:transparent}
+
+/* ═══ bloco 3 — acréscimos deste app ═══ */
+.toast{position:absolute;top:80px;left:50%;transform:translateX(-50%);z-index:40;display:flex;align-items:center;gap:12px;max-width:min(620px,90%);padding:13px 18px;border:1px solid rgba(180,71,46,.5);background:#fbeeea;color:#8f3421;font:500 15px "Barlow",system-ui,sans-serif;box-shadow:0 8px 22px rgba(43,43,45,.22)}
+.toast.ok{border-color:rgba(58,143,77,.5);background:#f1f8f2;color:#2f6b3c}
+.toast .tcode{font:600 11px "Barlow Condensed";letter-spacing:.1em;text-transform:uppercase;opacity:.75;flex:none}
+.toast .tx{background:none;border:none;cursor:pointer;color:inherit;font-size:17px;line-height:1;margin-left:auto;padding:0 2px}
+.boot{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;flex:1;font:400 15px "Barlow",system-ui,sans-serif;color:rgba(29,31,32,.55)}
+.boot .spin{width:26px;height:26px;border-width:3px}
+.btn2[disabled],.hub[disabled],.pgb[disabled],.visb[disabled]{pointer-events:auto}
+/* Um botão permanentemente desativado explica-se hoje só pelo `title`, que num
+   ecrã táctil nunca aparece — o dedo não tem hover. Esta etiqueta diz o mesmo
+   com o botão à vista. O `title` fica, para quem usa rato. */
+.btn2 .na{display:block;font:600 10px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.14em;text-transform:uppercase;opacity:.7;margin-top:3px}
+select.inp{appearance:none;cursor:pointer}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Bloco 4 — modo de visualização mobile (Galaxy S24: 360 × 780 px CSS)
+
+   Caminho único: a media query vive em state/useViewMode.ts, que põe/tira
+   `is-mobile` no <body>. Nada aqui afeta o padrão de 1180 × 820.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* — moldura — */
+body.is-mobile{padding:0}
+body.is-mobile .tab{width:360px;min-height:780px;border:none;box-shadow:none}
+
+/* — navegação: marca + operador em cima, abas roláveis embaixo — */
+body.is-mobile .appnav{height:auto;flex-wrap:wrap;gap:10px;padding:8px 12px}
+body.is-mobile .navdiv{display:none}
+body.is-mobile .brand{font-size:16px;gap:7px}
+body.is-mobile .opinfo{display:none}
+body.is-mobile .opchip{gap:8px}
+body.is-mobile .opav{width:30px;height:30px;font-size:13px}
+body.is-mobile .navtabs{order:2;flex:1 0 100%;gap:14px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+body.is-mobile .navtabs::-webkit-scrollbar{display:none}
+body.is-mobile .tabbtn{white-space:nowrap;font-size:14px}
+
+/* — barra de posição — */
+body.is-mobile .posbar{gap:12px;padding:12px 14px;flex-wrap:wrap}
+body.is-mobile .posbar>svg{width:26px;height:26px}
+body.is-mobile .posbar .pname{font-size:30px}
+body.is-mobile .posbar>div:last-child{margin-left:0;flex:1 0 100%;gap:0;justify-content:space-between}
+body.is-mobile .posmini .n{font-size:24px}
+
+/* — hub de ações: 4 → 2 colunas — */
+body.is-mobile .dash-main{padding:14px 12px;gap:12px}
+body.is-mobile .hub-grid{grid-template-columns:repeat(2,1fr)}
+body.is-mobile .hub{min-height:120px;padding:12px 13px 11px}
+body.is-mobile .hub .htitle{font-size:18px;margin-top:8px}
+body.is-mobile .hub .hsub{font-size:11px;line-height:1.25}
+body.is-mobile .hub .hicon{width:22px;height:22px}
+
+/* — lista de cargas: linha de 5 colunas → cartão de 2 linhas — */
+body.is-mobile .clhead{display:none}
+body.is-mobile .clrow{
+  grid-template-columns:32px 1fr auto;
+  grid-template-areas:"ck nome os" ". passo desde";
+  gap:6px 10px;padding:12px 14px;
+}
+body.is-mobile .clrow .ckbox{grid-area:ck}
+body.is-mobile .clrow .cnome{grid-area:nome}
+body.is-mobile .clrow .cvinc{grid-area:os;justify-self:end}
+body.is-mobile .clrow .passocell{grid-area:passo;min-width:0}
+body.is-mobile .clrow .csince{grid-area:desde;justify-self:end}
+body.is-mobile .pager{gap:8px;flex-wrap:wrap;padding:12px 4px 4px}
+body.is-mobile .pager .cmuted{order:3;flex:1 0 100%;text-align:center}
+
+/* — rail da direita → faixa no rodapé — */
+body.is-mobile .dash-body{flex-direction:column}
+body.is-mobile .visbar{
+  width:auto;flex-direction:row;gap:2px;padding:6px 8px;
+  border-left:none;border-top:1px solid rgba(0,0,0,.16);
+}
+body.is-mobile .visb{flex:1;padding:8px 4px;gap:5px}
+body.is-mobile .visb svg{width:20px;height:20px}
+body.is-mobile .visb span{font-size:10px}
+
+/* — diálogos viram folha de ecrã inteiro — */
+/* `fixed` em vez de `absolute`: o .tab cresce além da viewport quando a lista
+   é longa, e um overlay preso a ele deixaria o rodapé do diálogo no meio da
+   tela. Preso à viewport, a folha cobre exatamente o ecrã. */
+body.is-mobile .dlg-bd{
+  position:fixed;top:0;bottom:0;left:50%;right:auto;
+  width:360px;transform:translateX(-50%);padding:0;
+}
+body.is-mobile .dlg{width:100%;height:100%;max-height:100%}
+body.is-mobile .dlg-bdy{flex:1}
+body.is-mobile .dlg-hd{padding:14px 16px}
+body.is-mobile .dlg-hd h3{font-size:19px}
+body.is-mobile .dlg-bdy{padding:16px}
+body.is-mobile .dlg-ft{padding:12px 16px;gap:8px}
+body.is-mobile .dlg-ft .btn2{flex:1 1 auto;padding:12px 14px}
+
+/* — login — */
+body.is-mobile .login-card{width:100%;max-width:340px;padding:26px 22px}
+
+/* — registrar cargas: sem espaço para Tipo e Tag — */
+body.is-mobile .cargas-body{padding:14px 12px;gap:12px}
+body.is-mobile .cargas-body .table th:nth-child(2),
+body.is-mobile .cargas-body .table td:nth-child(2),
+body.is-mobile .cargas-body .table th:nth-child(4),
+body.is-mobile .cargas-body .table td:nth-child(4){display:none}
+body.is-mobile .nc-acoes{flex-wrap:wrap;gap:10px}
+body.is-mobile .nc-acoes>div{max-width:none;flex:1 1 100%}
+body.is-mobile .nc-acoes .big-cta{margin-left:0;flex:1}
+/* fontSize inline no <table> e no nome da carga, daí os !important. */
+body.is-mobile .cargas-body .table{font-size:12px!important}
+body.is-mobile .cargas-body .table th,
+body.is-mobile .cargas-body .table td{padding:7px 4px}
+body.is-mobile .cargas-body .table td:first-child span{font-size:14px!important}
+body.is-mobile .cargas-body .table .lote-pill{padding:4px 6px;font-size:10px}
+body.is-mobile .cargas-body .table .btn2{padding:5px 7px;font-size:11px;white-space:nowrap}
+body.is-mobile .cargas-body .table th:first-child,
+body.is-mobile .cargas-body .table td:first-child{padding-left:12px}
+body.is-mobile .cargas-body .table th:last-child,
+body.is-mobile .cargas-body .table td:last-child{padding-right:12px}
+
+/* — relatórios: barra lateral vira faixa no topo — */
+body.is-mobile .rel-body{flex-direction:column}
+body.is-mobile .rel-side{
+  width:auto;flex:none;flex-direction:row;gap:8px;overflow-x:auto;
+  padding:12px;border-right:none;border-bottom:1px solid rgba(0,0,0,.16);
+}
+body.is-mobile .rel-side .reg-h{display:none}
+body.is-mobile .rel-side .repcard{margin:0!important;min-width:190px;padding:12px}
+body.is-mobile .rel-main{padding:16px 12px}
+/* Ecrã administrativo: rolagem lateral aqui é aceitável. */
+body.is-mobile .rel-main .table{min-width:520px}
+body.is-mobile .rel-main .bp:has(.table){overflow-x:auto}
+
+/* — o toast desce: a barra de navegação agora tem duas faixas — */
+body.is-mobile .toast{top:104px;max-width:92%;font-size:14px;padding:11px 14px}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Bloco 5 — quadro em ecrã inteiro
+
+   A moldura precisa de 1234 × 874: o quadro de 1180 × 820, mais a borda,
+   mais os 26px de padding que o centram na página. Quando a viewport não
+   comporta isso — um tablet de 1180 × 820 é exactamente o caso —, essa
+   margem deixa de ser enfeite e passa a gerar barra de rolagem nos DOIS
+   eixos. Aqui a moldura deixa de ser moldura e vira o próprio ecrã.
+
+   Em monitor grande nada muda: o artboard centrado com sombra continua.
+
+   `body:not(.is-mobile)` porque o modo mobile depende de o quadro CRESCER
+   para além da viewport (ver o comentário dos diálogos no bloco 4); fixar
+   a altura ali partiria a folha de ecrã inteiro.
+   ══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 1259px), (max-height: 899px) {
+  body:not(.is-mobile) { padding: 0; }
+  body:not(.is-mobile) .tab {
+    /* a segunda declaração vence onde `dvh` existe; a primeira é a rede */
+    width: 100vw;  width: 100dvw;
+    height: 100vh; height: 100dvh;
+    min-height: 0;  /* sem isto, os 820px do bloco 2 mantêm a rolagem */
+    border: none;
+    box-shadow: none;
+  }
+}

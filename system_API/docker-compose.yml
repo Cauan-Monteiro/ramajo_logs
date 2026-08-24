@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ramajo_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-db@12345}
+    ports:
+      - "5432:5432"          # exposto para conectar com DBeaver/psql a partir do host
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready so responde OK quando o banco aceita conexao de verdade.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ramajo_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    depends_on:
+      db:
+        # Sem isto o Postgres "existe" antes de aceitar conexoes, o Flyway falha
+        # no boot e a API entra em crash-loop com um erro confuso.
+        condition: service_healthy
+    environment:
+      # Relaxed binding do Spring Boot: estas variaveis sobrepoem as chaves
+      # spring.datasource.* do application.properties, sem alterar codigo.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/ramajo_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-db@12345}
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:

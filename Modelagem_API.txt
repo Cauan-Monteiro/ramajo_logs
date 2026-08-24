@@ -1,0 +1,68 @@
+# Enums
+
+Enum Permissao
+	ADMIN,
+	FUNCIONARIO;
+
+Enum Posição
+	OXIDACAO,
+	AUTOMATICA,
+	PENDURADO;
+
+Enum Etapa
+	PRE_TRATAMENTO,
+	TRATAMENTO,
+	POS_TRATAMENTO;
+
+Enum TipoCarga
+	TAMBOR, 
+	TRAVE,
+	CESTO;
+
+# Classes
+
+Class Operador
+	uuid id 
+	String nome
+	String tagId ? null
+	Permissao permissao 
+	boolean isActivate
+	
+
+Class Processo
+	uuid id
+	String Descrição
+	List<Posicao> posições
+	Etapa etapa
+	String tagId ? null
+
+Class Carga
+	uuid id
+	String nome
+	TipoCarga tipo
+	Posição posição
+	Boolean emUso
+	String tagId ? null
+
+Class Log
+	uuid id
+	OrdemServico os
+	Operador responsavel
+	Carga carga
+	Processo processo
+	DateTime iniciadoEm
+	DateTime finalizadoEm
+	Boolean isCanceled
+		
+Class OrdemServico
+	uuid id 
+	Long idExterno
+	Posiçao posição
+	List<Log> logs
+	Datetime iniciadaEm
+	DateTime finalizadaEm
+	Boolean isCanceled
+	Operador iniciadaPor
+	Operador finalizadaPor
+	
+
