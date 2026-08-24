@@ -10,8 +10,15 @@ React + Vite + TypeScript, sem framework de UI: o design system importado
 
 ## Rodar
 
-A API precisa estar de pé em `localhost:8080` com o Postgres do
-`system_API/docker-compose.yml`:
+A stack inteira (Postgres + API + este front servido por nginx) sobe pelo
+`docker-compose.yaml` **na raiz do repositório**:
+
+```bash
+docker compose up --build    # app em http://localhost
+```
+
+Para desenvolver o front com hot reload, basta a API estar de pé em
+`localhost:8080` — pelo Compose acima ou direto pelo Maven:
 
 ```bash
 cd ../system_API && ./mvnw spring-boot:run   # exige JDK 17+ (Spring Boot 4.1)
@@ -29,9 +36,40 @@ proxy do Vite (`vite.config.ts`): tudo em `/api` é encaminhado para
 `localhost:8080`, então front e API compartilham a origem e todo `fetch` usa
 caminho relativo.
 
-Para produção, sirva o `dist/` na mesma origem da API (por exemplo, copiando-o
-para `system_API/src/main/resources/static`) **ou** adicione uma configuração de
-CORS no Spring. Nada aqui depende de estar em `localhost:5173`.
+Em produção quem faz esse papel é o **nginx** do `web/Dockerfile`: ele serve o
+`dist/` e proxia `/api/` para `http://api:8080`, mantendo front e API na mesma
+origem sem tocar no Spring. Como todo `fetch` usa caminho relativo, a imagem é
+portátil — não há URL de API embutida no build, e o mesmo container funciona em
+qualquer host ou IP.
+
+## Acesso pela rede local
+
+Outros dispositivos da mesma rede abrem o app pelo IP do host, ex.
+`http://192.168.0.106`. Duas coisas são necessárias:
+
+1. **Só a porta 80 é publicada na rede.** No `docker-compose.yaml` da raiz, as
+   portas do `db` (5432) e da `api` (8080) estão presas a `127.0.0.1` — elas
+   existem para DBeaver/psql e para o proxy do Vite, e não precisam sair da
+   máquina. O nginx alcança a API pela rede interna do Compose.
+2. **Liberar a porta 80 no firewall do Windows.** Em PowerShell **como
+   Administrador**:
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "Ramajo web LAN 80" -Direction Inbound `
+     -Action Allow -Protocol TCP -LocalPort 80 -Profile Public `
+     -RemoteAddress 192.168.0.0/24
+   ```
+
+   `-Profile Public` atende a rede Wi-Fi sem reclassificá-la como Private, e
+   `-RemoteAddress` limita a origem à sub-rede doméstica (ajuste se a sua for
+   outra). Para desfazer: `Remove-NetFirewallRule -DisplayName "Ramajo web LAN 80"`.
+
+O IP vem de DHCP e pode mudar ao reiniciar o roteador; uma reserva por MAC evita
+ter de reavisar todo mundo.
+
+> **Sem autenticação e sem TLS.** A API não tem Spring Security e o "login" é
+> apenas a escolha do operador no browser — quem alcança a porta 80 pode chamar
+> qualquer mutação. Exponha só em rede confiável.
 
 ## Estrutura
 
