@@ -36,7 +36,7 @@ export function PassoLoteModal({ ctx, selecao }: { ctx: Ctx; selecao: string[] }
             api.iniciarLog(c.ordemAtualId as number, c.id, processoId, ctx.operador.id),
           ),
         ),
-      ok: `Passo aberto em ${cargas.length} carga(s).`,
+      ok: `Etapa aberta em ${cargas.length} carga(s).`,
       depois: ctx.fechar,
     });
   }
@@ -44,7 +44,7 @@ export function PassoLoteModal({ ctx, selecao }: { ctx: Ctx; selecao: string[] }
   return (
     <Modal
       kicker={`POSIÇÃO ${label.toUpperCase()} · EM LOTE`}
-      titulo="Abrir passo nas cargas selecionadas"
+      titulo="Abrir etapa nas cargas selecionadas"
       onClose={ctx.fechar}
       footer={
         <>
@@ -57,7 +57,7 @@ export function PassoLoteModal({ ctx, selecao }: { ctx: Ctx; selecao: string[] }
             disabled={processoId === null || cargas.length === 0 || ctx.ocupado}
             onClick={confirmar}
           >
-            Abrir passo · {cargas.length} carga(s)
+            Abrir etapa · {cargas.length} carga(s)
           </button>
         </>
       }
@@ -135,7 +135,7 @@ export function PassoLoteModal({ ctx, selecao }: { ctx: Ctx; selecao: string[] }
       </div>
 
       <div className="os-tv" style={{ marginTop: 16 }}>
-        Um passo é aberto para cada carga, na sua própria OS · o passo anterior de cada uma é
+        Uma etapa é aberta para cada carga, na sua própria OS · a etapa anterior de cada uma é
         fechado automaticamente.
       </div>
     </Modal>

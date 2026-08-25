@@ -52,7 +52,7 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
           {ordem.emProcesso && (
             <>
               <button className="btn2" onClick={() => ctx.abrir({ tipo: "passo", osId })}>
-                Abrir passo
+                Abrir etapa
               </button>
               <button className="btn2 btn2-x" onClick={() => ctx.abrir({ tipo: "exp", osId })}>
                 Expedir
@@ -105,7 +105,7 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
       {abertos.length > 0 && (
         <>
           <span className="lbl" style={{ color: "#2f6b3c" }}>
-            Passos em andamento
+            Etapas em andamento
           </span>
           <div style={{ margin: "6px 0 18px" }}>
             {abertos.map((l) => (
@@ -127,7 +127,7 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
                   onClick={() =>
                     ctx.agir({
                       fazer: () => api.finalizarLog(l.id),
-                      ok: `Passo "${l.processoDescricao}" finalizado na carga ${l.cargaNome}.`,
+                      ok: `Etapa "${l.processoDescricao}" finalizado na carga ${l.cargaNome}.`,
                     })
                   }
                 >
@@ -139,7 +139,7 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
         </>
       )}
 
-      <span className="lbl">Histórico de passos</span>
+      <span className="lbl">Histórico de etapas</span>
       <div style={{ maxHeight: 240, overflow: "auto", marginTop: 6 }}>
         {fechados.map((l) => (
           <div key={l.id} className="tline">
@@ -156,7 +156,7 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
             <span className="time">{hhmm(l.finalizadoEm)}</span>
           </div>
         ))}
-        {fechados.length === 0 && <Vazio>Ainda sem passos concluídos.</Vazio>}
+        {fechados.length === 0 && <Vazio>Ainda sem etapas concluídos.</Vazio>}
       </div>
     </Modal>
   );
@@ -272,15 +272,15 @@ export function PassoModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
     if (!carga || processoId === null) return;
     ctx.agir({
       fazer: () => api.iniciarLog(osId, carga.id, processoId, ctx.operador.id),
-      ok: `Passo aberto na carga ${carga.nome}.`,
+      ok: `Etapa aberta na carga ${carga.nome}.`,
       depois: () => ctx.abrir({ tipo: "det", osId }),
     });
   }
 
   return (
     <Modal
-      kicker={`OS ${osNum(ordem)} · ABRIR PASSO`}
-      titulo="Abrir passo (início do intervalo)"
+      kicker={`OS ${osNum(ordem)} · ABRIR ETAPA`}
+      titulo="Abrir etapa (início do intervalo)"
       onClose={ctx.fechar}
       footer={
         <>
@@ -293,7 +293,7 @@ export function PassoModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
             disabled={processoId === null || cargaNome === null || ctx.ocupado}
             onClick={confirmar}
           >
-            Abrir passo
+            Abrir etapa
           </button>
         </>
       }
@@ -367,7 +367,7 @@ export function PassoModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
         {cargas.length === 0 && <span className="os-tv">Vincule uma carga à OS primeiro.</span>}
       </div>
       <div className="os-tv" style={{ marginTop: 12 }}>
-        Abre o passo para uma carga · o passo anterior dela é fechado automaticamente
+        Abre o etapa para uma carga · etapa anterior dela é fechado automaticamente
       </div>
     </Modal>
   );
@@ -489,7 +489,7 @@ export function CancelarModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
         </div>
         <div className="os-tv" style={{ fontSize: 14 }}>
           A OS é marcada como cancelada (soft-cancel), todas as cargas vinculadas são liberadas e o
-          histórico de passos é preservado. Esta ação fica registrada em seu nome.
+          histórico de etapas é preservado. Esta ação fica registrada em seu nome.
         </div>
       </div>
     </Modal>

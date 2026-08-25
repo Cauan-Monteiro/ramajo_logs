@@ -135,7 +135,7 @@ export function Dashboard({
             >
               <Corners />
               <IconPasso className="hicon" />
-              <span className="htitle">Abrir passo</span>
+              <span className="htitle">Abrir etapa</span>
               <span className="hsub">
                 {sel.length ? `${sel.length} carga(s) selecionada(s)` : "Selecione cargas na lista"}
               </span>
@@ -182,7 +182,7 @@ export function Dashboard({
               </span>
               <span>Carga</span>
               <span>Vínculo</span>
-              <span>Passo atual</span>
+              <span>Etapa atual</span>
               <span>Desde</span>
             </div>
 
@@ -215,9 +215,9 @@ export function Dashboard({
                         style={
                           aberto
                             ? etapaStyle(
-                                data.processos.find((p) => p.descricao === aberto.processoDescricao)
-                                  ?.etapa ?? null,
-                              )
+                              data.processos.find((p) => p.descricao === aberto.processoDescricao)
+                                ?.etapa ?? null,
+                            )
                             : { background: "#c9c9cc", color: "#f2f2f3" }
                         }
                       >
@@ -231,7 +231,7 @@ export function Dashboard({
                             : { color: "rgba(29,31,32,.4)", fontStyle: "italic" }
                         }
                       >
-                        {aberto ? aberto.processoDescricao : "Aguardando passo"}
+                        {aberto ? aberto.processoDescricao : "Aguardando etapa"}
                       </span>
                     </span>
                     <span className="cmuted csince">{aberto ? hhmm(aberto.iniciadoEm) : "—"}</span>

@@ -47,7 +47,7 @@ export const ETAPAS: { key: Etapa; label: string }[] = [
 ];
 
 export function etapaLabel(e: Etapa | null | undefined): string {
-  return ETAPAS.find((x) => x.key === e)?.label ?? "Sem passo";
+  return ETAPAS.find((x) => x.key === e)?.label ?? "Sem etapa";
 }
 
 export function iniciais(nome: string): string {

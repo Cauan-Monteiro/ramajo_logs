@@ -191,7 +191,6 @@ body{margin:0;background:#c9cacc;font-family:"Barlow",system-ui,sans-serif;displ
 .cvinc{font:600 15px "Barlow Condensed";color:#416180}
 .navtabs{display:flex;align-items:center;gap:22px}
 .sair-b{padding:12px 14px;font-size:13px;border-color:rgba(255,255,255,.28);color:#cfe0f0;background:transparent}
-.modo-b{display:inline-flex;align-items:center;padding:12px 12px;border-color:rgba(255,255,255,.28);color:#cfe0f0;background:transparent}
 
 /* ═══ bloco 3 — acréscimos deste app ═══ */
 .toast{position:absolute;top:80px;left:50%;transform:translateX(-50%);z-index:40;display:flex;align-items:center;gap:12px;max-width:min(620px,90%);padding:13px 18px;border:1px solid rgba(180,71,46,.5);background:#fbeeea;color:#8f3421;font:500 15px "Barlow",system-ui,sans-serif;box-shadow:0 8px 22px rgba(43,43,45,.22)}

@@ -28,7 +28,7 @@ export function ProcessosModal({ ctx }: { ctx: Ctx }) {
       footer={<button className="btn2" onClick={ctx.fechar}>Fechar</button>}
     >
       <div className="os-tv" style={{ marginBottom: 16 }}>
-        Ordens de serviço com passo <b>em andamento</b> em <b>{label}</b>, por processo.
+        Ordens de serviço com etapa <b>em andamento</b> em <b>{label}</b>, por processo.
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         {[...grupos.entries()].map(([proc, itens]) => {
@@ -72,7 +72,7 @@ export function ProcessosModal({ ctx }: { ctx: Ctx }) {
             </div>
           );
         })}
-        {grupos.size === 0 && <Vazio>Nenhum passo em andamento nesta posição no momento.</Vazio>}
+        {grupos.size === 0 && <Vazio>Nenhuma etapa em andamento nesta posição no momento.</Vazio>}
       </div>
     </Modal>
   );

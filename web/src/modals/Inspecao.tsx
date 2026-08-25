@@ -55,7 +55,7 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
                 </div>
               </div>
               <div style={{ minWidth: 80 }}>
-                <div className="os-tv">Passos</div>
+                <div className="os-tv">Etapas</div>
                 <div className="os-cli" style={{ fontSize: 16 }}>
                   {passos}
                 </div>

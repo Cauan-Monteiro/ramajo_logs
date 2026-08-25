@@ -101,15 +101,13 @@ fidelidade.
 
 ## Modo de visualização mobile
 
-O padrão continua o quadro de **1180 × 820** do design. O modo mobile é uma
-opção que passa o quadro para **360 × 780** — a proporção do Galaxy S24 em
-retrato (1080 × 2340 físicos, DPR 3).
+O padrão continua o quadro de **1180 × 820** do design. Abaixo de 480px ele
+passa para **360 × 780** — a proporção do Galaxy S24 em retrato (1080 × 2340
+físicos, DPR 3).
 
-Ativa de duas formas:
-- **Automático**: `matchMedia("(max-width: 480px)")` em `src/state/useViewMode.ts`.
-- **Botão** na barra de navegação, ao lado de "Sair". Clicar **fixa** a escolha
-  no localStorage (`ramajo.viewmode`); a partir daí a largura da tela deixa de
-  mandar. Serve para conferir a proporção do S24 sem sair do desktop.
+A troca é **automática e só pela largura da tela**: `matchMedia("(max-width:
+480px)")` em `src/state/useViewMode.ts`. Não há botão de alternância — para
+conferir a proporção no desktop, use o modo dispositivo do DevTools.
 
 A media query mora no JS de propósito: com as duas vias em CSS
 (`@media` + classe) cada regra teria de existir duas vezes. O hook põe a classe

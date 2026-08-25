@@ -111,7 +111,7 @@ function HistoricoOS({ data, onErro }: { data: AppData; onErro: (e: unknown) => 
               <span className="time">{hhmm(l.finalizadoEm ?? l.iniciadoEm)}</span>
             </div>
           ))}
-          {logs.length === 0 && <Vazio>Ainda sem passos registrados.</Vazio>}
+          {logs.length === 0 && <Vazio>Ainda sem etapas registradas.</Vazio>}
         </div>
       )}
     </>
@@ -213,17 +213,17 @@ function TempoMedio({ data, onErro }: { data: AppData; onErro: (e: unknown) => v
     concluidas.length === 0
       ? null
       : concluidas.reduce(
-          (acc, o) =>
-            acc + (new Date(o.finalizadaEm as string).getTime() - new Date(o.iniciadaEm).getTime()),
-          0,
-        ) / concluidas.length;
+        (acc, o) =>
+          acc + (new Date(o.finalizadaEm as string).getTime() - new Date(o.iniciadaEm).getTime()),
+        0,
+      ) / concluidas.length;
 
   const mediaTexto =
     media === null
       ? "—"
       : `${Math.floor(media / 3600000)}h${String(
-          Math.round((media % 3600000) / 60000),
-        ).padStart(2, "0")}`;
+        Math.round((media % 3600000) / 60000),
+      ).padStart(2, "0")}`;
 
   return (
     <>

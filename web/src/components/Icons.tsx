@@ -80,17 +80,3 @@ export const IconSeta = ({ size = 20, color = "#5980a6", width = 1.6 }: P) => (
     <path d="M5 12h14M13 6l6 6-6 6" />
   </svg>
 );
-
-export const IconMobile = ({ size = 17, color = "currentColor", width = 1.6 }: P) => (
-  <svg {...base(size, color, width)}>
-    <rect x="7" y="2" width="10" height="20" rx="1" />
-    <path d="M10.5 18.5h3" />
-  </svg>
-);
-
-export const IconDesktop = ({ size = 17, color = "currentColor", width = 1.6 }: P) => (
-  <svg {...base(size, color, width)}>
-    <rect x="2" y="4" width="20" height="13" rx="1" />
-    <path d="M8 21h8M12 17v4" />
-  </svg>
-);

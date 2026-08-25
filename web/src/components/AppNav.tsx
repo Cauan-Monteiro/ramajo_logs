@@ -1,20 +1,18 @@
 import type { OperadorDTO, Posicao } from "../api/types";
 import { tabStyle } from "../domain/derive";
 import { POSICOES, iniciais } from "../domain/format";
-import { IconDesktop, IconLogo, IconMobile } from "./Icons";
+import { IconLogo } from "./Icons";
 
 export type Aba = Posicao | "cargas" | "rel";
 
 export function AppNav({
-  aba, onAba, operador, isAdmin, onSair, isMobile, onAlternarModo,
+  aba, onAba, operador, isAdmin, onSair,
 }: {
   aba: Aba;
   onAba: (a: Aba) => void;
   operador: OperadorDTO;
   isAdmin: boolean;
   onSair: () => void;
-  isMobile: boolean;
-  onAlternarModo: () => void;
 }) {
   return (
     <div className="appnav">
@@ -44,18 +42,6 @@ export function AppNav({
           <div style={{ font: "600 15px 'Barlow Condensed'" }}>{operador.nome}</div>
           <span className="role-t">{operador.permissao}</span>
         </div>
-        <button
-          className="btn2 modo-b"
-          title={
-            isMobile
-              ? "Voltar à visualização padrão (1180 × 820)"
-              : "Ver na proporção de celular (360 × 780, Galaxy S24)"
-          }
-          aria-label={isMobile ? "Visualização desktop" : "Visualização mobile"}
-          onClick={onAlternarModo}
-        >
-          {isMobile ? <IconDesktop /> : <IconMobile />}
-        </button>
         <button className="btn2 sair-b" onClick={onSair}>
           Sair
         </button>

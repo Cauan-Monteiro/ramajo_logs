@@ -14,7 +14,7 @@ import type { Ctx } from "./modals/tipos";
 
 export function App() {
   const { operador, entrar, sair, isAdmin } = useSession();
-  const { isMobile, alternar: alternarModo } = useViewMode();
+  useViewMode();
   const [aviso, setAviso] = useState<Aviso | null>(null);
   const [aba, setAba] = useState<Aba>("OXIDACAO");
   const [ocupado, setOcupado] = useState(false);
@@ -76,8 +76,6 @@ export function App() {
         operador={operador}
         isAdmin={isAdmin}
         onSair={sair}
-        isMobile={isMobile}
-        onAlternarModo={alternarModo}
       />
 
       {!pronto ? (
