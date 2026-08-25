@@ -127,11 +127,12 @@ public class OrdemServicoController {
     }
 
     // passo 2b: fim de uma PARTE da produção. Fecha o lote corrente e abre o
-    // seguinte; a OS segue aberta. Retorna o lote recém-aberto.
+    // seguinte; a OS segue aberta. Retorna o lote recém-aberto. Com `cargaIds`
+    // no corpo é expedição parcial: essas cargas fecham o passo e saem da OS.
     @PostMapping("/{id}/lotes/finalizar")
     public LoteDTO finalizarLote(
             @PathVariable Long id, @Valid @RequestBody FinalizarLoteDTO dto) {
-        Lote proximo = service.finalizarLote(id, dto.operadorId());
+        Lote proximo = service.finalizarLote(id, dto.operadorId(), dto.cargaIds());
         return LoteDTO.from(proximo);
     }
 

@@ -5,6 +5,7 @@ import type { AppData } from "../state/useAppData";
 export type ModalState =
   | { tipo: "cad" }
   | { tipo: "passoLote" }
+  | { tipo: "encerrarLote" }
   | { tipo: "inspecao" }
   | { tipo: "buscar" }
   | { tipo: "processos" }
@@ -34,12 +35,9 @@ export interface Ctx {
  * não expõe a operação. Ver web/README.md — "Pendências de backend".
  */
 export const SEM_API = {
-  desvincular:
-    "A API não expõe desvincular carga fora de finalizar/finalizarLote — " +
-    "ver entrega/PATCH-finalizarLote.md no projeto de design.",
   expedirParcial:
-    "POST /api/ordens/{id}/lotes/finalizar aceita só operadorId: avança o lote " +
-    "sem liberar carga nenhuma. Pendente do patch de finalizarLote.",
+    "POST /api/ordens/{id}/lotes/finalizar já aceita cargaIds — falta a UI de " +
+    "seleção de cargas aqui. Em lote, pela home: hub “Encerrar etapas”.",
   reativarCarga:
     "DELETE /api/cargas/{id} só desativa; não há rota de reativação na API.",
   desidrogenizar: "Etapa ainda não modelada na API.",

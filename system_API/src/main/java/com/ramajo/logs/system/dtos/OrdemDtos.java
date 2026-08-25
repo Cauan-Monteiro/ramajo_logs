@@ -74,7 +74,12 @@ public final class OrdemDtos {
     public record CancelarOrdemDTO(@NotNull Long operadorId) {
     }
 
-    public record FinalizarLoteDTO(@NotNull Long operadorId) {
+    /**
+     * `cargaIds` é opcional: ausente ou vazio, o lote só avança (comportamento
+     * histórico da rota). Preenchido, as cargas listadas têm o passo aberto
+     * fechado e saem da OS — é a expedição parcial.
+     */
+    public record FinalizarLoteDTO(@NotNull Long operadorId, List<@NotNull Long> cargaIds) {
     }
 
     // ------------------------------------------------------------------ saída

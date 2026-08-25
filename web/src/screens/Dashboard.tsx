@@ -14,10 +14,11 @@ import { CriarOSModal } from "../modals/CriarOS";
 import {
   CancelarModal, DetalheOSModal, ExpedirModal, PassoModal, VincularModal,
 } from "../modals/DetalheOS";
+import { EncerrarLoteModal } from "../modals/EncerrarLote";
 import { InspecaoModal } from "../modals/Inspecao";
 import { PassoLoteModal } from "../modals/PassoLote";
 import { ProcessosModal } from "../modals/Processos";
-import { SEM_API, type Ctx, type ModalState } from "../modals/tipos";
+import type { Ctx, ModalState } from "../modals/tipos";
 
 const POR_PAGINA = 30;
 
@@ -141,14 +142,17 @@ export function Dashboard({
               </span>
             </button>
 
-            {/* Fecharia os passos abertos E desvincularia as cargas — a segunda
-                metade não existe na API, então o botão fica desabilitado em vez
-                de fazer só metade do que promete. */}
-            <button className="hub bp" disabled title={SEM_API.desvincular}>
+            <button
+              className="hub bp"
+              disabled={sel.length === 0}
+              onClick={() => setModal({ tipo: "encerrarLote" })}
+            >
               <Corners />
               <IconCheckBox className="hicon" />
               <span className="htitle">Encerrar etapas</span>
-              <span className="hsub">Indisponível — pendente de backend</span>
+              <span className="hsub">
+                {sel.length ? `${sel.length} carga(s) selecionada(s)` : "Selecione cargas na lista"}
+              </span>
             </button>
 
             <button className="hub bp" onClick={() => setModal({ tipo: "inspecao" })}>
@@ -281,6 +285,7 @@ export function Dashboard({
 
       {modal?.tipo === "cad" && <CriarOSModal ctx={ctx} />}
       {modal?.tipo === "passoLote" && <PassoLoteModal ctx={ctx} selecao={sel} />}
+      {modal?.tipo === "encerrarLote" && <EncerrarLoteModal ctx={ctx} selecao={sel} />}
       {modal?.tipo === "inspecao" && <InspecaoModal ctx={ctx} />}
       {modal?.tipo === "buscar" && <BuscarOSModal ctx={ctx} />}
       {modal?.tipo === "processos" && <ProcessosModal ctx={ctx} />}

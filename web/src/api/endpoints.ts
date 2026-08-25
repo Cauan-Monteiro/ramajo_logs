@@ -70,6 +70,14 @@ export const iniciarLog = (
 export const finalizarLog = (logId: string) =>
   http.patch<LogDTO>(`/api/ordens/logs/${logId}/finalizar`);
 
+/**
+ * Expedição parcial: fecha o lote corrente e abre o seguinte, liberando as
+ * cargas indicadas (o passo aberto de cada uma fecha junto). A OS segue aberta.
+ * `cargaIds` vazio só avança o lote.
+ */
+export const finalizarLote = (osId: number, operadorId: number, cargaIds: number[]) =>
+  http.post<LoteDTO>(`/api/ordens/${osId}/lotes/finalizar`, { operadorId, cargaIds });
+
 /** Expedição total: libera as cargas restantes e encerra a OS. */
 export const finalizarOrdem = (osId: number, operadorId: number) =>
   http.post<void>(`/api/ordens/${osId}/finalizar`, { operadorId });

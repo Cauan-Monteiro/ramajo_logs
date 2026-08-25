@@ -124,9 +124,14 @@ public class OrdemServicoService {
     /**
      * Fecha o lote em produção e abre o seguinte — a OS continua aberta.
      * Retorna o lote recém-aberto, para o operador ver em qual está agora.
+     *
+     * `cargaIds` é opcional. Preenchido, é a expedição parcial: cada carga
+     * listada tem o passo aberto fechado e sai da OS (`ordemAtual = null`),
+     * voltando ao pool de livres. Tudo na mesma transação — carga inválida na
+     * lista derruba a operação inteira, sem lote meio-fechado.
      */
     @Transactional
-    public Lote finalizarLote(Long osId, Long operadorId){
+    public Lote finalizarLote(Long osId, Long operadorId, List<Long> cargaIds){
         OrdemServico os = carregarAberta(osId);
 
         Operador op = operadorRepo.findById(operadorId)
@@ -136,10 +141,38 @@ public class OrdemServicoService {
             throw new OperadorInativoException(operadorId);
         }
 
+        // Um instante só para o lote e para os passos que fecham com ele: são
+        // o mesmo evento, e datas diferentes sujariam o relatório de duração.
+        Instant at = Instant.now();
+
+        // Expedição parcial: as cargas listadas terminaram o tratamento e saem
+        // da OS junto com o lote. Sem elas a rota continua só avançando o lote,
+        // que é como ela nasceu.
+        if (cargaIds != null){
+            for (Long cargaId : new LinkedHashSet<>(cargaIds)){
+                Carga carga = cargaRepo.findById(cargaId)
+                        .orElseThrow(() -> new RecursoNaoEncontradoException("Carga", cargaId));
+
+                if (carga.getOrdemAtual() == null
+                        || !carga.getOrdemAtual().getId().equals(osId)){
+                    throw new CargaNaoVinculadaException(cargaId, osId);
+                }
+
+                // Passo aberto não sobrevive à liberação: com
+                // ux_logs_carga_aberto ele impediria a carga de iniciar
+                // qualquer passo futuro, em qualquer OS. Mesma regra de
+                // finalizar(); nem toda carga tem um, daí o ifPresent.
+                logRepo.findByCargaIdAndFinalizadoEmIsNull(cargaId)
+                        .ifPresent(aberto -> fecharPasso(aberto, at));
+
+                carga.setOrdemAtual(null);
+            }
+        }
+
         Lote atual = loteRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(osId)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Lote aberto da OS", osId));
 
-        atual.setFinalizadoEm(Instant.now());
+        atual.setFinalizadoEm(at);
         atual.setFinalizadoPor(op);
 
         // O flush é OBRIGATÓRIO aqui, não é otimização. O id do lote é IDENTITY,
@@ -356,6 +389,15 @@ public class OrdemServicoService {
         return log;
     }
 
+    /**
+     * Fecha o intervalo de um passo protegendo contra clock skew: relógio
+     * atrasado devolveria um `finalizadoEm` anterior ao `iniciadoEm` e o
+     * ck_logs_janela recusaria o UPDATE. Mesmo tratamento de abrirLog.
+     */
+    private void fecharPasso(Log log, Instant at){
+        log.setFinalizadoEm(at.isBefore(log.getIniciadoEm()) ? log.getIniciadoEm() : at);
+    }
+
     @Transactional
     public void finalizar(Long osId, Long operadorId){
         OrdemServico os = carregarAberta(osId);
@@ -369,7 +411,7 @@ public class OrdemServicoService {
         // ux_logs_carga_aberto ele impediria a carga — já liberada logo
         // abaixo — de iniciar qualquer passo futuro, em qualquer OS.
         for(Log aberto : logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(osId)){
-            aberto.setFinalizadoEm(at);
+            fecharPasso(aberto, at);
         }
 
         for(Carga c : os.getCargas()){
@@ -403,7 +445,7 @@ public class OrdemServicoService {
         // senão a carga fica com um passo aberto eterno.
         for(Log aberto : logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(osId)){
             aberto.setCancelado(true);
-            aberto.setFinalizadoEm(at);
+            fecharPasso(aberto, at);
         }
 
         for(Carga c : os.getCargas()){

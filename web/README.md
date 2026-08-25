@@ -134,20 +134,25 @@ com o motivo no `title`. Os textos estão centralizados em
 
 | Controle | Falta na API |
 |---|---|
-| **Encerrar etapas** (hub) | Não há como desvincular uma carga fora de `finalizar`/`finalizarLote` |
-| **Expedição parcial** (modal Expedir) | `POST /api/ordens/{id}/lotes/finalizar` aceita só `operadorId`: avança o lote sem liberar carga nenhuma |
+| **Expedição parcial** (modal Expedir) | Nada — falta a UI de seleção de cargas neste diálogo |
 | **Expedir parcial** (Inspeção final) | idem |
 | **Reativar** carga (Registrar cargas) | `DELETE /api/cargas/{id}` só desativa; não há rota de reativação |
 | **Desidrogenizar** (Inspeção final) | Etapa não modelada — já vinha desabilitada no próprio design |
 
-O patch que destrava os três primeiros está escrito: `entrega/PATCH-finalizarLote.md`
-no projeto de design (adiciona `cargaIds` ao `FinalizarLoteDTO`, ao service e ao
-controller). Depois de aplicá-lo, ligar os botões é trocar o `disabled` por uma
-chamada a `POST /api/ordens/{id}/lotes/finalizar` com as cargas selecionadas.
+O patch `cargaIds` (`entrega/PATCH-finalizarLote.md` no projeto de design)
+**já foi aplicado**: `FinalizarLoteDTO` ganhou `List<Long> cargaIds` opcional e
+`OrdemServicoService.finalizarLote` agora fecha o passo aberto de cada carga
+listada e a libera (`ordemAtual = null`) antes de virar o lote. Carga que não
+esteja vinculada àquela OS → 422 `CARGA_NAO_VINCULADA`.
 
-Enquanto isso, **finalizar passos continua disponível** pelo detalhe da OS
-(Buscar OS ou Processos → abrir a OS → "Finalizar" em cada passo em andamento) —
-só o encerramento em lote com desvínculo é que não tem caminho.
+Quem usa isso hoje é o hub **Encerrar etapas** da home (`modals/EncerrarLote.tsx`):
+seleciona-se cargas na tabela e cada OS afetada leva um POST com os seus
+`cargaIds`. Os dois botões de expedição parcial continuam desabilitados apenas
+porque a UI de escolher *quais* cargas ainda não existe nesses diálogos — a rota
+já os atende.
+
+Finalizar um passo isolado continua no detalhe da OS (Buscar OS ou Processos →
+abrir a OS → "Finalizar" em cada passo em andamento).
 
 ## Leitores RFID
 
