@@ -120,7 +120,7 @@ export function Dashboard({
             >
               <Corners />
               <IconPlus className="hicon" />
-              <span className="htitle">Criar OS</span>
+              <span className="htitle">Criar</span>
               <span className="hsub">
                 {sel.length > 0
                   ? "Limpe a seleção de cargas para criar uma OS"

@@ -309,29 +309,85 @@ INSERT INTO clientes (id, nome) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------- processos
--- Processos de rotina do setor de oxidação, na ordem em que a peça passa por
--- eles. Diferente do 'Desengraxante(Inicio)' da V3, estes são cadastro comum:
--- o id vem da identity, sem OVERRIDING SYSTEM VALUE e sem faixa reservada.
+-- Processos de rotina dos setores, na ordem em que a peça passa por eles.
+-- Diferente do 'Desengraxante(Inicio)' da V3, estes são cadastro comum: o id
+-- vem da identity, sem OVERRIDING SYSTEM VALUE e sem faixa reservada.
 --
--- A CTE devolve o id que o banco escolheu e o INSERT de baixo consome esse
--- valor. Ligar as posições por id literal (1..5) só funcionaria enquanto a
--- sequence estivesse intocada — qualquer INSERT revertido, setval ou migration
--- intercalada faria a posição cair no processo errado, ou estourar a FK.
-WITH novos_processos AS (
-    INSERT INTO processos (descricao, etapa)
-    VALUES
-        ('DECAPAGEM OX/FOS',    'PRE_TRATAMENTO'),
-        ('OXIDAÇÃO NEGRA',      'TRATAMENTO'),
-        ('FOSFATO DE MANGANÊS', 'TRATAMENTO'),
-        ('AGUA QUENTE',         'POS_TRATAMENTO'),
-        ('ÓLEO/OLEAMENTO',      'POS_TRATAMENTO')
-    RETURNING id
-)
--- Todos os cinco rodam só na oxidação.
-INSERT INTO processo_posicoes (processo_id, posicao)
-SELECT id, 'OXIDACAO' FROM novos_processos;
+-- WHERE NOT EXISTS em vez de INSERT direto: o banco em uso já roda há tempo e
+-- estes processos podem ter sido cadastrados pela tela (ProcessoService.criar).
+-- Não há unique em processos.descricao, então nada no banco barraria a
+-- duplicata — a guarda tem que estar aqui. Mesmo espírito do DO NOTHING dos
+-- clientes: esta migration é o piso do cadastro, não a fonte da verdade.
+INSERT INTO processos (descricao, etapa)
+SELECT t.descricao, t.etapa
+FROM (VALUES
+    -- oxidação
+    ('DECAPAGEM OX/FOS',     'PRE_TRATAMENTO'),
+    ('OXIDAÇÃO NEGRA',       'TRATAMENTO'),
+    ('FOSFATO DE MANGANÊS',  'TRATAMENTO'),
+    ('AGUA QUENTE',          'POS_TRATAMENTO'),
+    ('ÓLEO/OLEAMENTO',       'POS_TRATAMENTO'),
+    -- zinco
+    ('DECAPAGEM ZN',         'PRE_TRATAMENTO'),
+    ('DESENGRAXANTE ELETRO', 'PRE_TRATAMENTO'),
+    ('ZINCO ALCALINO',       'TRATAMENTO'),
+    ('ZINCO ACIDO',          'TRATAMENTO'),
+    ('ATIVAÇÃO',             'POS_TRATAMENTO'),
+    ('CROMATO TRIVALENTE',   'POS_TRATAMENTO')
+) AS t(descricao, etapa)
+WHERE NOT EXISTS (SELECT 1 FROM processos p WHERE p.descricao = t.descricao);
 
-INSERT INTO public.operadores(nome, permissao)
-VALUES 
-	('Márcio', 'ADMIN'),
-    ('Cauan', 'ADMIN');
+-- Sem tag_id: quem grava a tag é a tela, quando o leitor for pareado ao tanque.
+-- ux_processos_tag é índice parcial (WHERE tag_id IS NOT NULL), então os NULLs
+-- não conflitam entre si.
+
+-- As posições vêm num INSERT separado, e não via CTE com RETURNING, justamente
+-- por causa da guarda acima: RETURNING só devolve o que foi de fato inserido,
+-- então um processo que já existia sairia da CTE sem ganhar posição nenhuma.
+-- Buscando por descricao, o vínculo é feito valha o processo novo ou antigo.
+-- ON CONFLICT DO NOTHING apoia-se na PK (processo_id, posicao).
+
+-- Os cinco de oxidação rodam só na oxidação.
+INSERT INTO processo_posicoes (processo_id, posicao)
+SELECT p.id, 'OXIDACAO'
+FROM processos p
+WHERE p.descricao IN (
+    'DECAPAGEM OX/FOS',
+    'OXIDAÇÃO NEGRA',
+    'FOSFATO DE MANGANÊS',
+    'AGUA QUENTE',
+    'ÓLEO/OLEAMENTO'
+)
+ON CONFLICT DO NOTHING;
+
+-- Os seis do zinco são UM processo cada, rodando em DOIS setores — não dois
+-- cadastros de mesmo nome. É para isso que processo_posicoes existe (N posições
+-- por processo, Processo.posicoes é um Set<Posicao>); duplicar a linha em
+-- processos deixaria a tela com nomes repetidos e partiria o histórico do
+-- mesmo tanque em dois ids.
+INSERT INTO processo_posicoes (processo_id, posicao)
+SELECT p.id, pos.posicao
+FROM processos p
+CROSS JOIN (VALUES ('PENDURADO'), ('AUTOMATICA')) AS pos(posicao)
+WHERE p.descricao IN (
+    'DECAPAGEM ZN',
+    'DESENGRAXANTE ELETRO',
+    'ZINCO ALCALINO',
+    'ZINCO ACIDO',
+    'ATIVAÇÃO',
+    'CROMATO TRIVALENTE'
+)
+ON CONFLICT DO NOTHING;
+
+-- --------------------------------------------------------------- operadores
+-- Os dois admins iniciais, para que um banco recriado do zero tenha por onde
+-- entrar. Mesma guarda dos processos, e pela mesma razão: operadores.nome não
+-- tem unique, então rodar num banco que já os tem criaria um segundo 'Cauan'.
+-- tag_id fica NULL — a tag é pareada depois, pela tela.
+INSERT INTO operadores (nome, permissao)
+SELECT t.nome, t.permissao
+FROM (VALUES
+    ('Márcio', 'ADMIN'),
+    ('Cauan',  'ADMIN')
+) AS t(nome, permissao)
+WHERE NOT EXISTS (SELECT 1 FROM operadores o WHERE o.nome = t.nome);
