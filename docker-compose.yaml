@@ -3,6 +3,8 @@
 services:
   db:
     image: postgres:17-alpine
+    # Sobe junto com o Docker e se recupera de queda; so para se o usuario mandar parar.
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ramajo_db
       POSTGRES_USER: postgres
@@ -20,6 +22,7 @@ services:
 
   api:
     build: ./system_API
+    restart: unless-stopped
     depends_on:
       db:
         # Sem isto o Postgres "existe" antes de aceitar conexoes, o Flyway falha
@@ -39,6 +42,7 @@ services:
   # Unico servico publicado na rede local: http://<ip-do-host>
   web:
     build: ./web
+    restart: unless-stopped
     depends_on:
       # So ordem de partida e o nome DNS "api"; o nginx resolve o upstream por
       # requisicao, entao um atraso no boot da API vira 502 temporario, nao crash.

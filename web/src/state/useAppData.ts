@@ -25,18 +25,26 @@ const VAZIO: AppData = {
  *
  * Os passos vêm num GET por ordem (N+1 assumido): não há rota que devolva os
  * logs de várias OS de uma vez, e o universo é o de uma posição de fábrica.
+ *
+ * `marca` é a revisão do servidor vigente quando estes dados foram lidos — é o
+ * que useSync compara para saber se este terminal ficou para trás.
  */
 export function useAppData(onError: (e: unknown) => void) {
   const [data, setData] = useState<AppData>(VAZIO);
   const [carregando, setCarregando] = useState(true);
   const [pronto, setPronto] = useState(false);
+  const [marca, setMarca] = useState<string | null>(null);
   const emVoo = useRef(0);
 
   const recarregar = useCallback(async () => {
     const meu = ++emVoo.current;
     setCarregando(true);
     try {
-      const [clientes, processos, cargas, ordens] = await Promise.all([
+      const [revisao, clientes, processos, cargas, ordens] = await Promise.all([
+        // Lida junto com os dados, nunca depois: se algo mudar no meio desta
+        // carga, a marca guardada fica atrasada e o próximo poll corrige. O
+        // contrário (ler depois) perderia a alteração para sempre.
+        api.revisaoEstado(),
         api.listarClientes(),
         api.listarProcessos(),
         api.listarCargas(),
@@ -55,6 +63,7 @@ export function useAppData(onError: (e: unknown) => void) {
         clientes, processos, cargas, ordens,
         logsPorOrdem: Object.fromEntries(historicos),
       });
+      setMarca(`${revisao.instancia}:${revisao.revisao}`);
       setPronto(true);
     } catch (e) {
       if (meu === emVoo.current) onError(e);
@@ -67,7 +76,7 @@ export function useAppData(onError: (e: unknown) => void) {
     void recarregar();
   }, [recarregar]);
 
-  return { data, carregando, pronto, recarregar };
+  return { data, carregando, pronto, marca, recarregar };
 }
 
 /** Logs de uma OS já carregada; [] quando a OS não está em processo. */

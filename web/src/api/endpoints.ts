@@ -1,7 +1,7 @@
 import { http, NotFoundError } from "./client";
 import type {
   CargaDTO, ClienteDTO, LogDTO, LoteDTO, OperadorDTO,
-  OrdemDetalheDTO, OrdemResumoDTO, Posicao, ProcessoDTO, TipoCarga,
+  OrdemDetalheDTO, OrdemResumoDTO, Posicao, ProcessoDTO, RevisaoDTO, TipoCarga,
 } from "./types";
 
 /** Uma função por rota de system_API. Nada mais mora aqui. */
@@ -84,3 +84,7 @@ export const finalizarOrdem = (osId: number, operadorId: number) =>
 
 export const cancelarOrdem = (osId: number, operadorId: number) =>
   http.post<void>(`/api/ordens/${osId}/cancelar`, { operadorId });
+
+// ── estado ──────────────────────────────────────────────────────────────
+/** Sonda de sincronização: resposta minúscula, chamada em loop pelos terminais. */
+export const revisaoEstado = () => http.get<RevisaoDTO>("/api/estado/revisao");

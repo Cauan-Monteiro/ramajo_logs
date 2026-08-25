@@ -9,6 +9,7 @@ import { RegistrarCargas } from "./screens/RegistrarCargas";
 import { Relatorios } from "./screens/Relatorios";
 import { useAppData } from "./state/useAppData";
 import { useSession } from "./state/useSession";
+import { useSync } from "./state/useSync";
 import { useViewMode } from "./state/useViewMode";
 import type { Ctx } from "./modals/tipos";
 
@@ -27,7 +28,16 @@ export function App() {
     }
   }, []);
 
-  const { data, carregando, pronto, recarregar } = useAppData(reportarErro);
+  const { data, carregando, pronto, marca, recarregar } = useAppData(reportarErro);
+
+  // Mantém este terminal no mesmo ponto que os demais, sem F5.
+  useSync({
+    marca,
+    recarregar,
+    ativo: !!operador && pronto,
+    ocupado,
+    carregando,
+  });
 
   /**
    * Toda mutação passa por aqui: executa, recarrega os dados da API e reporta.

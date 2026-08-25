@@ -105,3 +105,9 @@ export interface ApiErrorBody {
   timestamp: string;
   campos: { campo: string; erro: string }[] | null;
 }
+
+/** dtos/EstadoDtos.RevisaoDTO — marca de versão do estado do servidor. */
+export interface RevisaoDTO {
+  instancia: string;
+  revisao: number;
+}
