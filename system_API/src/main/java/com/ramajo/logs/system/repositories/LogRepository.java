@@ -2,6 +2,8 @@ package com.ramajo.logs.system.repositories;
 
 import com.ramajo.logs.system.entities.Log;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -17,4 +19,17 @@ public interface LogRepository extends JpaRepository<Log, UUID> {
 
     // Passos ainda abertos de uma OS — usados para fechá-los junto com ela.
     List<Log> findByOrdemServicoIdAndFinalizadoEmIsNull(Long osId);
+
+    // Mesma ordem do histórico, mas com as relações LAZY já resolvidas: a
+    // planilha lê carga/processo/responsável de TODOS os passos, o que daria
+    // 3N queries no lazy loading. Aqui é uma só.
+    @Query("""
+            select l from Log l
+              join fetch l.carga
+              join fetch l.processo
+              join fetch l.responsavel
+             where l.ordemServico.id = :osId
+             order by l.iniciadoEm asc, l.id asc
+            """)
+    List<Log> buscarParaRelatorio(@Param("osId") Long osId);
 }

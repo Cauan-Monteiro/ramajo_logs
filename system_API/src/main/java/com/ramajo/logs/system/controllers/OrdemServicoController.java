@@ -15,10 +15,16 @@ import com.ramajo.logs.system.entities.Log;
 import com.ramajo.logs.system.entities.Lote;
 import com.ramajo.logs.system.entities.OrdemServico;
 import com.ramajo.logs.system.services.OrdemServicoService;
+import com.ramajo.logs.system.services.PlanilhaOrdemServicoService;
 import jakarta.validation.Valid;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,10 +45,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/ordens")
 public class OrdemServicoController {
 
-    private final OrdemServicoService service;
+    private static final String XLSX =
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-    public OrdemServicoController(OrdemServicoService service) {
+    private final OrdemServicoService service;
+    private final PlanilhaOrdemServicoService planilhaService;
+
+    public OrdemServicoController(OrdemServicoService service,
+                                  PlanilhaOrdemServicoService planilhaService) {
         this.service = service;
+        this.planilhaService = planilhaService;
     }
 
     @PostMapping
@@ -71,6 +83,25 @@ public class OrdemServicoController {
     @GetMapping("/{id}/logs")
     public List<LogDTO> historico(@PathVariable Long id) {
         return service.historico(id).stream().map(LogDTO::from).toList();
+    }
+
+    /**
+     * Download da OS inteira em uma planilha .xlsx (abas: Ordem de Serviço,
+     * Lotes, Etapas e Cargas), com os horários já convertidos para o fuso da
+     * fábrica. Sendo GET, não mexe no estado — o RevisaoFilter não incrementa
+     * a revisão, e é isso que se quer: exportar não é uma transição.
+     */
+    @GetMapping(value = "/{id}/planilha", produces = XLSX)
+    public ResponseEntity<byte[]> planilha(@PathVariable Long id) {
+        byte[] xlsx = planilhaService.gerar(id);
+        ContentDisposition anexo = ContentDisposition.attachment()
+                .filename("ordem-servico-" + id + ".xlsx", StandardCharsets.UTF_8)
+                .build();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, anexo.toString())
+                .contentType(MediaType.parseMediaType(XLSX))
+                .cacheControl(CacheControl.noStore())
+                .body(xlsx);
     }
 
     // passo 1: vincular a carga já abre o passo inicial dela, igual à criação
