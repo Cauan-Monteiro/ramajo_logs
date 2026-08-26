@@ -41,4 +41,20 @@ public final class DataHoraBr {
         return String.format("%02d:%02d:%02d",
                 d.toHours(), d.toMinutesPart(), d.toSecondsPart());
     }
+
+    /**
+     * A mesma duração, mas como fração de dia — a unidade de tempo do Excel.
+     * Escrita numa célula com formato [h]:mm:ss, ela continua sendo lida como
+     * "01:47:30" e ainda assim entra em SOMA() e MÉDIA().
+     *
+     * Intervalo ainda aberto devolve null, para a célula nem ser criada: soma
+     * ignora célula vazia, mas somaria um zero.
+     */
+    public static Double duracaoNumerica(Instant inicio, Instant fim) {
+        if (inicio == null || fim == null) {
+            return null;
+        }
+        long segundos = Duration.between(inicio, fim).toSeconds();
+        return segundos < 0 ? 0d : segundos / 86_400d;
+    }
 }

@@ -6,7 +6,7 @@ import {
   IconPasso, IconPlus, IconProcessos,
 } from "../components/Icons";
 import { emSegundoLote, etapaStyle, labelEtapaDoLog, logAbertoDaCarga } from "../domain/derive";
-import { hhmm, osNum, posLabel } from "../domain/format";
+import { duracao, hhmm, osNum, posLabel } from "../domain/format";
 import { cargasLivres, logsDe, type AppData } from "../state/useAppData";
 import { BuscarOSModal } from "../modals/BuscarOS";
 import { CargasLivresModal } from "../modals/CargasLivres";
@@ -190,6 +190,7 @@ export function Dashboard({
               <span>Vínculo</span>
               <span>Etapa atual</span>
               <span>Desde</span>
+              <span>Duração</span>
             </div>
 
             <div className="cl-scroll">
@@ -241,6 +242,7 @@ export function Dashboard({
                       </span>
                     </span>
                     <span className="cmuted csince">{aberto ? hhmm(aberto.iniciadoEm) : "—"}</span>
+                    <span className="cmuted cdur">{aberto ? duracao(aberto.iniciadoEm, null) : "—"}</span>
                   </div>
                 );
               })}

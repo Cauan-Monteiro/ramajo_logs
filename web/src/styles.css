@@ -161,8 +161,8 @@ body{margin:0;background:#c9cacc;font-family:"Barlow",system-ui,sans-serif;displ
 .visb svg{color:#5980a6}
 .visb span{font:600 11px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#1d1f20;line-height:1.05}
 .visb b{font:400 11px "Barlow",system-ui,sans-serif;color:rgba(29,31,32,.5)}
-.clhead{display:grid;grid-template-columns:32px 1.3fr .9fr 2fr .8fr;gap:14px;padding:10px 16px;background:#1d2d3d;color:#cfe0f0;font:600 11px "Barlow Condensed";letter-spacing:.1em;text-transform:uppercase;flex:none;align-items:center}
-.clrow{display:grid;grid-template-columns:32px 1.3fr .9fr 2fr .8fr;gap:14px;align-items:center;padding:11px 16px;border-bottom:1px solid rgba(0,0,0,.08);cursor:pointer;transition:background .1s}
+.clhead{display:grid;grid-template-columns:32px 1.3fr .9fr 2fr .8fr .8fr;gap:14px;padding:10px 16px;background:#1d2d3d;color:#cfe0f0;font:600 11px "Barlow Condensed";letter-spacing:.1em;text-transform:uppercase;flex:none;align-items:center}
+.clrow{display:grid;grid-template-columns:32px 1.3fr .9fr 2fr .8fr .8fr;gap:14px;align-items:center;padding:11px 16px;border-bottom:1px solid rgba(0,0,0,.08);cursor:pointer;transition:background .1s}
 .clrow.sel{background:color-mix(in srgb,#5980a6 12%,transparent)}
 .ckbox{width:20px;height:20px;flex:none;border:1.5px solid rgba(29,31,32,.3);display:flex;align-items:center;justify-content:center;cursor:pointer;color:transparent;background:transparent}
 .clhead .ckbox{border-color:rgba(255,255,255,.5)}
@@ -297,8 +297,8 @@ body.is-mobile .hub .hicon{width:22px;height:22px}
 /* — lista de cargas: linha de 5 colunas → cartão de 2 linhas — */
 body.is-mobile .clhead{display:none}
 body.is-mobile .clrow{
-  grid-template-columns:32px 1fr auto;
-  grid-template-areas:"ck nome os" ". passo desde";
+  grid-template-columns:32px 1fr auto auto;
+  grid-template-areas:"ck nome os os" ". passo desde dur";
   gap:6px 10px;padding:12px 14px;
 }
 body.is-mobile .clrow .ckbox{grid-area:ck}
@@ -306,6 +306,7 @@ body.is-mobile .clrow .cnome{grid-area:nome}
 body.is-mobile .clrow .cvinc{grid-area:os;justify-self:end}
 body.is-mobile .clrow .passocell{grid-area:passo;min-width:0}
 body.is-mobile .clrow .csince{grid-area:desde;justify-self:end}
+body.is-mobile .clrow .cdur{grid-area:dur;justify-self:end}
 body.is-mobile .pager{gap:8px;flex-wrap:wrap;padding:12px 4px 4px}
 body.is-mobile .pager .cmuted{order:3;flex:1 0 100%;text-align:center}
 
@@ -473,7 +474,7 @@ body.is-mobile .toast{
   body:not(.is-mobile) .posmini .n{font-size:26px}
   /* "Etapa atual" é a coluna elástica: é dela que sai o espaço. */
   body:not(.is-mobile) .clhead,
-  body:not(.is-mobile) .clrow{grid-template-columns:32px 1.1fr .8fr 1.4fr .7fr;gap:10px}
+  body:not(.is-mobile) .clrow{grid-template-columns:32px 1.1fr .8fr 1.4fr .7fr .7fr;gap:10px}
   body:not(.is-mobile) .opinfo{display:none}
   body:not(.is-mobile) .rel-side{width:220px}
   body:not(.is-mobile) .rel-side .repcard{margin:0 12px 10px;padding:14px}
