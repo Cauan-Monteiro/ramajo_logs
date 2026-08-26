@@ -393,58 +393,51 @@ FROM (VALUES
 WHERE NOT EXISTS (SELECT 1 FROM operadores o WHERE o.nome = t.nome);
 
 
-INSERT INTO public.cargas(
-    nome, tipo, posicao)
-VALUES
-    ('T 02', 'TRAVE', 'PENDURADO'),
-    ('T 03', 'TRAVE', 'PENDURADO'),
-    ('T 04', 'TRAVE', 'PENDURADO'),
-    ('T 05', 'TRAVE', 'PENDURADO'),
-    ('T 06', 'TRAVE', 'PENDURADO'),
-    ('T 07', 'TRAVE', 'PENDURADO'),
-    ('T 08', 'TRAVE', 'PENDURADO'),
-    ('T 09', 'TRAVE', 'PENDURADO'),
-    ('T 10', 'TRAVE', 'PENDURADO'),
-    ('T 11', 'TRAVE', 'PENDURADO'),
-    ('T 12', 'TRAVE', 'PENDURADO'),
-    ('T 13', 'TRAVE', 'PENDURADO'),
-    ('T 14', 'TRAVE', 'PENDURADO'),
-    ('T 15', 'TRAVE', 'PENDURADO'),
-    ('T 16', 'TRAVE', 'PENDURADO'),
-    ('T 17', 'TRAVE', 'PENDURADO'),
-    ('T 18', 'TRAVE', 'PENDURADO'),
-    ('T 19', 'TRAVE', 'PENDURADO'),
-    ('T 20', 'TRAVE', 'PENDURADO'),
-    ('T 21', 'TRAVE', 'PENDURADO'),
-    ('T 22', 'TRAVE', 'PENDURADO'),
-    ('T 23', 'TRAVE', 'PENDURADO'),
-    ('T 24', 'TRAVE', 'PENDURADO'),
-    ('T 25', 'TRAVE', 'PENDURADO'),
-    ('T 26', 'TRAVE', 'PENDURADO'),
-    ('T 27', 'TRAVE', 'PENDURADO'),
-    ('T 28', 'TRAVE', 'PENDURADO'),
-    ('T 29', 'TRAVE', 'PENDURADO'),
-    ('T 30', 'TRAVE', 'PENDURADO'),
-;
-
-
-
-INSERT INTO public.cargas(
-    nome, tipo, posicao)
-VALUES
-    ('C 02', 'CESTO', 'OXIDACAO'),
-    ('C 03', 'CESTO', 'OXIDACAO'),
-    ('C 04', 'CESTO', 'OXIDACAO'),
-    ('C 05', 'CESTO', 'OXIDACAO'),
-    ('C 06', 'CESTO', 'OXIDACAO'),
-    ('C 07', 'CESTO', 'OXIDACAO'),
-    ('C 08', 'CESTO', 'OXIDACAO'),
-    ('C 09', 'CESTO', 'OXIDACAO'),
-    ('C 10', 'CESTO', 'OXIDACAO');
-
-INSERT INTO public.cargas(
-    nome, tipo, posicao)
-VALUES
+-- ---------------------------------------------------------------- cargas
+INSERT INTO public.cargas (nome, tipo, posicao)
+SELECT t.nome, t.tipo, t.posicao
+FROM (VALUES
+    ('T 01', 'TRAVE',  'PENDURADO'),
+    ('T 02', 'TRAVE',  'PENDURADO'),
+    ('T 03', 'TRAVE',  'PENDURADO'),
+    ('T 04', 'TRAVE',  'PENDURADO'),
+    ('T 05', 'TRAVE',  'PENDURADO'),
+    ('T 06', 'TRAVE',  'PENDURADO'),
+    ('T 07', 'TRAVE',  'PENDURADO'),
+    ('T 08', 'TRAVE',  'PENDURADO'),
+    ('T 09', 'TRAVE',  'PENDURADO'),
+    ('T 10', 'TRAVE',  'PENDURADO'),
+    ('T 11', 'TRAVE',  'PENDURADO'),
+    ('T 12', 'TRAVE',  'PENDURADO'),
+    ('T 13', 'TRAVE',  'PENDURADO'),
+    ('T 14', 'TRAVE',  'PENDURADO'),
+    ('T 15', 'TRAVE',  'PENDURADO'),
+    ('T 16', 'TRAVE',  'PENDURADO'),
+    ('T 17', 'TRAVE',  'PENDURADO'),
+    ('T 18', 'TRAVE',  'PENDURADO'),
+    ('T 19', 'TRAVE',  'PENDURADO'),
+    ('T 20', 'TRAVE',  'PENDURADO'),
+    ('T 21', 'TRAVE',  'PENDURADO'),
+    ('T 22', 'TRAVE',  'PENDURADO'),
+    ('T 23', 'TRAVE',  'PENDURADO'),
+    ('T 24', 'TRAVE',  'PENDURADO'),
+    ('T 25', 'TRAVE',  'PENDURADO'),
+    ('T 26', 'TRAVE',  'PENDURADO'),
+    ('T 27', 'TRAVE',  'PENDURADO'),
+    ('T 28', 'TRAVE',  'PENDURADO'),
+    ('T 29', 'TRAVE',  'PENDURADO'),
+    ('T 30', 'TRAVE',  'PENDURADO'),
+    ('C 01', 'CESTO',  'OXIDACAO'),
+    ('C 02', 'CESTO',  'OXIDACAO'),
+    ('C 03', 'CESTO',  'OXIDACAO'),
+    ('C 04', 'CESTO',  'OXIDACAO'),
+    ('C 05', 'CESTO',  'OXIDACAO'),
+    ('C 06', 'CESTO',  'OXIDACAO'),
+    ('C 07', 'CESTO',  'OXIDACAO'),
+    ('C 08', 'CESTO',  'OXIDACAO'),
+    ('C 09', 'CESTO',  'OXIDACAO'),
+    ('C 10', 'CESTO',  'OXIDACAO'),
+    ('T 01', 'TAMBOR', 'AUTOMATICA'),
     ('T 02', 'TAMBOR', 'AUTOMATICA'),
     ('T 03', 'TAMBOR', 'AUTOMATICA'),
     ('T 04', 'TAMBOR', 'AUTOMATICA'),
@@ -453,4 +446,8 @@ VALUES
     ('T 07', 'TAMBOR', 'AUTOMATICA'),
     ('T 08', 'TAMBOR', 'AUTOMATICA'),
     ('T 09', 'TAMBOR', 'AUTOMATICA'),
-    ('T 10', 'TAMBOR', 'AUTOMATICA');
+    ('T 10', 'TAMBOR', 'AUTOMATICA')
+) AS t(nome, tipo, posicao)
+WHERE NOT EXISTS (
+    SELECT 1 FROM cargas c WHERE c.nome = t.nome AND c.tipo = t.tipo
+);
