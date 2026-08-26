@@ -2,7 +2,8 @@ import { useState } from "react";
 import * as api from "../api/endpoints";
 import type { Posicao, TipoCarga } from "../api/types";
 import { Corners } from "../components/Blueprint";
-import { IconPlus, IconScan } from "../components/Icons";
+import { IconPlus } from "../components/Icons";
+import { ScanField } from "../components/ScanField";
 import { SEL_SEG } from "../domain/derive";
 import { POSICOES, osNum, posLabel } from "../domain/format";
 import type { AppData } from "../state/useAppData";
@@ -10,19 +11,30 @@ import { SEM_API, type Ctx } from "../modals/tipos";
 
 const TIPOS: TipoCarga[] = ["TAMBOR", "TRAVE", "CESTO"];
 
+/** Como no Dashboard: a lista completa não cabe num ecrã, muito menos táctil. */
+const POR_PAGINA = 30;
+const POR_PAGINA_MOBILE = 10;
+
 export function RegistrarCargas({
-  data, posicaoAtual, agir, ocupado,
+  data, posicaoAtual, agir, ocupado, isMobile,
 }: {
   data: AppData;
   posicaoAtual: Posicao;
   agir: Ctx["agir"];
   ocupado: boolean;
+  isMobile: boolean;
 }) {
   const [nome, setNome] = useState("");
   const [tipo, setTipo] = useState<TipoCarga>("TRAVE");
   const [posicao, setPosicao] = useState<Posicao>(posicaoAtual);
   const [tag, setTag] = useState("");
   const [erro, setErro] = useState<string | null>(null);
+  const [pagina, setPagina] = useState(0);
+
+  const porPagina = isMobile ? POR_PAGINA_MOBILE : POR_PAGINA;
+  const totalPaginas = Math.max(1, Math.ceil(data.cargas.length / porPagina));
+  const pag = Math.min(pagina, totalPaginas - 1);
+  const linhas = data.cargas.slice(pag * porPagina, pag * porPagina + porPagina);
 
   function cadastrar() {
     const n = nome.trim().toUpperCase();
@@ -61,8 +73,8 @@ export function RegistrarCargas({
 
       <div className="bp" style={{ padding: "20px 22px", flex: "none" }}>
         <Corners />
-        <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
+        <div className="nc-form">
+          <div className="nc-nome">
             <span className="lbl">Nome / código</span>
             <input
               className="inp"
@@ -76,7 +88,7 @@ export function RegistrarCargas({
           </div>
           <div>
             <span className="lbl">Tipo</span>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div className="segrow">
               {TIPOS.map((t) => (
                 <button
                   key={t}
@@ -91,7 +103,7 @@ export function RegistrarCargas({
           </div>
           <div>
             <span className="lbl">Posição</span>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div className="segrow">
               {POSICOES.map((p) => (
                 <button
                   key={p.key}
@@ -107,7 +119,7 @@ export function RegistrarCargas({
         </div>
 
         <div className="nc-acoes">
-          <div style={{ flex: 1, maxWidth: 280 }}>
+          <div className="nc-tag">
             <span className="lbl">Tag RFID (opcional)</span>
             <input
               className="inp"
@@ -116,17 +128,13 @@ export function RegistrarCargas({
               onChange={(e) => setTag(e.target.value)}
             />
           </div>
-          <button
-            className="scan-b"
-            style={{ height: 48 }}
-            onClick={() => {
-              const lida = window.prompt("Encoste a etiqueta ou digite a tag:");
-              if (lida?.trim()) setTag(lida.trim());
-            }}
-          >
-            <IconScan />
-            Ler etiqueta
-          </button>
+          <ScanField
+            rotulo="Ler etiqueta"
+            titulo="Encoste a etiqueta ou digite a tag"
+            placeholder="ex: CG-0142"
+            onLer={setTag}
+            botaoStyle={{ height: 48 }}
+          />
           <button
             className="big-cta"
             style={{ height: 48, fontSize: 18, padding: "0 26px", marginLeft: "auto" }}
@@ -143,22 +151,22 @@ export function RegistrarCargas({
         )}
       </div>
 
-      <div className="bp" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="bp cargas-tbl">
         <Corners />
-        <div style={{ overflow: "auto", flex: 1 }}>
-          <table className="table" style={{ fontSize: 15 }}>
+        <div className="cl-scroll">
+          <table className="table">
             <thead>
               <tr>
-                <th style={{ paddingLeft: 20 }}>Nome</th>
+                <th>Nome</th>
                 <th>Tipo</th>
                 <th>Posição</th>
                 <th>Tag</th>
                 <th>Situação</th>
-                <th style={{ textAlign: "right", paddingRight: 20 }}>Ação</th>
+                <th>Ação</th>
               </tr>
             </thead>
             <tbody>
-              {data.cargas.map((c) => {
+              {linhas.map((c) => {
                 const ordem = data.ordens.find((o) => o.id === c.ordemAtualId);
                 const situacao = !c.ativo
                   ? { texto: "Inativa", estilo: { background: "#e7e7ea", color: "#5d5d60" } }
@@ -170,26 +178,23 @@ export function RegistrarCargas({
                       };
                 return (
                   <tr key={c.id}>
-                    <td style={{ paddingLeft: 20 }}>
-                      <span style={{ font: "600 18px 'Barlow Condensed'", letterSpacing: ".04em" }}>
-                        {c.nome}
-                      </span>
+                    <td data-rot="Nome">
+                      <span className="cgnome">{c.nome}</span>
                     </td>
-                    <td>{c.tipo}</td>
-                    <td>{posLabel(c.posicao)}</td>
-                    <td>
+                    <td data-rot="Tipo">{c.tipo}</td>
+                    <td data-rot="Posição">{posLabel(c.posicao)}</td>
+                    <td data-rot="Tag">
                       <span className="os-tv">{c.tagId ?? "—"}</span>
                     </td>
-                    <td>
+                    <td data-rot="Situação">
                       <span className="lote-pill" style={situacao.estilo}>
                         {situacao.texto}
                       </span>
                     </td>
-                    <td style={{ textAlign: "right", paddingRight: 20 }}>
+                    <td data-rot="Ação">
                       {c.ativo ? (
                         <button
-                          className="btn2"
-                          style={{ padding: "8px 16px", fontSize: 14 }}
+                          className="btn2 cgacao"
                           disabled={ocupado || c.ordemAtualId !== null}
                           title={
                             c.ordemAtualId !== null
@@ -207,8 +212,7 @@ export function RegistrarCargas({
                         </button>
                       ) : (
                         <button
-                          className="btn2"
-                          style={{ padding: "8px 16px", fontSize: 14 }}
+                          className="btn2 cgacao"
                           disabled
                           title={SEM_API.reativarCarga}
                         >
@@ -223,6 +227,23 @@ export function RegistrarCargas({
             </tbody>
           </table>
           {data.cargas.length === 0 && <div className="empty">Nenhuma carga cadastrada ainda.</div>}
+        </div>
+
+        <div className="pager">
+          <button className="pgb" disabled={pag <= 0} onClick={() => setPagina((p) => Math.max(0, p - 1))}>
+            ← Anterior
+          </button>
+          <span className="cmuted">
+            Página {pag + 1} de {totalPaginas} · {data.cargas.length} carga(s)
+          </span>
+          <button
+            className="pgb"
+            style={{ marginLeft: "auto" }}
+            disabled={pag >= totalPaginas - 1}
+            onClick={() => setPagina((p) => p + 1)}
+          >
+            Próxima →
+          </button>
         </div>
       </div>
     </div>

@@ -3,7 +3,7 @@ import * as api from "../api/endpoints";
 import type { LogDTO } from "../api/types";
 import { Corners } from "../components/Blueprint";
 import { Modal, Vazio } from "../components/Modal";
-import { IconScan } from "../components/Icons";
+import { ScanField } from "../components/ScanField";
 import {
   SEL_CHIP, SEL_PICK, dotStyle, etapaStyle, etapaDoLog, isAberto, labelEtapaDoLog, logSub,
 } from "../domain/derive";
@@ -174,13 +174,11 @@ export function VincularModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
   const livres = cargasLivres(ctx.data, ordem.posicao);
   const jaNaOS = cargasDe(ctx.data, osId);
 
-  function lerCarga() {
-    const tag = window.prompt("Encoste a etiqueta ou digite a tag da carga:");
-    if (!tag?.trim()) return;
+  function lerCarga(tag: string) {
     ctx.agir({
       fazer: async () => {
-        const c = await api.cargaPorTag(tag.trim());
-        if (!c) throw new Error(`Nenhuma carga com a tag "${tag.trim()}".`);
+        const c = await api.cargaPorTag(tag);
+        if (!c) throw new Error(`Nenhuma carga com a tag "${tag}".`);
         if (!livres.some((l) => l.id === c.id)) {
           throw new Error(`A carga ${c.nome} não está livre em ${posLabel(ordem!.posicao)}.`);
         }
@@ -219,14 +217,16 @@ export function VincularModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
         </>
       }
     >
-      <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
-        <span className="lbl" style={{ margin: 0 }}>
+      <div className="scanhd">
+        <span className="lbl">
           Cargas livres na posição {posLabel(ordem.posicao)} (toque para vincular)
         </span>
-        <button className="scan-b" style={{ marginLeft: "auto" }} onClick={lerCarga}>
-          <IconScan size={16} />
-          Ler carga
-        </button>
+        <ScanField
+          rotulo="Ler carga"
+          titulo="Encoste a etiqueta ou digite a tag da carga"
+          placeholder="ex: CG-0142"
+          onLer={lerCarga}
+        />
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
         {livres.map((c) => (

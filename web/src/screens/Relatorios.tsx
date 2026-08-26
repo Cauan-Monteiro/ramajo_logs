@@ -28,10 +28,7 @@ export function Relatorios({ data, onErro }: { data: AppData; onErro: (e: unknow
           <div
             key={n}
             className="bp repcard"
-            style={{
-              margin: "0 16px 12px",
-              ...(rel === n ? { background: "#eef6ff", borderColor: "#5980a6" } : {}),
-            }}
+            style={rel === n ? { background: "#eef6ff", borderColor: "#5980a6" } : undefined}
             onClick={() => setRel(n)}
           >
             <Corners />
@@ -55,7 +52,26 @@ export function Relatorios({ data, onErro }: { data: AppData; onErro: (e: unknow
 function HistoricoOS({ data, onErro }: { data: AppData; onErro: (e: unknown) => void }) {
   const [osId, setOsId] = useState<number | null>(null);
   const [logs, setLogs] = useState<LogDTO[]>([]);
+  const [baixando, setBaixando] = useState(false);
+  const [busca, setBusca] = useState("");
   const ordem = data.ordens.find((o) => o.id === osId);
+
+  // A lista crescia sem limite: com algumas centenas de OS, o painel virava uma
+  // parede de botões que empurrava o relatório para fora do ecrã.
+  const termo = busca.trim().toLowerCase();
+  const visiveis = termo
+    ? data.ordens.filter(
+      (o) => osNum(o).toLowerCase().includes(termo) || o.clienteNome.toLowerCase().includes(termo),
+    )
+    : data.ordens;
+
+  function baixarPlanilha(id: number) {
+    setBaixando(true);
+    api
+      .planilhaOrdem(id)
+      .catch(onErro)
+      .finally(() => setBaixando(false));
+  }
 
   useEffect(() => {
     if (osId === null) return;
@@ -67,8 +83,16 @@ function HistoricoOS({ data, onErro }: { data: AppData; onErro: (e: unknown) => 
       <div className="reg-h" style={{ fontSize: 13 }}>
         Histórico completo de uma OS
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 24 }}>
-        {data.ordens.map((o) => (
+      <div className="rel-filtro">
+        <input
+          className="inp"
+          placeholder="Filtrar por nº da OS ou cliente"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+        />
+      </div>
+      <div className="rel-oslist">
+        {visiveis.map((o) => (
           <button
             key={o.id}
             className="pick"
@@ -79,16 +103,27 @@ function HistoricoOS({ data, onErro }: { data: AppData; onErro: (e: unknown) => 
           </button>
         ))}
         {data.ordens.length === 0 && <span className="os-tv">Nenhuma OS cadastrada.</span>}
+        {data.ordens.length > 0 && visiveis.length === 0 && (
+          <span className="os-tv">Nenhuma OS corresponde a "{busca.trim()}".</span>
+        )}
       </div>
 
       {ordem && (
         <div className="bp" style={{ padding: "22px 24px" }}>
           <Corners />
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 6 }}>
+          <div className="rel-oshd">
             <span className="os-num">{osNum(ordem)}</span>
             <span className="os-cli" style={{ fontSize: 19 }}>
               {ordem.clienteNome}
             </span>
+            <button
+              className="pick"
+              style={{ marginLeft: "auto" }}
+              disabled={baixando}
+              onClick={() => baixarPlanilha(ordem.id)}
+            >
+              {baixando ? "Baixando..." : "Baixar planilha"}
+            </button>
           </div>
           <div className="os-tv" style={{ marginBottom: 16 }}>
             Aberta {diaHora(ordem.iniciadaEm)} · {posLabel(ordem.posicao)} ·{" "}
@@ -132,7 +167,7 @@ function OSPorCliente({ data }: { data: AppData }) {
       <div className="reg-h" style={{ fontSize: 13 }}>
         OS por cliente
       </div>
-      <div style={{ maxWidth: 420, marginBottom: 24 }}>
+      <div className="rel-filtro">
         <span className="lbl">Cliente</span>
         <select
           className="inp"
@@ -148,34 +183,36 @@ function OSPorCliente({ data }: { data: AppData }) {
       </div>
       <div className="bp" style={{ minHeight: 120 }}>
         <Corners />
-        <table className="table" style={{ fontSize: 15 }}>
-          <thead>
-            <tr>
-              <th style={{ paddingLeft: 18 }}>OS</th>
-              <th>Posição</th>
-              <th>Aberta em</th>
-              <th>Situação</th>
-              <th style={{ paddingRight: 18 }}>Lotes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {linhas.map((o) => (
-              <tr key={o.id}>
-                <td style={{ paddingLeft: 18, font: "600 17px 'Barlow Condensed'" }}>{osNum(o)}</td>
-                <td>{posLabel(o.posicao)}</td>
-                <td>{diaHora(o.iniciadaEm)}</td>
-                <td>
-                  <span className="lote-pill" style={pillStyle(!o.emProcesso)}>
-                    {situacaoOrdem(o)}
-                  </span>
-                </td>
-                <td style={{ paddingRight: 18 }}>
-                  {o.lotesFinalizados} de {o.totalLotes}
-                </td>
+        <div className="tblwrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th style={{ paddingLeft: 18 }}>OS</th>
+                <th>Posição</th>
+                <th>Aberta em</th>
+                <th>Situação</th>
+                <th style={{ paddingRight: 18 }}>Lotes</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {linhas.map((o) => (
+                <tr key={o.id}>
+                  <td style={{ paddingLeft: 18, font: "600 17px 'Barlow Condensed'" }}>{osNum(o)}</td>
+                  <td>{posLabel(o.posicao)}</td>
+                  <td>{diaHora(o.iniciadaEm)}</td>
+                  <td>
+                    <span className="lote-pill" style={pillStyle(!o.emProcesso)}>
+                      {situacaoOrdem(o)}
+                    </span>
+                  </td>
+                  <td style={{ paddingRight: 18 }}>
+                    {o.lotesFinalizados} de {o.totalLotes}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         {linhas.length === 0 && <Vazio>Nenhuma OS para este cliente.</Vazio>}
       </div>
     </>
@@ -250,31 +287,33 @@ function TempoMedio({ data, onErro }: { data: AppData; onErro: (e: unknown) => v
           </div>
           <div className="bp" style={{ marginTop: 22 }}>
             <Corners />
-            <table className="table" style={{ fontSize: 15 }}>
-              <thead>
-                <tr>
-                  <th style={{ paddingLeft: 18 }}>OS</th>
-                  <th>Cliente</th>
-                  <th>Aberta</th>
-                  <th style={{ paddingRight: 18 }}>Concluída em</th>
-                </tr>
-              </thead>
-              <tbody>
-                {concluidas.map((o) => (
-                  <tr key={o.id}>
-                    <td style={{ paddingLeft: 18, font: "600 17px 'Barlow Condensed'" }}>
-                      {osNum(o)}
-                    </td>
-                    <td>{o.clienteNome}</td>
-                    <td>{diaHora(o.iniciadaEm)}</td>
-                    <td style={{ paddingRight: 18 }}>
-                      {diaHora(o.finalizadaEm)} (
-                      {horasEntre(o.iniciadaEm, o.finalizadaEm as string)})
-                    </td>
+            <div className="tblwrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th style={{ paddingLeft: 18 }}>OS</th>
+                    <th>Cliente</th>
+                    <th>Aberta</th>
+                    <th style={{ paddingRight: 18 }}>Concluída em</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {concluidas.map((o) => (
+                    <tr key={o.id}>
+                      <td style={{ paddingLeft: 18, font: "600 17px 'Barlow Condensed'" }}>
+                        {osNum(o)}
+                      </td>
+                      <td>{o.clienteNome}</td>
+                      <td>{diaHora(o.iniciadaEm)}</td>
+                      <td style={{ paddingRight: 18 }}>
+                        {diaHora(o.finalizadaEm)} (
+                        {horasEntre(o.iniciadaEm, o.finalizadaEm as string)})
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             {concluidas.length === 0 && <Vazio>Nenhuma OS concluída ainda.</Vazio>}
           </div>
         </>

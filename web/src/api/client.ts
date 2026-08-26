@@ -39,14 +39,10 @@ async function parseError(res: Response): Promise<ApiErrorException> {
   return new Cls(codigo, mensagem, res.status);
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  let res: Response;
+/** Todo fetch passa por aqui: API fora do ar vira erro de domínio legível. */
+async function chamar(path: string, init: RequestInit): Promise<Response> {
   try {
-    res = await fetch(path, {
-      method,
-      headers: body === undefined ? {} : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    return await fetch(path, init);
   } catch {
     throw new ApiErrorException(
       "SEM_CONEXAO",
@@ -54,10 +50,53 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       0,
     );
   }
+}
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await chamar(path, {
+    method,
+    headers: body === undefined ? {} : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
   if (!res.ok) throw await parseError(res);
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
+}
+
+/** Nome sugerido pela API no Content-Disposition; a forma UTF-8 tem prioridade. */
+function nomeDoAnexo(disposition: string | null, padrao: string): string {
+  if (!disposition) return padrao;
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  if (utf8) {
+    try {
+      return decodeURIComponent(utf8[1]);
+    } catch {
+      // header malformado: cai para o filename simples
+    }
+  }
+  const simples = /filename="?([^";]+?)"?(;|$)/i.exec(disposition);
+  return simples ? simples[1] : padrao;
+}
+
+/**
+ * Caminho paralelo ao request<T>: a resposta é binária (.xlsx) e não passa por
+ * JSON.parse. O erro, esse sim, continua chegando em JSON — parseError serve.
+ * O download começa sozinho por um <a download> temporário, sem abrir aba.
+ */
+async function baixar(path: string, padrao: string): Promise<void> {
+  const res = await chamar(path, { method: "GET" });
+  if (!res.ok) throw await parseError(res);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nomeDoAnexo(res.headers.get("Content-Disposition"), padrao);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // revogar no próximo tick: o Chrome ainda está lendo a URL durante o click.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 export const http = {
@@ -66,4 +105,5 @@ export const http = {
   put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
+  baixar: (path: string, padrao: string) => baixar(path, padrao),
 };

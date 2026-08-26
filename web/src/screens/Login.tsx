@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import * as api from "../api/endpoints";
 import type { OperadorDTO } from "../api/types";
 import { Bp } from "../components/Blueprint";
-import { IconLogo, IconScan } from "../components/Icons";
+import { IconLogo } from "../components/Icons";
+import { ScanField } from "../components/ScanField";
 import { SEL_PICK } from "../domain/derive";
 import { iniciais } from "../domain/format";
 
@@ -18,8 +19,6 @@ export function Login({
 }) {
   const [operadores, setOperadores] = useState<OperadorDTO[]>([]);
   const [sel, setSel] = useState<number | null>(null);
-  /** `null` = campo do crachá fechado; string = aberto, com o que já foi lido. */
-  const [cracha, setCracha] = useState<string | null>(null);
 
   useEffect(() => {
     api.listarOperadores()
@@ -27,15 +26,8 @@ export function Login({
       .catch(onErro);
   }, [onErro]);
 
-  /**
-   * O crachá entra por um campo desta página, e não por `window.prompt`: num
-   * tablet o prompt é uma caixa do sistema que tapa o ecrã e bloqueia tudo,
-   * e o leitor RFID escreve como um teclado — acaba a leitura com Enter, que
-   * aqui submete o formulário directamente.
-   */
-  async function lerCracha(bruto: string) {
-    const tag = bruto.trim();
-    if (!tag) return;
+  /** O campo em si é o `ScanField`, partilhado com os outros pontos de leitura. */
+  async function lerCracha(tag: string) {
     try {
       const op = await api.operadorPorTag(tag);
       if (!op) {
@@ -46,7 +38,6 @@ export function Login({
         onErro(new Error(`O operador ${op.nome} está inativo.`));
         return;
       }
-      setCracha(null);
       onEntrar(op);
     } catch (e) {
       onErro(e);
@@ -68,45 +59,18 @@ export function Login({
           Início de turno — identifique-se para operar.
         </div>
 
-        {cracha === null ? (
-          <button
-            className="scan-b"
-            style={{ width: "100%", justifyContent: "center", height: 52, fontSize: 15, marginBottom: 20 }}
-            onClick={() => setCracha("")}
-          >
-            <IconScan size={20} />
-            Ler crachá RFID
-          </button>
-        ) : (
-          <form
-            style={{ marginBottom: 20 }}
-            onSubmit={(e) => {
-              e.preventDefault();
-              void lerCracha(cracha);
-            }}
-          >
-            <span className="lbl">Encoste o crachá ou digite a tag</span>
-            <input
-              className="inp"
-              autoFocus
-              value={cracha}
-              placeholder="Tag RFID"
-              onChange={(e) => setCracha(e.target.value)}
-              onKeyDown={(e) => e.key === "Escape" && setCracha(null)}
-            />
-            <div style={{ display: "flex", gap: 9, marginTop: 10 }}>
-              <button type="button" className="btn2" style={{ flex: 1 }} onClick={() => setCracha(null)}>
-                Cancelar
-              </button>
-              <button type="submit" className="btn2 btn2-p" style={{ flex: 1 }} disabled={!cracha.trim()}>
-                Entrar
-              </button>
-            </div>
-          </form>
-        )}
+        <div className="login-scanwrap">
+          <ScanField
+            rotulo="Ler crachá RFID"
+            titulo="Encoste o crachá ou digite a tag"
+            placeholder="Tag RFID"
+            onLer={(tag) => void lerCracha(tag)}
+            botaoClass="scan-b login-scan"
+          />
+        </div>
 
         <span className="lbl">ou selecione o operador</span>
-        <div style={{ display: "flex", flexDirection: "column", gap: 9, maxHeight: 260, overflow: "auto" }}>
+        <div className="login-lista">
           {operadores.map((o) => (
             <button
               key={o.id}
@@ -129,8 +93,7 @@ export function Login({
         </div>
 
         <button
-          className="big-cta"
-          style={{ width: "100%", height: 56, fontSize: 22, marginTop: 22 }}
+          className="big-cta login-cta"
           disabled={!escolhido}
           onClick={() => escolhido && onEntrar(escolhido)}
         >

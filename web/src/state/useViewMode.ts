@@ -2,8 +2,13 @@ import { useEffect, useState } from "react";
 
 export type ViewMode = "desktop" | "mobile";
 
-/** Abaixo disto o quadro de 1180px não cabe — um Galaxy S24 reporta 360px. */
-const MQ = "(max-width: 480px)";
+/**
+ * Abaixo disto o quadro de 1180px não cabe e a lista de cargas precisa virar
+ * cartão. O corte fica acima da largura dos telemóveis (360-430px) porque um
+ * aparelho de 540-640px também lê melhor em cartão do que no layout de mesa
+ * espremido. Acima daqui e até 1259px vale o nível de tablet (bloco 6 do CSS).
+ */
+const MQ = "(max-width: 640px)";
 
 /**
  * Modo de visualização, decidido só pela largura da tela. A media query mora

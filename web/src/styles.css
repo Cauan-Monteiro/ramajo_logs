@@ -65,6 +65,10 @@
 
 /* ═══ bloco 2 — <style> do design ═══ */
 body{margin:0;background:#c9cacc;font-family:"Barlow",system-ui,sans-serif;display:flex;justify-content:center;padding:26px}
+/* O #root é o item flex do body. Sem isto ele fica com `min-width:auto` e não
+   encolhe abaixo do min-content do app: o quadro travava numa largura própria
+   (491px medidos) e transbordava pelos dois lados em qualquer telemóvel. */
+#root{width:100%;min-width:0;display:flex;justify-content:center}
 .tab{width:1180px;min-height:820px;background:#f2f2f3;border:1px solid rgba(0,0,0,.14);box-shadow:0 16px 40px rgba(43,43,45,.26);overflow:hidden;display:flex;flex-direction:column;position:relative}
 .appnav{display:flex;align-items:center;gap:22px;padding:0 26px;height:66px;flex:none;background:#1d2d3d}
 .brand{font:600 19px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.03em;display:flex;align-items:center;gap:10px;color:#f2f2f3}
@@ -191,6 +195,49 @@ body{margin:0;background:#c9cacc;font-family:"Barlow",system-ui,sans-serif;displ
 .cvinc{font:600 15px "Barlow Condensed";color:#416180}
 .navtabs{display:flex;align-items:center;gap:22px}
 .sair-b{padding:12px 14px;font-size:13px;border-color:rgba(255,255,255,.28);color:#cfe0f0;background:transparent}
+.dash-root{flex:1;display:flex;flex-direction:column;min-height:0}
+.pos-stats{margin-left:auto;display:flex;gap:30px}
+.cl-wrap{flex:1;display:flex;flex-direction:column;min-height:0;padding:0}
+.cl-scroll{flex:1;overflow:auto}
+.nc-form{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end}
+.nc-nome{flex:1;min-width:200px}
+.segrow{display:flex;gap:8px;flex-wrap:wrap}
+.nc-tag{flex:1;max-width:280px}
+.cargas-tbl{flex:1;min-height:0;display:flex;flex-direction:column}
+.cargas-tbl .pager{padding:12px 16px}
+.cargas-body .table{font-size:15px}
+.cargas-body .table th:first-child,.cargas-body .table td:first-child{padding-left:20px}
+.cargas-body .table th:last-child,.cargas-body .table td:last-child{padding-right:20px;text-align:right}
+.cgnome{font:600 18px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.04em}
+.cgacao{padding:8px 16px;font-size:14px}
+.login-scanwrap{margin-bottom:20px}
+.login-scan{width:100%;justify-content:center;height:52px;font-size:15px}
+.login-scanwrap .scan-form{min-width:0;flex:none}
+.login-lista{display:flex;flex-direction:column;gap:9px;max-height:260px;overflow:auto}
+.login-cta{width:100%;height:56px;font-size:22px;margin-top:22px}
+.rel-side .repcard{margin:0 16px 12px}
+.rel-oshd{display:flex;align-items:baseline;flex-wrap:wrap;gap:12px;margin-bottom:6px}
+.rel-filtro{max-width:420px;margin-bottom:24px}
+.rel-oslist{display:flex;flex-wrap:wrap;gap:10px;max-height:220px;overflow:auto;margin-bottom:24px}
+.rel-main .table{font-size:15px}
+/* Só a tabela rola de lado; a moldura .bp e os cantos ficam parados. */
+.tblwrap{overflow-x:auto}
+/* Três botões `nowrap` (~400px) numa folha de 360px transbordavam. Agora
+   quebram e dividem a largura entre si. */
+.insp-acoes{display:flex;gap:9px;flex:1 1 100%;flex-wrap:wrap;justify-content:flex-end}
+.insp-acoes .btn2{white-space:nowrap;flex:0 1 auto}
+/* Cabeçalho com rótulo à esquerda e leitor de etiqueta à direita. Quando o
+   leitor abre, ele deixa de ser botão e vira campo — daí o wrap e o 100%. */
+.scanhd{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.scanhd .lbl{margin:0}
+.scanhd .scan-b{margin-left:auto}
+.scanhd .scan-form{flex:1 1 100%;min-width:0;margin-top:4px}
+/* `min-width:0` nos filhos: sem isso um nome de cliente longo estica a faixa. */
+.os-resumo{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
+.os-resumo>div{min-width:0}
+.scan-form{display:flex;flex-direction:column;gap:0;min-width:240px;flex:1 1 260px}
+.scan-acoes{display:flex;gap:9px;margin-top:10px}
+.scan-acoes .btn2{flex:1}
 
 /* ═══ bloco 3 — acréscimos deste app ═══ */
 .toast{position:absolute;top:80px;left:50%;transform:translateX(-50%);z-index:40;display:flex;align-items:center;gap:12px;max-width:min(620px,90%);padding:13px 18px;border:1px solid rgba(180,71,46,.5);background:#fbeeea;color:#8f3421;font:500 15px "Barlow",system-ui,sans-serif;box-shadow:0 8px 22px rgba(43,43,45,.22)}
@@ -207,15 +254,19 @@ body{margin:0;background:#c9cacc;font-family:"Barlow",system-ui,sans-serif;displ
 select.inp{appearance:none;cursor:pointer}
 
 /* ══════════════════════════════════════════════════════════════════════
-   Bloco 4 — modo de visualização mobile (Galaxy S24: 360 × 780 px CSS)
+   Bloco 4 — modo de visualização mobile (até 640px de largura)
 
    Caminho único: a media query vive em state/useViewMode.ts, que põe/tira
    `is-mobile` no <body>. Nada aqui afeta o padrão de 1180 × 820.
+
+   Tudo aqui é fluido de propósito: uma largura fixa (era 360px, medida de um
+   Galaxy S24) deixa tarja cinza dos dois lados num aparelho de 390 ou 430px e
+   transborda num de 320px.
    ══════════════════════════════════════════════════════════════════════ */
 
 /* — moldura — */
 body.is-mobile{padding:0}
-body.is-mobile .tab{width:360px;min-height:780px;border:none;box-shadow:none}
+body.is-mobile .tab{width:100%;max-width:100%;min-height:100dvh;border:none;box-shadow:none}
 
 /* — navegação: marca + operador em cima, abas roláveis embaixo — */
 body.is-mobile .appnav{height:auto;flex-wrap:wrap;gap:10px;padding:8px 12px}
@@ -273,8 +324,8 @@ body.is-mobile .visb span{font-size:10px}
    é longa, e um overlay preso a ele deixaria o rodapé do diálogo no meio da
    tela. Preso à viewport, a folha cobre exatamente o ecrã. */
 body.is-mobile .dlg-bd{
-  position:fixed;top:0;bottom:0;left:50%;right:auto;
-  width:360px;transform:translateX(-50%);padding:0;
+  position:fixed;top:0;right:0;bottom:0;left:0;
+  width:auto;transform:none;padding:0;
 }
 body.is-mobile .dlg{width:100%;height:100%;max-height:100%}
 body.is-mobile .dlg-bdy{flex:1}
@@ -283,30 +334,53 @@ body.is-mobile .dlg-hd h3{font-size:19px}
 body.is-mobile .dlg-bdy{padding:16px}
 body.is-mobile .dlg-ft{padding:12px 16px;gap:8px}
 body.is-mobile .dlg-ft .btn2{flex:1 1 auto;padding:12px 14px}
+body.is-mobile .insp-acoes{justify-content:stretch}
+body.is-mobile .insp-acoes .btn2{flex:1 1 auto;padding:11px 8px;font-size:14px}
+/* O rodapé do Detalhe tem cinco botões. Com `margin-left:auto` a quebra saía
+   desalinhada; aqui todos partilham a linha por igual. */
+body.is-mobile .dlg-ft .btn2{margin-left:0}
+body.is-mobile .os-resumo{gap:14px}
+body.is-mobile .scanhd .scan-b{margin-left:0;flex:1 1 100%;justify-content:center}
 
 /* — login — */
-body.is-mobile .login-card{width:100%;max-width:340px;padding:26px 22px}
+body.is-mobile .login-card{width:100%;max-width:min(420px,100%);padding:26px 22px}
 
-/* — registrar cargas: sem espaço para Tipo e Tag — */
+/* — registrar cargas — */
 body.is-mobile .cargas-body{padding:14px 12px;gap:12px}
-body.is-mobile .cargas-body .table th:nth-child(2),
-body.is-mobile .cargas-body .table td:nth-child(2),
-body.is-mobile .cargas-body .table th:nth-child(4),
-body.is-mobile .cargas-body .table td:nth-child(4){display:none}
+body.is-mobile .nc-form{gap:12px}
+body.is-mobile .nc-nome{flex:1 1 100%}
 body.is-mobile .nc-acoes{flex-wrap:wrap;gap:10px}
 body.is-mobile .nc-acoes>div{max-width:none;flex:1 1 100%}
-body.is-mobile .nc-acoes .big-cta{margin-left:0;flex:1}
-/* fontSize inline no <table> e no nome da carga, daí os !important. */
-body.is-mobile .cargas-body .table{font-size:12px!important}
-body.is-mobile .cargas-body .table th,
-body.is-mobile .cargas-body .table td{padding:7px 4px}
-body.is-mobile .cargas-body .table td:first-child span{font-size:14px!important}
-body.is-mobile .cargas-body .table .lote-pill{padding:4px 6px;font-size:10px}
-body.is-mobile .cargas-body .table .btn2{padding:5px 7px;font-size:11px;white-space:nowrap}
-body.is-mobile .cargas-body .table th:first-child,
-body.is-mobile .cargas-body .table td:first-child{padding-left:12px}
-body.is-mobile .cargas-body .table th:last-child,
-body.is-mobile .cargas-body .table td:last-child{padding-right:12px}
+body.is-mobile .nc-acoes .scan-b,
+body.is-mobile .nc-acoes .big-cta{margin-left:0;flex:1 1 auto;justify-content:center}
+
+/* A tabela de 6 colunas não cabe aqui. A versão anterior escondia Tipo e Tag —
+   dois dados que o operador veio conferir. Em vez de apagar coluna, a linha
+   vira cartão e o cabeçalho de cada célula reaparece ao lado dela, a partir do
+   `data-rot` posto no JSX. Nada se perde e nada rola de lado. */
+body.is-mobile .cargas-body .table,
+body.is-mobile .cargas-body .table tbody,
+body.is-mobile .cargas-body .table tr,
+body.is-mobile .cargas-body .table td{display:block}
+body.is-mobile .cargas-body .table thead{display:none}
+body.is-mobile .cargas-body .table tr{
+  border:1px solid rgba(0,0,0,.14);background:#f7f7f8;
+  padding:11px 13px;margin-bottom:10px;
+}
+body.is-mobile .cargas-body .table td{
+  border:none;padding:3px 0;text-align:left;
+  display:flex;align-items:center;gap:10px;
+}
+body.is-mobile .cargas-body .table td::before{
+  content:attr(data-rot);flex:none;min-width:72px;
+  font:600 10px "Barlow Condensed",system-ui,sans-serif;
+  letter-spacing:.1em;text-transform:uppercase;color:rgba(29,31,32,.5);
+}
+/* O nome é o título do cartão: sem rótulo, e a ação ocupa a largura toda. */
+body.is-mobile .cargas-body .table td:first-child::before{display:none}
+body.is-mobile .cargas-body .table td:first-child{padding-bottom:7px}
+body.is-mobile .cargas-body .table td:last-child{padding-top:9px}
+body.is-mobile .cargas-body .table td:last-child .btn2{flex:1}
 
 /* — relatórios: barra lateral vira faixa no topo — */
 body.is-mobile .rel-body{flex-direction:column}
@@ -315,14 +389,24 @@ body.is-mobile .rel-side{
   padding:12px;border-right:none;border-bottom:1px solid rgba(0,0,0,.16);
 }
 body.is-mobile .rel-side .reg-h{display:none}
-body.is-mobile .rel-side .repcard{margin:0!important;min-width:190px;padding:12px}
+body.is-mobile .rel-side .repcard{margin:0;min-width:180px;padding:12px}
 body.is-mobile .rel-main{padding:16px 12px}
-/* Ecrã administrativo: rolagem lateral aqui é aceitável. */
+body.is-mobile .rel-oshd{gap:8px}
+body.is-mobile .rel-oshd .pick{margin-left:0;width:100%;justify-content:center}
+body.is-mobile .rel-filtro{max-width:none}
+/* Ecrã administrativo: rolagem lateral dentro da tabela é aceitável. O
+   contentor é uma div no JSX (.tblwrap) e não um `.bp:has(.table)`, para não
+   depender de `:has()` no navegador do tablet. */
 body.is-mobile .rel-main .table{min-width:520px}
-body.is-mobile .rel-main .bp:has(.table){overflow-x:auto}
 
-/* — o toast desce: a barra de navegação agora tem duas faixas — */
-body.is-mobile .toast{top:104px;max-width:92%;font-size:14px;padding:11px 14px}
+/* — toast —
+   O deslocamento a partir do topo era um número casado com a altura da nav, que
+   aqui é variável: as abas quebram para uma segunda faixa conforme o operador e
+   as permissões. Ancorado no rodapé, nunca tapa as abas nem depende disso. */
+body.is-mobile .toast{
+  position:fixed;left:8px;right:8px;bottom:12px;top:auto;
+  transform:none;max-width:none;font-size:14px;padding:11px 14px;
+}
 
 /* ══════════════════════════════════════════════════════════════════════
    Bloco 5 — quadro em ecrã inteiro
@@ -350,3 +434,70 @@ body.is-mobile .toast{top:104px;max-width:92%;font-size:14px;padding:11px 14px}
     box-shadow: none;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Bloco 6 — nível tablet (641px … 1259px)
+
+   O bloco 5 já põe a moldura em ecrã inteiro abaixo de 1260px, mas só a
+   moldura: o CONTEÚDO continuava desenhado para 1180px — hub de 4 colunas,
+   rail de 112px, barra de relatórios de 340px, grade de cargas de 5 colunas.
+   Num tablet de 1024px isso transborda; num de 768px, muito.
+
+   Tudo aqui é `body:not(.is-mobile)`, a mesma convenção do bloco 5: abaixo de
+   640px quem manda é o bloco 4, que é mais específico do que estas regras.
+   ══════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 1259px) {
+  /* O nome e o cargo do operador são o que empurra o botão "Sair" para fora da
+     barra — e `.tab{overflow:hidden}` recortava-o em silêncio. As abas passam a
+     rolar de lado quando forem muitas. */
+  body:not(.is-mobile) .appnav{gap:14px;padding:0 16px}
+  body:not(.is-mobile) .navtabs{min-width:0;overflow-x:auto;scrollbar-width:none;gap:14px}
+  body:not(.is-mobile) .navtabs::-webkit-scrollbar{display:none}
+  body:not(.is-mobile) .tabbtn{white-space:nowrap}
+  body:not(.is-mobile) .opchip{flex:none;gap:8px}
+  /* As duas barras fixas são o que faz os 1180px não caberem em 1024px. */
+  body:not(.is-mobile) .visbar{width:96px;padding:14px 8px}
+  body:not(.is-mobile) .rel-side{width:260px}
+  body:not(.is-mobile) .rel-main{padding:22px 24px}
+  body:not(.is-mobile) .dash-main{padding:18px 20px}
+  body:not(.is-mobile) .cargas-body{padding:20px 22px}
+  body:not(.is-mobile) .posbar{padding:20px 22px;gap:18px}
+  body:not(.is-mobile) .pos-stats{gap:22px}
+}
+
+@media (max-width: 1023px) {
+  body:not(.is-mobile) .hub-grid{grid-template-columns:repeat(2,1fr)}
+  body:not(.is-mobile) .hub{min-height:132px}
+  body:not(.is-mobile) .posbar .pname{font-size:34px}
+  body:not(.is-mobile) .posmini .n{font-size:26px}
+  /* "Etapa atual" é a coluna elástica: é dela que sai o espaço. */
+  body:not(.is-mobile) .clhead,
+  body:not(.is-mobile) .clrow{grid-template-columns:32px 1.1fr .8fr 1.4fr .7fr;gap:10px}
+  body:not(.is-mobile) .opinfo{display:none}
+  body:not(.is-mobile) .rel-side{width:220px}
+  body:not(.is-mobile) .rel-side .repcard{margin:0 12px 10px;padding:14px}
+  /* Tabela de relatório é larga por natureza; rola dentro do .tblwrap. */
+  body:not(.is-mobile) .rel-main .table{min-width:620px}
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Bloco 7 — alvos de toque
+
+   Vale para celular e tablet: nestes tamanhos o ponteiro é o dedo. 44px é o
+   mínimo confortável, e vários controlos portados do design ficavam abaixo
+   disso num dos eixos (.tabbtn, .pgb, .ckbox de 20×20).
+   ══════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 1259px) {
+  .tabbtn{min-height:44px;padding:12px 10px}
+  .pgb,.seg-b,.btn2,.scan-b{min-height:44px}
+  .ckbox{width:26px;height:26px}
+  .visb{min-height:56px}
+  .pick{min-height:48px}
+  /* Único checkbox que é alvo por si só (marcar tudo): as linhas da lista têm
+     a linha inteira como alvo. A área de toque cresce sem mexer no desenho. */
+  .clhead .ckbox{position:relative}
+  .clhead .ckbox::after{content:"";position:absolute;inset:-9px}
+}
+

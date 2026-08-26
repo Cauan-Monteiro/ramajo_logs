@@ -20,10 +20,13 @@ import { PassoLoteModal } from "../modals/PassoLote";
 import { ProcessosModal } from "../modals/Processos";
 import type { Ctx, ModalState } from "../modals/tipos";
 
+/* Em ecrã de telemóvel a linha da carga ocupa duas alturas e o polegar rola
+   muito mais: menos linhas por página cansa menos do que uma lista infinita. */
 const POR_PAGINA = 30;
+const POR_PAGINA_MOBILE = 12;
 
 export function Dashboard({
-  data, posicao, operador, isAdmin, agir, ocupado,
+  data, posicao, operador, isAdmin, agir, ocupado, isMobile,
 }: {
   data: AppData;
   posicao: Posicao;
@@ -31,6 +34,7 @@ export function Dashboard({
   isAdmin: boolean;
   agir: Ctx["agir"];
   ocupado: boolean;
+  isMobile: boolean;
 }) {
   const [modal, setModal] = useState<ModalState>(null);
   const [sel, setSel] = useState<string[]>([]);
@@ -52,9 +56,10 @@ export function Dashboard({
     [data.cargas, posicao],
   );
 
-  const totalPaginas = Math.max(1, Math.ceil(cargasNaPos.length / POR_PAGINA));
+  const porPagina = isMobile ? POR_PAGINA_MOBILE : POR_PAGINA;
+  const totalPaginas = Math.max(1, Math.ceil(cargasNaPos.length / porPagina));
   const pag = Math.min(pagina, totalPaginas - 1);
-  const linhas = cargasNaPos.slice(pag * POR_PAGINA, pag * POR_PAGINA + POR_PAGINA);
+  const linhas = cargasNaPos.slice(pag * porPagina, pag * porPagina + porPagina);
 
   const selSet = new Set(sel);
   const todasSelecionadas =
@@ -83,14 +88,14 @@ export function Dashboard({
     setSel((s) => (s.includes(nome) ? s.filter((n) => n !== nome) : [...s, nome]));
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <div className="dash-root">
       <div className="posbar">
         <IconLogo size={40} width={1.4} />
         <div style={{ lineHeight: 1 }}>
           <div className="plbl">Posição em operação</div>
           <div className="pname">{label}</div>
         </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 30 }}>
+        <div className="pos-stats">
           <div className="posmini">
             <span className="n">{emProducao.length}</span>
             <span className="t">OS em processo</span>
@@ -172,10 +177,7 @@ export function Dashboard({
             <i />
           </div>
 
-          <div
-            className="bp"
-            style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, padding: 0 }}
-          >
+          <div className="bp cl-wrap">
             <Corners />
             <div className="clhead">
               <span
@@ -190,7 +192,7 @@ export function Dashboard({
               <span>Desde</span>
             </div>
 
-            <div style={{ flex: 1, overflow: "auto" }}>
+            <div className="cl-scroll">
               {linhas.map((c) => {
                 const ordem = data.ordens.find((o) => o.id === c.ordemAtualId);
                 const aberto = ordem ? logAbertoDaCarga(c.nome, logsDe(data, ordem.id)) : undefined;

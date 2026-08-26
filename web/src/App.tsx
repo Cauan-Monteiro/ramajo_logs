@@ -15,7 +15,7 @@ import type { Ctx } from "./modals/tipos";
 
 export function App() {
   const { operador, entrar, sair, isAdmin } = useSession();
-  useViewMode();
+  const { isMobile } = useViewMode();
   const [aviso, setAviso] = useState<Aviso | null>(null);
   const [aba, setAba] = useState<Aba>("OXIDACAO");
   const [ocupado, setOcupado] = useState(false);
@@ -110,6 +110,7 @@ export function App() {
           posicaoAtual={posicaoAtual}
           agir={agir}
           ocupado={ocupado}
+          isMobile={isMobile}
         />
       ) : aba === "rel" && isAdmin ? (
         <Relatorios data={data} onErro={reportarErro} />
@@ -122,6 +123,7 @@ export function App() {
           isAdmin={isAdmin}
           agir={agir}
           ocupado={ocupado}
+          isMobile={isMobile}
         />
       )}
     </div>

@@ -60,23 +60,17 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
                   {passos}
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 9, flex: "1 1 100%", justifyContent: "flex-end" }}>
-                <button className="btn2" style={{ whiteSpace: "nowrap" }} disabled title={SEM_API.desidrogenizar}>
+              <div className="insp-acoes">
+                <button className="btn2" disabled title={SEM_API.desidrogenizar}>
                   Desidrogenizar
                   <span className="na">Indisponível</span>
                 </button>
-                <button
-                  className="btn2"
-                  style={{ whiteSpace: "nowrap" }}
-                  disabled
-                  title={SEM_API.expedirParcial}
-                >
+                <button className="btn2" disabled title={SEM_API.expedirParcial}>
                   Expedir parcial
                   <span className="na">Indisponível</span>
                 </button>
                 <button
                   className="btn2 btn2-x"
-                  style={{ whiteSpace: "nowrap" }}
                   disabled={ctx.ocupado}
                   onClick={() =>
                     ctx.agir({

@@ -437,16 +437,16 @@ FROM (VALUES
     ('C 08', 'CESTO',  'OXIDACAO'),
     ('C 09', 'CESTO',  'OXIDACAO'),
     ('C 10', 'CESTO',  'OXIDACAO'),
-    ('T 01', 'TAMBOR', 'AUTOMATICA'),
-    ('T 02', 'TAMBOR', 'AUTOMATICA'),
-    ('T 03', 'TAMBOR', 'AUTOMATICA'),
-    ('T 04', 'TAMBOR', 'AUTOMATICA'),
-    ('T 05', 'TAMBOR', 'AUTOMATICA'),
-    ('T 06', 'TAMBOR', 'AUTOMATICA'),
-    ('T 07', 'TAMBOR', 'AUTOMATICA'),
-    ('T 08', 'TAMBOR', 'AUTOMATICA'),
-    ('T 09', 'TAMBOR', 'AUTOMATICA'),
-    ('T 10', 'TAMBOR', 'AUTOMATICA')
+    ('TB 01', 'TAMBOR', 'AUTOMATICA'),
+    ('TB 02', 'TAMBOR', 'AUTOMATICA'),
+    ('TB 03', 'TAMBOR', 'AUTOMATICA'),
+    ('TB 04', 'TAMBOR', 'AUTOMATICA'),
+    ('TB 05', 'TAMBOR', 'AUTOMATICA'),
+    ('TB 06', 'TAMBOR', 'AUTOMATICA'),
+    ('TB 07', 'TAMBOR', 'AUTOMATICA'),
+    ('TB 08', 'TAMBOR', 'AUTOMATICA'),
+    ('TB 09', 'TAMBOR', 'AUTOMATICA'),
+    ('TB 10', 'TAMBOR', 'AUTOMATICA')
 ) AS t(nome, tipo, posicao)
 WHERE NOT EXISTS (
     SELECT 1 FROM cargas c WHERE c.nome = t.nome AND c.tipo = t.tipo

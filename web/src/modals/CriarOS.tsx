@@ -3,7 +3,7 @@ import * as api from "../api/endpoints";
 import type { CargaDTO, Posicao } from "../api/types";
 import { Corners } from "../components/Blueprint";
 import { Modal } from "../components/Modal";
-import { IconScan } from "../components/Icons";
+import { ScanField } from "../components/ScanField";
 import { SEL_CHIP, SEL_PICK, SEL_SEG } from "../domain/derive";
 import { POSICOES, posLabel } from "../domain/format";
 import { cargasLivres } from "../state/useAppData";
@@ -62,13 +62,11 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
   const alternar = (nome: string) =>
     setSel((s) => (s.includes(nome) ? s.filter((n) => n !== nome) : [...s, nome]));
 
-  function lerCarga() {
-    const tag = window.prompt("Encoste a etiqueta ou digite a tag da carga:");
-    if (!tag?.trim()) return;
+  function lerCarga(tag: string) {
     ctx.agir({
       fazer: async () => {
-        const c = await api.cargaPorTag(tag.trim());
-        if (!c) throw new Error(`Nenhuma carga com a tag "${tag.trim()}".`);
+        const c = await api.cargaPorTag(tag);
+        if (!c) throw new Error(`Nenhuma carga com a tag "${tag}".`);
         if (!c.ativo) throw new Error(`A carga ${c.nome} está inativa.`);
         if (c.ordemAtualId !== null) throw new Error(`A carga ${c.nome} já está vinculada a uma OS.`);
         if (c.posicao !== posAlvo) {
@@ -195,14 +193,14 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
-          <span className="lbl" style={{ margin: 0 }}>
-            3 · Vincular cargas (mesma posição)
-          </span>
-          <button className="scan-b" style={{ marginLeft: "auto" }} onClick={lerCarga}>
-            <IconScan size={16} />
-            Ler carga
-          </button>
+        <div className="scanhd">
+          <span className="lbl">3 · Vincular cargas (mesma posição)</span>
+          <ScanField
+            rotulo="Ler carga"
+            titulo="Encoste a etiqueta ou digite a tag da carga"
+            placeholder="ex: CG-0142"
+            onLer={lerCarga}
+          />
         </div>
         {chips}
         <div className="os-tv" style={{ marginTop: 14 }}>
@@ -289,7 +287,7 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
             style={{ padding: "14px 16px", margin: "8px 0 18px", background: "#eef6ff" }}
           >
             <Corners />
-            <div style={{ display: "flex", gap: 26, alignItems: "center", flexWrap: "wrap" }}>
+            <div className="os-resumo">
               <div>
                 <div className="os-tv">OS existente</div>
                 <div className="os-cli" style={{ fontSize: 20 }}>
@@ -310,14 +308,16 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
               </div>
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
-            <span className="lbl" style={{ margin: 0 }}>
+          <div className="scanhd">
+            <span className="lbl">
               Cargas livres em {posLabel(existente.posicao)} para vincular
             </span>
-            <button className="scan-b" style={{ marginLeft: "auto" }} onClick={lerCarga}>
-              <IconScan size={16} />
-              Ler carga
-            </button>
+            <ScanField
+              rotulo="Ler carga"
+              titulo="Encoste a etiqueta ou digite a tag da carga"
+              placeholder="ex: CG-0142"
+              onLer={lerCarga}
+            />
           </div>
           {chips}
           <div className="os-tv" style={{ marginTop: 14 }}>

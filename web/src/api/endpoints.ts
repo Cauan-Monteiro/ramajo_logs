@@ -51,6 +51,11 @@ export const listarOrdens = (emProcesso = false) =>
 
 export const buscarOrdem = (id: number) => http.get<OrdemDetalheDTO>(`/api/ordens/${id}`);
 export const historicoOrdem = (id: number) => http.get<LogDTO[]>(`/api/ordens/${id}/logs`);
+
+/** Baixa a OS inteira em .xlsx; o nome do arquivo vem do Content-Disposition. */
+export const planilhaOrdem = (id: number) =>
+  http.baixar(`/api/ordens/${id}/planilha`, `ordem-servico-${id}.xlsx`);
+
 export const lotesOrdem = (id: number) => http.get<LoteDTO[]>(`/api/ordens/${id}/lotes`);
 
 export const criarOrdem = (dto: {
