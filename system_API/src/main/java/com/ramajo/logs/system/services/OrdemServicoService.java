@@ -66,6 +66,10 @@ public class OrdemServicoService {
         OrdemServico os = new OrdemServico(idExterno ,cliente, posicao);
         os.setIniciadaPor(operador);
 
+        if (osRepo.findByIdExterno(idExterno).isPresent()) {
+            throw new OrdemIdExternoExistente(idExterno);
+        }
+
         OrdemServico salva = osRepo.save(os);
 
         // Toda OS já começa no lote 1. Se ela for produzida de uma vez só,
