@@ -1,46 +1,43 @@
 package com.ramajo.logs.system.services;
 
+import static com.ramajo.logs.system.services.EscritorPlanilha.ajustar;
+import static com.ramajo.logs.system.services.EscritorPlanilha.cabecalhoTabela;
+import static com.ramajo.logs.system.services.EscritorPlanilha.data;
+import static com.ramajo.logs.system.services.EscritorPlanilha.duracao;
+import static com.ramajo.logs.system.services.EscritorPlanilha.imprimivel;
+import static com.ramajo.logs.system.services.EscritorPlanilha.inserirLogo;
+import static com.ramajo.logs.system.services.EscritorPlanilha.nome;
+import static com.ramajo.logs.system.services.EscritorPlanilha.rotulo;
+import static com.ramajo.logs.system.services.EscritorPlanilha.situacaoDaEtapa;
+import static com.ramajo.logs.system.services.EscritorPlanilha.situacaoDaOrdem;
+import static com.ramajo.logs.system.services.EscritorPlanilha.texto;
+import static com.ramajo.logs.system.services.EscritorPlanilha.valorData;
+import static com.ramajo.logs.system.services.EscritorPlanilha.valorDuracao;
+import static com.ramajo.logs.system.services.EscritorPlanilha.valorTexto;
+
 import com.ramajo.logs.system.entities.Carga;
 import com.ramajo.logs.system.entities.Log;
 import com.ramajo.logs.system.entities.Lote;
-import com.ramajo.logs.system.entities.Operador;
 import com.ramajo.logs.system.entities.OrdemServico;
 import com.ramajo.logs.system.exceptions.RecursoNaoEncontradoException;
 import com.ramajo.logs.system.repositories.LogRepository;
 import com.ramajo.logs.system.repositories.LoteRepository;
 import com.ramajo.logs.system.repositories.OrdemServicoRepository;
 import com.ramajo.logs.system.util.DataHoraBr;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.time.Instant;
-import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import javax.imageio.ImageIO;
 import lombok.RequiredArgsConstructor;
-import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.CellStyle;
-import org.apache.poi.ss.usermodel.ClientAnchor;
-import org.apache.poi.ss.usermodel.Drawing;
-import org.apache.poi.ss.usermodel.FillPatternType;
-import org.apache.poi.ss.usermodel.Font;
-import org.apache.poi.ss.usermodel.HorizontalAlignment;
-import org.apache.poi.ss.usermodel.Picture;
-import org.apache.poi.ss.usermodel.PrintSetup;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.util.CellRangeAddress;
-import org.apache.poi.xssf.usermodel.XSSFCellStyle;
-import org.apache.poi.xssf.usermodel.XSSFColor;
-import org.apache.poi.xssf.usermodel.XSSFFont;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -59,26 +56,23 @@ import org.springframework.transaction.annotation.Transactional;
  *               filtrar ou pivotar. O autofiltro vive só aqui: numa aba com
  *               blocos e subtotais ele esconderia os subtítulos junto.
  *
- * Duas escolhas de tipagem sustentam tudo isso:
- *   - horário vira célula de DATA de verdade (valor numérico + formato
- *     dd/mm/yyyy hh:mm:ss), não texto — o Excel ordena, filtra e subtrai;
- *   - duração vira fração de dia com formato [h]:mm:ss — some, tira média, e
- *     um total acima de 24h aparece como 32:15:00 em vez de voltar ao zero.
+ * Os estilos e a escrita de célula (data de verdade, duração somável) moram em
+ * {@link EstilosPlanilha} e {@link EscritorPlanilha}, compartilhados com os
+ * demais relatórios.
  */
 @Service
 @RequiredArgsConstructor
 public class PlanilhaOrdemServicoService {
 
-    private static final String FORMATO_DATA = "dd/mm/yyyy hh:mm:ss";
-    /** Os colchetes é que impedem as horas de estourarem em 24. */
-    private static final String FORMATO_DURACAO = "[h]:mm:ss";
-
-    private static final String CAMINHO_LOGO = "/relatorio/logo-ramajo.png";
-
     /** Colunas da aba Relatório: Processo, Etapa, Responsável, Início, Fim, Duração, Situação. */
     private static final int COLUNAS = 7;
     private static final int COL_DURACAO = 5;
     private static final int[] LARGURAS = {32, 18, 24, 21, 21, 12, 15};
+    private static final double ALTURA_TITULO = 48;
+    /** Mesma largura de logo nos dois relatórios, independente da coluna A. */
+    private static final int LARGURA_LOGO = 224;
+    /** Onde começa o texto do título: a coluna A é do logo. */
+    private static final int COL_TITULO = 1;
 
     private final OrdemServicoRepository osRepo;
     private final LogRepository logRepo;
@@ -95,7 +89,7 @@ public class PlanilhaOrdemServicoService {
         try (XSSFWorkbook wb = new XSSFWorkbook();
              ByteArrayOutputStream saida = new ByteArrayOutputStream()) {
 
-            Estilos estilos = new Estilos(wb);
+            EstilosPlanilha estilos = new EstilosPlanilha(wb);
             abaRelatorio(wb, estilos, os, lotes, logs);
             abaLotes(wb, estilos, lotes);
             abaDados(wb, estilos, logs);
@@ -115,7 +109,7 @@ public class PlanilhaOrdemServicoService {
 
     // ------------------------------------------------------------- relatório
 
-    private void abaRelatorio(XSSFWorkbook wb, Estilos e, OrdemServico os,
+    private void abaRelatorio(XSSFWorkbook wb, EstilosPlanilha e, OrdemServico os,
                               List<Lote> lotes, List<Log> logs) {
         Sheet aba = wb.createSheet("Relatório");
         for (int i = 0; i < COLUNAS; i++) {
@@ -152,28 +146,29 @@ public class PlanilhaOrdemServicoService {
     private Map<Long, List<Log>> agruparPorCarga(List<Log> logs) {
         Map<Long, List<Log>> porCarga = new LinkedHashMap<>();
         for (Log log : logs) {
-            porCarga.computeIfAbsent(log.getCarga().getId(), id -> new java.util.ArrayList<>())
+            porCarga.computeIfAbsent(log.getCarga().getId(), id -> new ArrayList<>())
                     .add(log);
         }
         return porCarga;
     }
 
-    private void titulo(XSSFWorkbook wb, Sheet aba, Estilos e, int[] linha) {
+    private void titulo(XSSFWorkbook wb, Sheet aba, EstilosPlanilha e, int[] linha) {
         Row r = aba.createRow(linha[0]);
-        r.setHeightInPoints(48);
+        r.setHeightInPoints((float) ALTURA_TITULO);
         for (int i = 0; i < COLUNAS; i++) {
             r.createCell(i).setCellStyle(e.titulo);
         }
-        // A coluna A fica reservada ao logo; o texto começa em B para os dois
-        // não disputarem a mesma célula.
-        r.getCell(1).setCellValue("RELATÓRIO DE ORDEM DE SERVIÇO");
-        aba.addMergedRegion(new CellRangeAddress(linha[0], linha[0], 1, COLUNAS - 1));
+        // As primeiras colunas ficam reservadas ao logo; o texto começa depois
+        // delas para os dois não disputarem o mesmo espaço.
+        r.getCell(COL_TITULO).setCellValue("RELATÓRIO DE ORDEM DE SERVIÇO");
+        aba.addMergedRegion(
+                new CellRangeAddress(linha[0], linha[0], COL_TITULO, COLUNAS - 1));
 
-        inserirLogo(wb, aba, linha[0]);
+        inserirLogo(wb, aba, linha[0], LARGURA_LOGO, ALTURA_TITULO);
         linha[0] += 2;
     }
 
-    private void identificacao(Sheet aba, Estilos e, int[] linha, OrdemServico os) {
+    private void identificacao(Sheet aba, EstilosPlanilha e, int[] linha, OrdemServico os) {
         parTexto(aba, e, linha[0], "OS", String.valueOf(os.getId()),
                 "Situação", situacaoDaOrdem(os));
         parTexto(aba, e, linha[0] + 1, "Cliente", os.getCliente().getNome(),
@@ -203,7 +198,7 @@ public class PlanilhaOrdemServicoService {
         linha[0] += 6;
     }
 
-    private void indicadores(Sheet aba, Estilos e, int[] linha, List<Lote> lotes,
+    private void indicadores(Sheet aba, EstilosPlanilha e, int[] linha, List<Lote> lotes,
                              List<Log> logs, int totalCargas) {
         long lotesFinalizados = lotes.stream().filter(Lote::isFinalizado).count();
         long emAberto = logs.stream()
@@ -238,7 +233,7 @@ public class PlanilhaOrdemServicoService {
         linha[0] += 3;
     }
 
-    private void blocoDaCarga(Sheet aba, Estilos e, int[] linha, List<Log> daCarga) {
+    private void blocoDaCarga(Sheet aba, EstilosPlanilha e, int[] linha, List<Log> daCarga) {
         Carga carga = daCarga.get(0).getCarga();
 
         Row rTitulo = aba.createRow(linha[0]);
@@ -278,7 +273,7 @@ public class PlanilhaOrdemServicoService {
         linha[0]++; // respiro entre blocos
     }
 
-    private void subtotal(Sheet aba, Estilos e, int[] linha, int primeira, int ultima) {
+    private void subtotal(Sheet aba, EstilosPlanilha e, int[] linha, int primeira, int ultima) {
         Row r = aba.createRow(linha[0]++);
         for (int i = 0; i < COLUNAS; i++) {
             r.createCell(i).setCellStyle(i == COL_DURACAO ? e.duracaoSubtotal : e.rotuloSubtotal);
@@ -291,7 +286,7 @@ public class PlanilhaOrdemServicoService {
                 "SUM(F" + (primeira + 1) + ":F" + (ultima + 1) + ")");
     }
 
-    private void rodape(Sheet aba, Estilos e, int[] linha, OrdemServico os) {
+    private void rodape(Sheet aba, EstilosPlanilha e, int[] linha, OrdemServico os) {
         Row r = aba.createRow(linha[0]);
         for (int i = 0; i < COLUNAS; i++) {
             r.createCell(i).setCellStyle(e.rodape);
@@ -307,7 +302,7 @@ public class PlanilhaOrdemServicoService {
 
     // ------------------------------------------------------------ outras abas
 
-    private void abaLotes(Workbook wb, Estilos e, List<Lote> lotes) {
+    private void abaLotes(Workbook wb, EstilosPlanilha e, List<Lote> lotes) {
         Sheet aba = wb.createSheet("Lotes");
         int[] linha = {0};
         cabecalhoTabela(aba, e, linha, "Número", "Iniciado em", "Finalizado em",
@@ -331,7 +326,7 @@ public class PlanilhaOrdemServicoService {
     }
 
     /** Lista plana, com o UUID: é a aba de quem vai filtrar, pivotar ou rastrear. */
-    private void abaDados(Workbook wb, Estilos e, List<Log> logs) {
+    private void abaDados(Workbook wb, EstilosPlanilha e, List<Log> logs) {
         Sheet aba = wb.createSheet("Dados");
         int[] linha = {0};
         cabecalhoTabela(aba, e, linha, "ID", "Carga", "Tipo da carga", "Posição da carga",
@@ -364,16 +359,7 @@ public class PlanilhaOrdemServicoService {
 
     // --------------------------------------------------------------- escrita
 
-    private void cabecalhoTabela(Sheet aba, Estilos e, int[] linha, String... titulos) {
-        Row r = aba.createRow(linha[0]++);
-        for (int i = 0; i < titulos.length; i++) {
-            Cell c = r.createCell(i);
-            c.setCellValue(titulos[i]);
-            c.setCellStyle(e.cabecalhoTabela);
-        }
-    }
-
-    private void parTexto(Sheet aba, Estilos e, int linha, String rot1, String val1,
+    private void parTexto(Sheet aba, EstilosPlanilha e, int linha, String rot1, String val1,
                           String rot2, String val2) {
         Row r = aba.createRow(linha);
         rotulo(r, e, 0, rot1);
@@ -394,132 +380,6 @@ public class PlanilhaOrdemServicoService {
         aba.addMergedRegion(new CellRangeAddress(linha, linha, 4, COLUNAS - 1));
     }
 
-    private void rotulo(Row r, Estilos e, int coluna, String valor) {
-        Cell c = r.createCell(coluna);
-        c.setCellValue(valor);
-        c.setCellStyle(e.rotuloResumo);
-    }
-
-    private void valorTexto(Row r, Estilos e, int coluna, String valor) {
-        Cell c = r.createCell(coluna);
-        c.setCellStyle(e.valorResumo);
-        if (valor != null && !valor.isEmpty()) {
-            c.setCellValue(valor);
-        }
-    }
-
-    private void valorData(Row r, Estilos e, int coluna, Instant valor) {
-        Cell c = r.createCell(coluna);
-        c.setCellStyle(e.valorResumoData);
-        LocalDateTime local = DataHoraBr.local(valor);
-        if (local != null) {
-            c.setCellValue(local);
-        }
-    }
-
-    private void valorDuracao(Row r, Estilos e, int coluna, Double valor) {
-        Cell c = r.createCell(coluna);
-        c.setCellStyle(e.valorResumoDuracao);
-        if (valor != null) {
-            c.setCellValue(valor);
-        }
-    }
-
-    // Valor ausente vira célula VAZIA (não "null", não "-"): o filtro do Excel
-    // depende disso para separar "sem valor" de texto qualquer, e o SOMA dos
-    // subtotais depende para não contar etapa em aberto como zero. A célula em
-    // si é criada mesmo assim, senão ela perde borda e zebra.
-    private void texto(Row r, Estilos e, int coluna, String valor, boolean zebra, boolean cancelada) {
-        Cell c = r.createCell(coluna);
-        c.setCellStyle(e.texto(zebra, cancelada));
-        if (valor != null && !valor.isEmpty()) {
-            c.setCellValue(valor);
-        }
-    }
-
-    private void data(Row r, Estilos e, int coluna, Instant valor, boolean zebra, boolean cancelada) {
-        Cell c = r.createCell(coluna);
-        c.setCellStyle(e.data(zebra, cancelada));
-        LocalDateTime local = DataHoraBr.local(valor);
-        if (local != null) {
-            c.setCellValue(local);
-        }
-    }
-
-    private void duracao(Row r, Estilos e, int coluna, Double valor, boolean zebra, boolean cancelada) {
-        Cell c = r.createCell(coluna);
-        c.setCellStyle(e.duracao(zebra, cancelada));
-        if (valor != null) {
-            c.setCellValue(valor);
-        }
-    }
-
-    private void ajustar(Sheet aba, int colunas) {
-        for (int i = 0; i < colunas; i++) {
-            aba.autoSizeColumn(i);
-        }
-    }
-
-    /** Paisagem e ajustada à largura da folha — o relatório costuma ser impresso. */
-    private void imprimivel(Sheet aba) {
-        aba.setFitToPage(true);
-        PrintSetup impressao = aba.getPrintSetup();
-        impressao.setLandscape(true);
-        impressao.setFitWidth((short) 1);
-        impressao.setFitHeight((short) 0);
-    }
-
-    /**
-     * O logo é opcional de propósito: se o PNG não estiver no classpath (ou não
-     * for legível), o relatório sai só com o título em vez de derrubar a rota.
-     */
-    private void inserirLogo(XSSFWorkbook wb, Sheet aba, int linha) {
-        try (InputStream entrada = getClass().getResourceAsStream(CAMINHO_LOGO)) {
-            if (entrada == null) {
-                return;
-            }
-            byte[] bytes = entrada.readAllBytes();
-            BufferedImage imagem = ImageIO.read(new ByteArrayInputStream(bytes));
-            if (imagem == null || imagem.getWidth() == 0 || imagem.getHeight() == 0) {
-                return;
-            }
-            int tipo = tipoDaImagem(bytes);
-            if (tipo == 0) {
-                return;
-            }
-            int indice = wb.addPicture(bytes, tipo);
-            Drawing<?> desenho = aba.createDrawingPatriarch();
-            ClientAnchor ancora = wb.getCreationHelper().createClientAnchor();
-            ancora.setCol1(0);
-            ancora.setRow1(linha);
-            Picture figura = desenho.createPicture(ancora, indice);
-            // resize(escala) parte do tamanho nativo em pixels; a escala é a que
-            // couber na célula A1 (largura da coluna x altura da linha do título).
-            double alvoLargura = LARGURAS[0] * 7.0;
-            double alvoAltura = 48 * 96.0 / 72.0;
-            figura.resize(Math.min(alvoLargura / imagem.getWidth(),
-                    alvoAltura / imagem.getHeight()));
-        } catch (IOException | RuntimeException ignorado) {
-            // relatório sem logo continua sendo um relatório válido
-        }
-    }
-
-    /**
-     * O formato sai dos bytes, não da extensão: um JPEG salvo como .png é comum
-     * e o Excel só desenha a figura se o tipo declarado bater com o conteúdo.
-     * Formato desconhecido devolve 0 e o logo é omitido.
-     */
-    private int tipoDaImagem(byte[] bytes) {
-        if (bytes.length > 8 && (bytes[0] & 0xFF) == 0x89 && bytes[1] == 'P'
-                && bytes[2] == 'N' && bytes[3] == 'G') {
-            return Workbook.PICTURE_TYPE_PNG;
-        }
-        if (bytes.length > 3 && (bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xD8) {
-            return Workbook.PICTURE_TYPE_JPEG;
-        }
-        return 0;
-    }
-
     // ----------------------------------------------------------------- apoio
 
     private String descricaoDaCarga(Carga carga) {
@@ -532,183 +392,4 @@ public class PlanilhaOrdemServicoService {
         return sb.toString();
     }
 
-    private String situacaoDaOrdem(OrdemServico os) {
-        if (os.isCancelada()) {
-            return "Cancelada";
-        }
-        return os.isFinalizada() ? "Finalizada" : "Em processo";
-    }
-
-    private String situacaoDaEtapa(Log log) {
-        if (log.isCancelado()) {
-            return "Cancelada";
-        }
-        return log.getFinalizadoEm() == null ? "Em andamento" : "Concluída";
-    }
-
-    private String nome(Operador operador) {
-        return operador == null ? "" : operador.getNome();
-    }
-
-    /**
-     * CellStyle é um recurso do workbook (o formato tem limite de ~64k por
-     * arquivo), então cada estilo nasce uma vez e é reaproveitado em todas as
-     * células — nunca dentro do laço. As variantes de linha (zebra, cancelada)
-     * são resolvidas pelos métodos texto/data/duracao, para não espalhar `if`
-     * de estilo pelo código de escrita.
-     */
-    private static final class Estilos {
-
-        private static final byte[] AZUL_ESCURO = {0x1F, 0x4E, 0x79};
-        private static final byte[] AZUL_MEDIO = {0x2E, 0x75, (byte) 0xB6};
-        private static final byte[] AZUL_CLARO = {(byte) 0xEA, (byte) 0xF1, (byte) 0xF8};
-        private static final byte[] AZUL_BORDA = {(byte) 0xB4, (byte) 0xC6, (byte) 0xE7};
-        private static final byte[] VERMELHO_CLARO = {(byte) 0xFD, (byte) 0xEA, (byte) 0xEA};
-
-        private final CellStyleTrio normal;
-        private final CellStyleTrio cancelado;
-
-        private final XSSFCellStyle titulo;
-        private final XSSFCellStyle rotuloResumo;
-        private final XSSFCellStyle valorResumo;
-        private final XSSFCellStyle valorResumoData;
-        private final XSSFCellStyle valorResumoDuracao;
-        private final XSSFCellStyle indicadorLegenda;
-        private final XSSFCellStyle indicadorValor;
-        private final XSSFCellStyle subtituloCarga;
-        private final XSSFCellStyle cabecalhoTabela;
-        private final XSSFCellStyle rotuloSubtotal;
-        private final XSSFCellStyle duracaoSubtotal;
-        private final XSSFCellStyle rodape;
-        private final XSSFCellStyle rodapeData;
-
-        private Estilos(XSSFWorkbook wb) {
-            XSSFColor escuro = cor(AZUL_ESCURO);
-            XSSFColor medio = cor(AZUL_MEDIO);
-            XSSFColor claro = cor(AZUL_CLARO);
-            XSSFColor cancelada = cor(VERMELHO_CLARO);
-
-            XSSFFont fBranca = fonte(wb, 11, true, null);
-            fBranca.setColor(cor(new byte[]{(byte) 0xFF, (byte) 0xFF, (byte) 0xFF}));
-            XSSFFont fTitulo = fonte(wb, 16, true, null);
-            fTitulo.setColor(cor(new byte[]{(byte) 0xFF, (byte) 0xFF, (byte) 0xFF}));
-            XSSFFont fRotulo = fonte(wb, 11, true, escuro);
-            XSSFFont fNormal = fonte(wb, 11, false, null);
-            XSSFFont fIndicador = fonte(wb, 16, true, escuro);
-            XSSFFont fRiscada = fonte(wb, 11, false, null);
-            fRiscada.setStrikeout(true);
-            XSSFFont fRodape = fonte(wb, 9, false, null);
-            fRodape.setItalic(true);
-
-            titulo = criar(wb, fTitulo, escuro, null, false, HorizontalAlignment.LEFT);
-            titulo.setVerticalAlignment(VerticalAlignment.CENTER);
-
-            rotuloResumo = criar(wb, fRotulo, null, null, false, HorizontalAlignment.LEFT);
-            valorResumo = criar(wb, fNormal, null, null, false, HorizontalAlignment.LEFT);
-            valorResumoData = criar(wb, fNormal, null, FORMATO_DATA, false, HorizontalAlignment.LEFT);
-            valorResumoDuracao = criar(wb, fNormal, null, FORMATO_DURACAO, false, HorizontalAlignment.LEFT);
-
-            indicadorLegenda = criar(wb, fBranca, medio, null, true, HorizontalAlignment.CENTER);
-            indicadorValor = criar(wb, fIndicador, claro, null, true, HorizontalAlignment.CENTER);
-            indicadorValor.setVerticalAlignment(VerticalAlignment.CENTER);
-
-            subtituloCarga = criar(wb, fBranca, medio, null, false, HorizontalAlignment.LEFT);
-            subtituloCarga.setVerticalAlignment(VerticalAlignment.CENTER);
-
-            cabecalhoTabela = criar(wb, fBranca, escuro, null, true, HorizontalAlignment.CENTER);
-
-            rotuloSubtotal = criar(wb, fRotulo, null, null, true, HorizontalAlignment.RIGHT);
-            duracaoSubtotal = criar(wb, fRotulo, null, FORMATO_DURACAO, true, HorizontalAlignment.CENTER);
-
-            rodape = criar(wb, fRodape, null, null, false, HorizontalAlignment.LEFT);
-            rodapeData = criar(wb, fRodape, null, FORMATO_DATA, false, HorizontalAlignment.LEFT);
-
-            normal = new CellStyleTrio(
-                    criar(wb, fNormal, null, null, true, HorizontalAlignment.LEFT),
-                    criar(wb, fNormal, claro, null, true, HorizontalAlignment.LEFT),
-                    criar(wb, fNormal, null, FORMATO_DATA, true, HorizontalAlignment.CENTER),
-                    criar(wb, fNormal, claro, FORMATO_DATA, true, HorizontalAlignment.CENTER),
-                    criar(wb, fNormal, null, FORMATO_DURACAO, true, HorizontalAlignment.CENTER),
-                    criar(wb, fNormal, claro, FORMATO_DURACAO, true, HorizontalAlignment.CENTER));
-
-            // Cancelada ignora a zebra: o fundo avermelhado já é o sinal, e
-            // alternar por cima dele só embaralharia a leitura.
-            XSSFCellStyle cTexto = criar(wb, fRiscada, cancelada, null, true, HorizontalAlignment.LEFT);
-            XSSFCellStyle cData = criar(wb, fRiscada, cancelada, FORMATO_DATA, true, HorizontalAlignment.CENTER);
-            XSSFCellStyle cDuracao = criar(wb, fRiscada, cancelada, FORMATO_DURACAO, true, HorizontalAlignment.CENTER);
-            cancelado = new CellStyleTrio(cTexto, cTexto, cData, cData, cDuracao, cDuracao);
-        }
-
-        private CellStyle texto(boolean zebra, boolean cancelada) {
-            return (cancelada ? cancelado : normal).texto(zebra);
-        }
-
-        private CellStyle data(boolean zebra, boolean cancelada) {
-            return (cancelada ? cancelado : normal).data(zebra);
-        }
-
-        private CellStyle duracao(boolean zebra, boolean cancelada) {
-            return (cancelada ? cancelado : normal).duracao(zebra);
-        }
-
-        private static XSSFColor cor(byte[] rgb) {
-            return new XSSFColor(rgb, null);
-        }
-
-        private static XSSFFont fonte(XSSFWorkbook wb, int tamanho, boolean negrito, XSSFColor cor) {
-            XSSFFont f = wb.createFont();
-            f.setFontHeightInPoints((short) tamanho);
-            f.setBold(negrito);
-            if (cor != null) {
-                f.setColor(cor);
-            }
-            return f;
-        }
-
-        private static XSSFCellStyle criar(XSSFWorkbook wb, Font fonte, XSSFColor fundo,
-                                           String formato, boolean bordas,
-                                           HorizontalAlignment alinhamento) {
-            XSSFCellStyle estilo = wb.createCellStyle();
-            estilo.setFont(fonte);
-            estilo.setAlignment(alinhamento);
-            if (fundo != null) {
-                estilo.setFillForegroundColor(fundo);
-                estilo.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            }
-            if (formato != null) {
-                estilo.setDataFormat(wb.createDataFormat().getFormat(formato));
-            }
-            if (bordas) {
-                XSSFColor linha = cor(AZUL_BORDA);
-                estilo.setBorderTop(BorderStyle.THIN);
-                estilo.setBorderBottom(BorderStyle.THIN);
-                estilo.setBorderLeft(BorderStyle.THIN);
-                estilo.setBorderRight(BorderStyle.THIN);
-                estilo.setTopBorderColor(linha);
-                estilo.setBottomBorderColor(linha);
-                estilo.setLeftBorderColor(linha);
-                estilo.setRightBorderColor(linha);
-            }
-            return estilo;
-        }
-
-    }
-
-    /** As três formas de célula de dado (texto, data, duração) x zebra. */
-    private record CellStyleTrio(XSSFCellStyle texto, XSSFCellStyle textoZebra,
-                                 XSSFCellStyle data, XSSFCellStyle dataZebra,
-                                 XSSFCellStyle duracao, XSSFCellStyle duracaoZebra) {
-
-        private XSSFCellStyle texto(boolean zebra) {
-            return zebra ? textoZebra : texto;
-        }
-
-        private XSSFCellStyle data(boolean zebra) {
-            return zebra ? dataZebra : data;
-        }
-
-        private XSSFCellStyle duracao(boolean zebra) {
-            return zebra ? duracaoZebra : duracao;
-        }
-    }
 }

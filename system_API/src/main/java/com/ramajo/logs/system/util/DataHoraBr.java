@@ -2,6 +2,7 @@ package com.ramajo.logs.system.util;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 
@@ -20,9 +21,48 @@ public final class DataHoraBr {
     private DataHoraBr() {
     }
 
+    /**
+     * A meia-noite daquele dia no fuso da fábrica, como instante.
+     *
+     * Um filtro por período chega como data de calendário ("de 01/08 a 27/08"),
+     * mas o domínio guarda Instant em UTC — a fronteira do dia depende do fuso,
+     * e é aqui que ela é resolvida.
+     */
+    public static Instant inicioDoDia(LocalDate dia) {
+        return dia.atStartOfDay(ZONA).toInstant();
+    }
+
+    /**
+     * A meia-noite do dia SEGUINTE — o fim exclusivo de uma janela que inclui o
+     * dia inteiro. Comparar com `< fim` em vez de `<= 23:59:59` não deixa buraco
+     * para os milissegundos que o timestamptz guarda.
+     */
+    public static Instant inicioDoDiaSeguinte(LocalDate dia) {
+        return dia.plusDays(1).atStartOfDay(ZONA).toInstant();
+    }
+
     /** Null-safe: instante ausente (passo em aberto) continua ausente. */
     public static LocalDateTime local(Instant instante) {
         return instante == null ? null : LocalDateTime.ofInstant(instante, ZONA);
+    }
+
+    /** Só a data de calendário, para quando a planilha separa dia e hora em colunas. */
+    public static LocalDate dia(Instant instante) {
+        return instante == null ? null : LocalDate.ofInstant(instante, ZONA);
+    }
+
+    /**
+     * Só a hora do dia, como fração de dia — a unidade de tempo do Excel.
+     *
+     * Escrever o LocalDateTime inteiro numa célula formatada hh:mm:ss mostraria
+     * a mesma coisa, mas arrastaria a data escondida junto: ordenar a coluna
+     * agruparia por dia antes de por hora, e comparar duas linhas de dias
+     * diferentes daria errado. Aqui a célula é de fato uma hora.
+     */
+    public static Double horaDoDia(Instant instante) {
+        return instante == null
+                ? null
+                : LocalDateTime.ofInstant(instante, ZONA).toLocalTime().toSecondOfDay() / 86_400d;
     }
 
     /**

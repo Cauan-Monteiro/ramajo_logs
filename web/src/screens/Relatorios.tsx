@@ -7,7 +7,7 @@ import { etapaStyle, etapaDoLog, labelEtapaDoLog, logSub, pillStyle, situacaoOrd
 import { diaHora, duracao, hhmm, horasEntre, osNum, posLabel } from "../domain/format";
 import type { AppData } from "../state/useAppData";
 
-type Rel = 1 | 2 | 3;
+type Rel = 1 | 2 | 3 | 4;
 
 export function Relatorios({ data, onErro }: { data: AppData; onErro: (e: unknown) => void }) {
   const [rel, setRel] = useState<Rel>(1);
@@ -23,6 +23,7 @@ export function Relatorios({ data, onErro }: { data: AppData; onErro: (e: unknow
             [1, "Histórico completo de uma OS", "Todos os passos em ordem cronológica"],
             [2, "OS por cliente", "Todas as ordens de um cliente"],
             [3, "Tempo médio de conclusão", "Média entre abertura e expedição total"],
+            [4, "Relatório por período", "Planilha .xlsx das OSs de um intervalo"],
           ] as const
         ).map(([n, titulo, sub]) => (
           <div
@@ -42,6 +43,7 @@ export function Relatorios({ data, onErro }: { data: AppData; onErro: (e: unknow
         {rel === 1 && <HistoricoOS data={data} onErro={onErro} />}
         {rel === 2 && <OSPorCliente data={data} />}
         {rel === 3 && <TempoMedio data={data} onErro={onErro} />}
+        {rel === 4 && <PlanilhaPeriodo onErro={onErro} />}
       </div>
     </div>
   );
@@ -318,6 +320,105 @@ function TempoMedio({ data, onErro }: { data: AppData; onErro: (e: unknown) => v
           </div>
         </>
       )}
+    </>
+  );
+}
+
+/* ── 4 · relatório por período (.xlsx) ──────────────────────────────────── */
+
+/**
+ * `toISOString()` converte para UTC antes de cortar: à noite no fuso da fábrica
+ * (UTC-3) devolveria o dia seguinte. Os getters locais montam o dia que o
+ * operador vê no calendário.
+ */
+function iso(d: Date): string {
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
+function PlanilhaPeriodo({ onErro }: { onErro: (e: unknown) => void }) {
+  // Abre no mês corrente: é o recorte pedido na esmagadora maioria das vezes.
+  const [inicio, setInicio] = useState(() => {
+    const h = new Date();
+    return iso(new Date(h.getFullYear(), h.getMonth(), 1));
+  });
+  const [fim, setFim] = useState(() => iso(new Date()));
+  const [baixando, setBaixando] = useState(false);
+
+  // Strings ISO comparam como datas: o formato é ordenável lexicograficamente.
+  const invertido = Boolean(inicio && fim && fim < inicio);
+
+  function baixar() {
+    setBaixando(true);
+    api
+      .planilhaPeriodo(inicio, fim)
+      .catch(onErro)
+      .finally(() => setBaixando(false));
+  }
+
+  return (
+    <>
+      <div className="reg-h" style={{ fontSize: 13 }}>
+        Relatório por período
+      </div>
+
+      <div className="rel-filtro" style={{ display: "flex", gap: 14, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 150px", minWidth: 0 }}>
+          <span className="lbl">De</span>
+          <input
+            className="inp"
+            type="date"
+            value={inicio}
+            max={fim || undefined}
+            onChange={(e) => setInicio(e.target.value)}
+          />
+        </div>
+        <div style={{ flex: "1 1 150px", minWidth: 0 }}>
+          <span className="lbl">Até</span>
+          <input
+            className="inp"
+            type="date"
+            value={fim}
+            min={inicio || undefined}
+            onChange={(e) => setFim(e.target.value)}
+          />
+        </div>
+        <button
+          className="btn2 btn2-p"
+          style={{ minHeight: 48 }}
+          disabled={baixando || !inicio || !fim || invertido}
+          onClick={baixar}
+        >
+          {baixando ? "Baixando..." : "Baixar planilha"}
+        </button>
+      </div>
+
+      {/* A API rejeita o mesmo caso com 400 PERIODO_INVALIDO; barrar aqui evita
+          a ida à rede e diz o que houve junto do campo errado. */}
+      {invertido && (
+        <div className="os-tv" style={{ color: "#b4472e", marginTop: -16, marginBottom: 24 }}>
+          A data final é anterior à inicial.
+        </div>
+      )}
+
+      <div className="bp" style={{ padding: "22px 24px", maxWidth: 560 }}>
+        <Corners />
+        <div style={{ font: "600 18px 'Barlow Condensed'", marginBottom: 10 }}>
+          O que vem na planilha
+        </div>
+        <div className="os-tv" style={{ lineHeight: 1.7 }}>
+          Uma linha por OS <b>iniciada</b> no intervalo — ambos os dias entram inteiros.
+          <br />
+          Aba <b>Relatório</b>: resumo do período, indicadores (no período, finalizadas, em
+          processo, canceladas) e a tabela, pronta para imprimir.
+          <br />
+          Aba <b>Dados</b>: a mesma tabela crua, com autofiltro, para filtrar ou pivotar.
+          <br />
+          <b>Duração total</b> é o relógio de parede entre abrir e fechar a OS;{" "}
+          <b>tempo trabalhado</b> é a soma das etapas efetivamente concluídas nela.
+        </div>
+      </div>
     </>
   );
 }

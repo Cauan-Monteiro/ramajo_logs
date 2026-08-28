@@ -198,6 +198,12 @@ body{margin:0;background:#c9cacc;font-family:"Barlow",system-ui,sans-serif;displ
 .dash-root{flex:1;display:flex;flex-direction:column;min-height:0}
 .pos-stats{margin-left:auto;display:flex;gap:30px}
 .cl-wrap{flex:1;display:flex;flex-direction:column;min-height:0;padding:0}
+/* Rótulo ordenável do cabeçalho. É `<button>` de verdade — funciona com
+   teclado e leitor de ecrã — resetado para herdar o desenho que o `.clhead`
+   já dava ao `<span>`. */
+.clsort{background:none;border:none;padding:0;margin:0;font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;text-align:left;cursor:pointer;display:flex;align-items:center;gap:6px;min-width:0}
+@media (hover:hover){.clsort:hover{color:#f2f2f3}}
+.ordseta{font-style:normal;opacity:.85}
 .cl-scroll{flex:1;overflow:auto}
 .nc-form{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end}
 .nc-nome{flex:1;min-width:200px}
@@ -307,6 +313,16 @@ body.is-mobile .clrow .cvinc{grid-area:os;justify-self:end}
 body.is-mobile .clrow .passocell{grid-area:passo;min-width:0}
 body.is-mobile .clrow .csince{grid-area:desde;justify-self:end}
 body.is-mobile .clrow .cdur{grid-area:dur;justify-self:end}
+/* Ordenação por botão: `.clhead` está escondido aqui, então é este o único
+   caminho para reordenar no telemóvel em pé. */
+body.is-mobile .ordwrap{position:relative;flex:none}
+body.is-mobile .ordb{display:flex;align-items:center;gap:5px;min-height:36px;padding:6px 10px;border:1px solid rgba(0,0,0,.2);background:transparent;cursor:pointer;font:600 12px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#1d1f20;white-space:nowrap}
+body.is-mobile .ordbd{position:fixed;inset:0;z-index:10}
+body.is-mobile .ordmenu{position:absolute;right:0;top:calc(100% + 7px);z-index:11;min-width:176px;background:#f2f2f3;box-shadow:0 12px 30px rgba(43,43,45,.24);display:flex;flex-direction:column;padding:4px}
+body.is-mobile .ordi{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;padding:8px 12px;border:none;background:transparent;cursor:pointer;text-align:left;font:600 15px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.02em;color:#1d1f20}
+body.is-mobile .ordi>span{flex:1}
+body.is-mobile .ordi.on{background:#eef6ff;color:#2c455d}
+body.is-mobile .ordi:active{background:color-mix(in srgb,#5980a6 15%,transparent)}
 body.is-mobile .pager{gap:8px;flex-wrap:wrap;padding:12px 4px 4px}
 body.is-mobile .pager .cmuted{order:3;flex:1 0 100%;text-align:center}
 
@@ -493,6 +509,8 @@ body.is-mobile .toast{
 @media (max-width: 1259px) {
   .tabbtn{min-height:44px;padding:12px 10px}
   .pgb,.seg-b,.btn2,.scan-b{min-height:44px}
+  /* O rótulo do cabeçalho é pequeno de propósito; o alvo é que cresce. */
+  .clsort{min-height:32px}
   .ckbox{width:26px;height:26px}
   .visb{min-height:56px}
   .pick{min-height:48px}
@@ -502,3 +520,84 @@ body.is-mobile .toast{
   .clhead .ckbox::after{content:"";position:absolute;inset:-9px}
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════
+   Bloco 8 — viewport baixo (telemóvel ou tablet deitado)
+
+   O corte do modo mobile (useViewMode.ts) olha só a LARGURA: um telemóvel
+   deitado tem 844×390 e cai no layout de mesa, não em `is-mobile`. Só que o
+   bloco 5 já travou `.tab` em 100dvh e a regra base tem `overflow:hidden` —
+   a moldura virou a viewport e a página não rola.
+
+   Com 390px de altura a conta não fecha: appnav 66 + posbar 85 + cabeçalho 30
+   e o hub de ações, que é `flex:none`, pedia 276px sozinho (duas linhas de
+   132px). O `.cl-wrap` é `flex:1`, recebia espaço NEGATIVO e colapsava para
+   zero: a lista de cargas existia, com o seu `overflow:auto` intacto, mas sem
+   um pixel de altura para rolar.
+
+   Aqui o chrome encolhe — a posbar vira uma linha, o hub vira uma faixa de
+   quatro botões baixos — e a altura que sobra vai toda para a lista, que rola
+   por dentro do `.cl-scroll`. A moldura continua presa ao ecrã: quem opera com
+   leitor precisa da posição e das acções sempre à vista.
+
+   `max-height` e não `orientation:landscape`: o que quebra é a altura, venha
+   ela de um aparelho deitado ou de uma janela espremida. `body:not(.is-mobile)`
+   é a convenção dos blocos 5 e 6 — abaixo de 640px manda o bloco 4.
+
+   Este bloco vem DEPOIS do 6 de propósito: a mesma especificidade, e é ele que
+   precisa vencer o `repeat(2,1fr)` do hub em `max-width:1023px`.
+   ══════════════════════════════════════════════════════════════════════ */
+
+@media (max-height: 600px) {
+  /* — barra de navegação e de posição: uma linha cada — */
+  body:not(.is-mobile) .appnav{height:56px}
+  body:not(.is-mobile) .posbar{padding:8px 16px;gap:14px;flex-wrap:nowrap}
+  body:not(.is-mobile) .posbar>svg{width:24px;height:24px}
+  /* "Posição em operação" é redundante ao lado do nome da posição. */
+  body:not(.is-mobile) .posbar .plbl{display:none}
+  body:not(.is-mobile) .posbar .pname{font-size:24px}
+  body:not(.is-mobile) .pos-stats{gap:16px}
+  body:not(.is-mobile) .posmini .n{font-size:19px}
+  body:not(.is-mobile) .posmini .t{font-size:9px}
+
+  /* — hub de acções: cartão de 132px → faixa de 56px, quatro numa linha — */
+  body:not(.is-mobile) .grp-acoes{display:none}
+  body:not(.is-mobile) .grp-h{margin-bottom:0}
+  body:not(.is-mobile) .dash-main{padding:10px 14px;gap:8px}
+  body:not(.is-mobile) .hub-grid{grid-template-columns:repeat(4,1fr);gap:8px}
+  /* Grid de duas áreas: ícone à esquerda, título sobre o subtexto. Os
+     `<Corners/>` são `position:absolute`, logo ficam fora do fluxo do grid. */
+  body:not(.is-mobile) .hub{
+    display:grid;grid-template-columns:auto 1fr;
+    grid-template-areas:"ic ti" "ic su";
+    align-items:center;column-gap:10px;
+    padding:8px 11px;min-height:56px;
+  }
+  body:not(.is-mobile) .hub .hicon{grid-area:ic;margin-bottom:0;width:20px;height:20px}
+  body:not(.is-mobile) .hub .htitle{grid-area:ti;margin-top:0;font-size:16px}
+  /* O subtexto fica: é ele que conta "N carga(s) seleccionada(s)", o que o
+     operador confere antes de abrir ou encerrar etapa. Trunca numa linha. */
+  body:not(.is-mobile) .hub .hsub{
+    grid-area:su;margin-top:0;font-size:10px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+
+  /* — lista: linhas mais justas para caberem mais no ecrã — */
+  body:not(.is-mobile) .clhead{padding:7px 14px}
+  body:not(.is-mobile) .clsort{min-height:26px}  /* o bloco 7 pede 32 */
+  body:not(.is-mobile) .clrow{padding:8px 14px}
+  body:not(.is-mobile) .pager{padding:6px 4px 2px}
+  body:not(.is-mobile) .pgb{padding:8px 12px}  /* mantém os 44px do bloco 7 */
+
+  /* — rail da direita: em paisagem a coluna lateral é o sítio certo — */
+  body:not(.is-mobile) .visb{padding:9px 4px;gap:4px}
+  body:not(.is-mobile) .visb svg{width:18px;height:18px}
+
+  /* Rede de segurança: se numa altura ainda menor a conta não fechar, é a
+     coluna inteira que rola, em vez de a lista colapsar para zero outra vez. */
+  body:not(.is-mobile) .cl-wrap{min-height:150px}
+  body:not(.is-mobile) .dash-main{overflow:auto}
+
+  /* Os 28px de recuo do overlay comiam 56px dos 390 disponíveis. */
+  body:not(.is-mobile) .dlg-bd{padding:10px}
+}

@@ -90,6 +90,20 @@ export const finalizarOrdem = (osId: number, operadorId: number) =>
 export const cancelarOrdem = (osId: number, operadorId: number) =>
   http.post<void>(`/api/ordens/${osId}/cancelar`, { operadorId });
 
+// ── relatórios ──────────────────────────────────────────────────────────
+/**
+ * Baixa em .xlsx as OSs iniciadas no intervalo, uma linha por ordem. As datas
+ * vão em ISO (yyyy-MM-dd) e os dois extremos entram inteiros.
+ *
+ * Fora de /api/ordens de propósito: `GET /api/ordens/planilha` casaria com o
+ * padrão `GET /api/ordens/{id}` do lado do Spring.
+ */
+export const planilhaPeriodo = (dataInicio: string, dataFim: string) =>
+  http.baixar(
+    `/api/relatorios/periodo/planilha?dataInicio=${dataInicio}&dataFim=${dataFim}`,
+    `ordens-servico-${dataInicio}-a-${dataFim}.xlsx`,
+  );
+
 // ── estado ──────────────────────────────────────────────────────────────
 /** Sonda de sincronização: resposta minúscula, chamada em loop pelos terminais. */
 export const revisaoEstado = () => http.get<RevisaoDTO>("/api/estado/revisao");

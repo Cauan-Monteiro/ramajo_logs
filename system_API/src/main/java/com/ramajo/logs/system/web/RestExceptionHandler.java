@@ -7,6 +7,7 @@ import com.ramajo.logs.system.exceptions.DominioException;
 import com.ramajo.logs.system.exceptions.OperadorInativoException;
 import com.ramajo.logs.system.exceptions.OrdemForaDeCirculacaoException;
 import com.ramajo.logs.system.exceptions.PassoJaFinalizadoException;
+import com.ramajo.logs.system.exceptions.PeriodoInvalidoException;
 import com.ramajo.logs.system.exceptions.PosicaoIncompativelException;
 import com.ramajo.logs.system.exceptions.RecursoNaoEncontradoException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,8 +17,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
  * Traduz exceções em respostas HTTP — a camada de domínio não conhece HTTP,
@@ -31,7 +34,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  *   - requisição semanticamente inválida
  *     (operador/carga inativa, carga não
  *     vinculada, regra de domínio genérica) .... 422 UNPROCESSABLE ENTITY
- *   - falha de validação de entrada (@Valid) ... 400 BAD REQUEST
+ *   - falha de validação de entrada (@Valid, query
+ *     param ausente/malformado, período que não
+ *     fecha) .................................... 400 BAD REQUEST
  */
 @RestControllerAdvice
 public class RestExceptionHandler {
@@ -57,6 +62,16 @@ public class RestExceptionHandler {
             PosicaoIncompativelException.class})
     public ResponseEntity<ApiError> naoProcessavel(DominioException ex, HttpServletRequest req) {
         return build(ex, HttpStatus.UNPROCESSABLE_ENTITY, req);
+    }
+
+    /**
+     * Período que não fecha é entrada malformada, não conflito de estado — sem
+     * este handler explícito cairia como 422 na rede de segurança abaixo.
+     */
+    @ExceptionHandler(PeriodoInvalidoException.class)
+    public ResponseEntity<ApiError> periodoInvalido(PeriodoInvalidoException ex,
+                                                    HttpServletRequest req) {
+        return build(ex, HttpStatus.BAD_REQUEST, req);
     }
 
     /** Rede de segurança: qualquer DominioException nova cai aqui como 422. */
@@ -93,6 +108,34 @@ public class RestExceptionHandler {
                 HttpStatus.BAD_REQUEST.value(),
                 req.getRequestURI(),
                 campos);
+        return ResponseEntity.badRequest().body(body);
+    }
+
+    /**
+     * Query param que não converte (?dataInicio=abc). Sem isto o Spring devolve
+     * um corpo próprio, fora do contrato `codigo`/`mensagem` que o front espera.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> parametroInvalido(MethodArgumentTypeMismatchException ex,
+                                                      HttpServletRequest req) {
+        ApiError body = ApiError.of(
+                "PARAMETRO_INVALIDO",
+                "O parâmetro '" + ex.getName() + "' tem valor inválido.",
+                HttpStatus.BAD_REQUEST.value(),
+                req.getRequestURI(),
+                List.of(new ApiError.CampoInvalido(ex.getName(), "valor inválido")));
+        return ResponseEntity.badRequest().body(body);
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiError> parametroObrigatorio(MissingServletRequestParameterException ex,
+                                                         HttpServletRequest req) {
+        ApiError body = ApiError.of(
+                "PARAMETRO_OBRIGATORIO",
+                "O parâmetro '" + ex.getParameterName() + "' é obrigatório.",
+                HttpStatus.BAD_REQUEST.value(),
+                req.getRequestURI(),
+                List.of(new ApiError.CampoInvalido(ex.getParameterName(), "obrigatório")));
         return ResponseEntity.badRequest().body(body);
     }
 

@@ -5,6 +5,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,4 +34,20 @@ public interface LogRepository extends JpaRepository<Log, UUID> {
              order by l.iniciadoEm asc, l.id asc
             """)
     List<Log> buscarParaRelatorio(@Param("osId") Long osId);
+
+    // O mesmo, para VÁRIAS ordens: alimenta a aba de etapas do relatório por
+    // período e, da mesma lista, os contadores e tempos de cada OS — uma
+    // consulta só, sem uma segunda passada agregando no banco.
+    //
+    // A ordem (OS, depois cronológica) é a da aba: sem ela as etapas de uma
+    // mesma ordem sairiam intercaladas com as das outras.
+    @Query("""
+            select l from Log l
+              join fetch l.carga
+              join fetch l.processo
+              join fetch l.responsavel
+             where l.ordemServico.id in :ids
+             order by l.ordemServico.id asc, l.iniciadoEm asc, l.id asc
+            """)
+    List<Log> buscarParaRelatorioDeOrdens(@Param("ids") Collection<Long> ids);
 }
