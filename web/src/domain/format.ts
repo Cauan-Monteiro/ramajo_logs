@@ -58,3 +58,24 @@ export function iniciais(nome: string): string {
 export function osNum(o: { id: number; idExterno: number | null }): string {
   return "#" + (o.idExterno ?? o.id);
 }
+
+/**
+ * Dia local em `yyyy-MM-dd`. `toISOString()` converte para UTC antes de cortar:
+ * à noite no fuso da fábrica (UTC-3) devolveria o dia seguinte. Os getters
+ * locais montam o dia que o operador vê no calendário.
+ */
+export function iso(d: Date): string {
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
+const SEMANA = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+
+/** "31/08/2025 · sábado" — o cabeçalho do dia auditado. */
+export function dataLonga(diaIso: string): string {
+  const [a, m, d] = diaIso.split("-").map(Number);
+  const dt = new Date(a, m - 1, d);
+  if (Number.isNaN(dt.getTime())) return diaIso;
+  return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${a} · ${SEMANA[dt.getDay()]}`;
+}

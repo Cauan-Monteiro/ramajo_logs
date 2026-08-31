@@ -1154,6 +1154,78 @@ body {
    opacity: .85
 }
 
+/* Menu `⇅`: o caminho de ordenação para listas sem cabeçalho onde clicar — o
+   telemóvel em pé, onde `.clhead` está escondido, e as listas de cartões dos
+   modais. */
+.ordwrap {
+   position: relative;
+   flex: none
+}
+
+.ordb {
+   display: flex;
+   align-items: center;
+   gap: 5px;
+   min-height: 36px;
+   padding: 6px 10px;
+   border: 1px solid rgba(0, 0, 0, .2);
+   background: transparent;
+   cursor: pointer;
+   font: 600 12px "Barlow Condensed", system-ui, sans-serif;
+   letter-spacing: .06em;
+   text-transform: uppercase;
+   color: #1d1f20;
+   white-space: nowrap
+}
+
+.ordbd {
+   position: fixed;
+   inset: 0;
+   z-index: 10
+}
+
+.ordmenu {
+   position: absolute;
+   right: 0;
+   top: calc(100% + 7px);
+   z-index: 11;
+   min-width: 176px;
+   background: #f2f2f3;
+   box-shadow: 0 12px 30px rgba(43, 43, 45, .24);
+   display: flex;
+   flex-direction: column;
+   padding: 4px
+}
+
+.ordi {
+   display: flex;
+   align-items: center;
+   gap: 8px;
+   width: 100%;
+   min-height: 44px;
+   padding: 8px 12px;
+   border: none;
+   background: transparent;
+   cursor: pointer;
+   text-align: left;
+   font: 600 15px "Barlow Condensed", system-ui, sans-serif;
+   letter-spacing: .02em;
+   color: #1d1f20
+}
+
+.ordi>span {
+   flex: 1
+}
+
+.ordi.on {
+   background: #eef6ff;
+   color: #2c455d
+}
+
+.ordi:active {
+   background: color-mix(in srgb, #5980a6 15%, transparent)
+}
+
 .cl-scroll {
    flex: 1;
    overflow: auto
@@ -1438,6 +1510,495 @@ select.inp {
    cursor: pointer
 }
 
+/* ═══ auditoria do dia (screens/Auditoria.tsx) ═══
+   Prefixo `.aud-` em tudo. A linha do tempo é desenhada só com percentagens:
+   `fracao()` dá a posição, o CSS trata da largura — não há biblioteca de
+   gráficos no projeto e não faz falta. */
+
+.aud-bar {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+   flex-wrap: wrap;
+   margin-bottom: 20px
+}
+
+.aud-bar .btn2 {
+   min-height: 40px
+}
+
+.aud-data {
+   font: 600 22px "Barlow Condensed", system-ui, sans-serif;
+   letter-spacing: .01em;
+   min-width: 210px
+}
+
+.aud-seg {
+   display: flex;
+   margin-left: 6px
+}
+
+.aud-seg .seg-b {
+   padding: 9px 13px;
+   font-size: 14px;
+   border-right-width: 0
+}
+
+.aud-seg .seg-b:last-child {
+   border-right-width: 1px
+}
+
+/* — indicadores — */
+.aud-kpis {
+   display: grid;
+   grid-template-columns: repeat(6, 1fr);
+   gap: 10px;
+   margin-bottom: 22px
+}
+
+.aud-kpi {
+   display: flex;
+   flex-direction: column;
+   gap: 2px;
+   padding: 14px 14px 12px;
+   animation: aud-in .3s ease both
+}
+
+.aud-kpi-n {
+   font: 600 38px "Barlow Condensed", system-ui, sans-serif;
+   line-height: 1;
+   color: #416180
+}
+
+.aud-kpi-l {
+   font: 400 12px "Barlow", system-ui, sans-serif;
+   color: rgba(29, 31, 32, .5);
+   line-height: 1.2
+}
+
+/* — linha do tempo — */
+.aud-tl {
+   padding: 16px 0 0;
+   margin-bottom: 22px
+}
+
+.aud-scroll {
+   overflow-x: auto
+}
+
+.aud-inner {
+   position: relative
+}
+
+.aud-faixa {
+   display: flex;
+   align-items: stretch;
+   border-bottom: 1px solid rgba(0, 0, 0, .06)
+}
+
+.aud-nome {
+   flex: none;
+   width: 104px;
+   position: sticky;
+   left: 0;
+   z-index: 2;
+   display: flex;
+   align-items: center;
+   padding: 0 10px 0 18px;
+   background: #f2f2f3;
+   font: 600 15px "Barlow Condensed", system-ui, sans-serif;
+   white-space: nowrap;
+   overflow: hidden;
+   text-overflow: ellipsis
+}
+
+.aud-nome-os {
+   font-size: 11px;
+   letter-spacing: .12em;
+   text-transform: uppercase;
+   color: rgba(29, 31, 32, .45)
+}
+
+.aud-lane {
+   position: relative;
+   flex: 1;
+   min-width: 0;
+   height: 40px;
+   margin-right: 18px
+}
+
+.aud-lane-m {
+   height: 24px
+}
+
+.aud-regua {
+   border-bottom-color: rgba(0, 0, 0, .14)
+}
+
+.aud-regua .aud-lane {
+   height: 26px
+}
+
+.aud-hora {
+   position: absolute;
+   top: 4px;
+   transform: translateX(-50%);
+   font: 400 11px "Barlow", system-ui, sans-serif;
+   color: rgba(29, 31, 32, .45);
+   white-space: nowrap;
+   pointer-events: none
+}
+
+/* Primeira e última hora encostam à borda: centrá-las cortaria o rótulo. */
+.aud-hora:first-child {
+   transform: none
+}
+
+.aud-hora:last-child {
+   transform: translateX(-100%)
+}
+
+/* — blocos de etapa — */
+.aud-b {
+   position: absolute;
+   top: 5px;
+   height: 30px;
+   min-width: 4px;
+   display: flex;
+   align-items: center;
+   gap: 3px;
+   padding: 0 5px;
+   border: 1px solid rgba(0, 0, 0, .12);
+   overflow: hidden;
+   cursor: pointer;
+   text-align: left;
+   transform-origin: left center;
+   animation: aud-grow .34s cubic-bezier(.2, .7, .3, 1) both
+}
+
+.aud-b-txt {
+   display: flex;
+   flex-direction: column;
+   justify-content: center;
+   line-height: 1.05;
+   min-width: 0;
+   overflow: hidden
+}
+
+.aud-b-txt b {
+   font: 600 12px "Barlow Condensed", system-ui, sans-serif;
+   letter-spacing: .02em;
+   white-space: nowrap;
+   overflow: hidden;
+   text-overflow: ellipsis
+}
+
+.aud-b-txt i {
+   font: 400 10px "Barlow", system-ui, sans-serif;
+   font-style: normal;
+   opacity: .78;
+   white-space: nowrap;
+   overflow: hidden;
+   text-overflow: ellipsis
+}
+
+@media (hover:hover) {
+   .aud-b:hover {
+      filter: brightness(1.08)
+   }
+}
+
+/* Etapa por fechar: contorno aberto e a ponta a pulsar, como no dashboard. */
+.aud-b.on {
+   border-style: dashed;
+   border-color: rgba(255, 255, 255, .85)
+}
+
+.aud-b.on::after {
+   content: "";
+   position: absolute;
+   right: 2px;
+   top: 50%;
+   transform: translateY(-50%);
+   width: 6px;
+   height: 6px;
+   border-radius: 50%;
+   background: #f2f2f3;
+   animation: pulse 1.4s infinite
+}
+
+.aud-b.cx {
+   opacity: .5;
+   background-image: repeating-linear-gradient(45deg,
+         rgba(255, 255, 255, .35) 0 4px,
+         transparent 4px 8px)
+}
+
+.aud-b.cx .aud-b-txt b {
+   text-decoration: line-through
+}
+
+.aud-b.sel {
+   outline: 2px solid #1d2d3d;
+   outline-offset: 1px;
+   z-index: 3
+}
+
+.aud-chev {
+   font-style: normal;
+   font-size: 9px;
+   opacity: .85;
+   flex: none
+}
+
+/* — marcos da OS — */
+.aud-marco {
+   position: absolute;
+   top: 50%;
+   transform: translate(-50%, -50%);
+   font-size: 13px;
+   line-height: 1;
+   color: #416180;
+   cursor: default
+}
+
+.aud-marco.m-OS_CANCELADA {
+   color: #b4472e
+}
+
+.aud-marco.m-OS_ENCERRADA {
+   color: #2f6b3c
+}
+
+/* — régua do agora — */
+.aud-agora {
+   position: absolute;
+   top: 0;
+   bottom: 0;
+   width: 1px;
+   background: #b4472e;
+   z-index: 1;
+   pointer-events: none;
+   transition: left .4s linear
+}
+
+.aud-grupo {
+   padding-top: 8px
+}
+
+.aud-oshd {
+   display: flex;
+   align-items: baseline;
+   flex-wrap: wrap;
+   gap: 10px;
+   padding: 10px 18px 8px;
+   position: sticky;
+   left: 0;
+   background: #f2f2f3;
+   border-top: 1px solid rgba(0, 0, 0, .08)
+}
+
+.aud-oshd .os-cli {
+   font-size: 17px
+}
+
+/* — detalhe do bloco — */
+.aud-det {
+   display: flex;
+   flex-direction: column;
+   gap: 6px;
+   margin: 0 18px 10px 104px;
+   padding: 12px 14px;
+   background: #eef6ff;
+   border-left: 3px solid #5980a6;
+   position: sticky;
+   left: 0;
+   animation: aud-in .2s ease both
+}
+
+.aud-det-g {
+   display: flex;
+   align-items: center;
+   flex-wrap: wrap;
+   gap: 12px
+}
+
+.aud-leg {
+   display: flex;
+   align-items: center;
+   flex-wrap: wrap;
+   gap: 10px;
+   padding: 12px 18px 14px;
+   border-top: 1px solid rgba(0, 0, 0, .08)
+}
+
+/* — colunas do dia — */
+.aud-cols {
+   display: grid;
+   grid-template-columns: 1fr 1fr;
+   gap: 16px
+}
+
+.aud-card {
+   padding: 18px 20px;
+   animation: aud-in .3s ease both
+}
+
+.aud-card-h {
+   font: 600 18px "Barlow Condensed", system-ui, sans-serif;
+   margin-bottom: 10px
+}
+
+.aud-linha {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+   padding: 8px 0;
+   border-bottom: 1px solid rgba(0, 0, 0, .07)
+}
+
+.aud-hh {
+   font: 400 14px "Barlow", system-ui, sans-serif;
+   color: rgba(29, 31, 32, .55);
+   flex: none
+}
+
+.aud-el {
+   flex: 1;
+   min-width: 0;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap
+}
+
+.aud-quem {
+   font: 500 14px "Barlow", system-ui, sans-serif;
+   flex: none
+}
+
+.aud-quem.sem {
+   color: rgba(29, 31, 32, .35)
+}
+
+.aud-op {
+   display: flex;
+   align-items: center;
+   gap: 12px;
+   padding: 10px 0;
+   border-bottom: 1px solid rgba(0, 0, 0, .07)
+}
+
+.aud-op-bar {
+   height: 4px;
+   background: rgba(0, 0, 0, .07);
+   margin-top: 5px
+}
+
+.aud-op-bar i {
+   display: block;
+   height: 100%;
+   background: #5980a6;
+   transition: width .4s ease
+}
+
+.aud-op-n {
+   font: 600 22px "Barlow Condensed", system-ui, sans-serif;
+   color: #416180;
+   flex: none
+}
+
+/* — feed — */
+.aud-chips {
+   display: flex;
+   flex-wrap: wrap;
+   gap: 7px;
+   margin-bottom: 14px
+}
+
+.aud-chip {
+   font: 600 12px "Barlow Condensed", system-ui, sans-serif;
+   letter-spacing: .06em;
+   text-transform: uppercase;
+   padding: 7px 11px;
+   background: #f2f2f3;
+   border: 1px solid rgba(0, 0, 0, .16);
+   cursor: pointer;
+   transition: background .1s
+}
+
+.aud-chip.on {
+   background: #5980a6;
+   border-color: #5980a6;
+   color: #f2f2f3
+}
+
+.aud-sel {
+   width: auto;
+   min-height: 34px;
+   padding: 4px 10px;
+   font-size: 14px
+}
+
+.aud-th {
+   cursor: pointer;
+   white-space: nowrap
+}
+
+.aud-seta {
+   font-style: normal;
+   margin-left: 4px
+}
+
+.aud-nota {
+   margin: 18px 0 8px;
+   line-height: 1.6
+}
+
+@keyframes aud-grow {
+   from {
+      transform: scaleX(0)
+   }
+
+   to {
+      transform: scaleX(1)
+   }
+}
+
+@keyframes aud-in {
+   from {
+      opacity: 0;
+      transform: translateY(6px)
+   }
+
+   to {
+      opacity: 1;
+      transform: none
+   }
+}
+
+/* Quem pediu ao sistema para reduzir movimento vê a mesma informação, parada.
+   Note-se que isto anula as animações, nunca a visibilidade: `both` deixaria o
+   estado inicial (opacity:0) colado se a animação fosse simplesmente removida —
+   daí repor também `opacity` e `transform`. */
+@media (prefers-reduced-motion: reduce) {
+
+   .aud-kpi,
+   .aud-card,
+   .aud-det,
+   .aud-b {
+      animation: none;
+      opacity: 1;
+      transform: none
+   }
+
+   .aud-b.on::after,
+   .aud-agora,
+   .aud-op-bar i {
+      animation: none;
+      transition: none
+   }
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    Bloco 4 — modo de visualização mobile (até 640px de largura)
 
@@ -1606,77 +2167,6 @@ body.is-mobile .clrow .csince {
 body.is-mobile .clrow .cdur {
    grid-area: dur;
    justify-self: end
-}
-
-/* Ordenação por botão: `.clhead` está escondido aqui, então é este o único
-   caminho para reordenar no telemóvel em pé. */
-body.is-mobile .ordwrap {
-   position: relative;
-   flex: none
-}
-
-body.is-mobile .ordb {
-   display: flex;
-   align-items: center;
-   gap: 5px;
-   min-height: 36px;
-   padding: 6px 10px;
-   border: 1px solid rgba(0, 0, 0, .2);
-   background: transparent;
-   cursor: pointer;
-   font: 600 12px "Barlow Condensed", system-ui, sans-serif;
-   letter-spacing: .06em;
-   text-transform: uppercase;
-   color: #1d1f20;
-   white-space: nowrap
-}
-
-body.is-mobile .ordbd {
-   position: fixed;
-   inset: 0;
-   z-index: 10
-}
-
-body.is-mobile .ordmenu {
-   position: absolute;
-   right: 0;
-   top: calc(100% + 7px);
-   z-index: 11;
-   min-width: 176px;
-   background: #f2f2f3;
-   box-shadow: 0 12px 30px rgba(43, 43, 45, .24);
-   display: flex;
-   flex-direction: column;
-   padding: 4px
-}
-
-body.is-mobile .ordi {
-   display: flex;
-   align-items: center;
-   gap: 8px;
-   width: 100%;
-   min-height: 44px;
-   padding: 8px 12px;
-   border: none;
-   background: transparent;
-   cursor: pointer;
-   text-align: left;
-   font: 600 15px "Barlow Condensed", system-ui, sans-serif;
-   letter-spacing: .02em;
-   color: #1d1f20
-}
-
-body.is-mobile .ordi>span {
-   flex: 1
-}
-
-body.is-mobile .ordi.on {
-   background: #eef6ff;
-   color: #2c455d
-}
-
-body.is-mobile .ordi:active {
-   background: color-mix(in srgb, #5980a6 15%, transparent)
 }
 
 body.is-mobile .pager {
@@ -2330,4 +2820,60 @@ body.is-mobile .toast {
    body:not(.is-mobile) .dlg-bd {
       padding: 10px
    }
+}
+/* ── auditoria do dia ─────────────────────────────────────────────────────
+   A linha do tempo não encolhe: um bloco de 8 minutos numa faixa de 320px é
+   um risco invisível. Em vez disso rola de lado, com o nome da carga preso à
+   esquerda (`position:sticky` já no bloco 3) para nunca se perder a que faixa
+   pertence a barra que se está a olhar. */
+body.is-mobile .aud-data {
+   font-size: 19px;
+   min-width: 0;
+   flex: 1
+}
+
+body.is-mobile .aud-seg {
+   margin-left: 0;
+   width: 100%;
+   overflow-x: auto
+}
+
+body.is-mobile .aud-seg .seg-b {
+   flex: none
+}
+
+body.is-mobile .aud-kpis {
+   grid-template-columns: repeat(2, 1fr)
+}
+
+body.is-mobile .aud-kpi-n {
+   font-size: 30px
+}
+
+body.is-mobile .aud-cols {
+   grid-template-columns: 1fr
+}
+
+body.is-mobile .aud-nome {
+   width: 76px;
+   padding-left: 12px;
+   font-size: 13px
+}
+
+body.is-mobile .aud-lane {
+   margin-right: 12px
+}
+
+body.is-mobile .aud-det {
+   margin-left: 76px
+}
+
+/* Uma tabela de 7 colunas não cabe em 390px; `.tblwrap` já rola, mas sem isto
+   as colunas espremem-se até o texto partir letra a letra. */
+body.is-mobile .aud-card .table {
+   min-width: 620px
+}
+
+body.is-mobile .aud-sel {
+   width: 100%
 }

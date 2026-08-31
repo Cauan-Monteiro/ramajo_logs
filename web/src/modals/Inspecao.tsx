@@ -1,17 +1,42 @@
+import { useMemo } from "react";
 import * as api from "../api/endpoints";
+import type { OrdemResumoDTO } from "../api/types";
 import { Corners } from "../components/Blueprint";
 import { Modal, Vazio } from "../components/Modal";
+import { OrdenarMenu, useOrdenacao, type ColunaOrd } from "../components/Ordenar";
 import { diaHora, osNum } from "../domain/format";
 import { logsDe } from "../state/useAppData";
 import { SEM_API, type Ctx } from "./tipos";
+
+/** Nº da OS como número, não como texto: "#9" antes de "#10", não depois —
+    mesma razão da coluna "Vínculo" do painel. */
+const numDe = (o: OrdemResumoDTO) => o.idExterno ?? o.id;
+
+const COLUNAS: ColunaOrd<OrdemResumoDTO>[] = [
+  { chave: "os", label: "Nº OS", ascPadrao: true, valor: numDe },
+  { chave: "cliente", label: "Cliente", ascPadrao: true, valor: (o) => o.clienteNome },
+];
+
+/** Desempate pelo nº da OS: dois clientes com o mesmo nome não fazem a lista
+    trocar de ordem a cada sync. */
+const porNumero = (a: OrdemResumoDTO, b: OrdemResumoDTO) => numDe(a) - numDe(b);
 
 /**
  * Inspeção final: OS abertas que já não têm carga vinculada — só falta
  * expedir. "Expedir" é a expedição total (POST /{id}/finalizar).
  */
 export function InspecaoModal({ ctx }: { ctx: Ctx }) {
-  const semCargas = ctx.data.ordens.filter(
-    (o) => o.emProcesso && !ctx.data.cargas.some((c) => c.ordemAtualId === o.id),
+  const { ord, ordenarPor, ordenar } = useOrdenacao(COLUNAS, { chave: "os", asc: true });
+
+  const semCargas = useMemo(
+    () =>
+      ordenar(
+        ctx.data.ordens.filter(
+          (o) => o.emProcesso && !ctx.data.cargas.some((c) => c.ordemAtualId === o.id),
+        ),
+        porNumero,
+      ),
+    [ctx.data, ordenar],
   );
 
   return (
@@ -25,7 +50,21 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
         </button>
       }
     >
-      <span className="lbl">Ordens de serviço sem cargas vinculadas ({semCargas.length})</span>
+      {/* Cartões, não tabela: não há cabeçalho onde clicar, por isso a
+          ordenação vive no menu — em qualquer largura de ecrã. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {/* O `.lbl` traz margem inferior própria — aqui quem espaça é o wrapper,
+            senão o rótulo fica desalinhado do botão. */}
+        <span className="lbl" style={{ margin: 0 }}>
+          Ordens de serviço sem cargas vinculadas ({semCargas.length})
+        </span>
+        <OrdenarMenu
+          colunas={COLUNAS}
+          ord={ord}
+          ordenarPor={ordenarPor}
+          style={{ marginLeft: "auto" }}
+        />
+      </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
         {semCargas.map((o) => {
           const passos = logsDe(ctx.data, o.id).filter((l) => !l.cancelado).length;
@@ -46,6 +85,23 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
                 <div className="os-tv">Nº OS</div>
                 <div className="os-num" style={{ fontSize: 22 }}>
                   {osNum(o)}
+                </div>
+              </div>
+              {/* Único campo de largura imprevisível: encolhe em vez de empurrar
+                  as ações para fora do cartão. */}
+              <div style={{ flex: "1 1 160px", minWidth: 0 }}>
+                <div className="os-tv">Cliente</div>
+                <div
+                  className="os-cli"
+                  style={{
+                    fontSize: 16,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={o.clienteNome}
+                >
+                  {o.clienteNome}
                 </div>
               </div>
               <div style={{ minWidth: 132 }}>

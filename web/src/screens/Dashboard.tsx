@@ -3,6 +3,7 @@ import type {
   CargaDTO, LogDTO, OperadorDTO, OrdemResumoDTO, Posicao, ProcessoDTO,
 } from "../api/types";
 import { Corners } from "../components/Blueprint";
+import { OrdenarMenu, useOrdenacao, type ColunaOrd } from "../components/Ordenar";
 import {
   IconCargas, IconCheck, IconCheckBox, IconBusca, IconInspecao, IconLogo,
   IconPasso, IconPlus, IconProcessos,
@@ -29,62 +30,10 @@ import type { Ctx, ModalState } from "../modals/tipos";
 const POR_PAGINA = 30;
 const POR_PAGINA_MOBILE = 12;
 
-type ChaveOrd = "nome" | "vinculo" | "etapa" | "desde" | "duracao";
-type Ord = { chave: ChaveOrd; asc: boolean };
-
 /** Uma linha da tabela com os cruzamentos já feitos. Ordenar por "Vínculo" ou
     "Etapa" exige esses valores ANTES do sort — não dá para descobri-los dentro
     do map, como era antes. */
 type Linha = { carga: CargaDTO; ordem?: OrdemResumoDTO; aberto?: LogDTO };
-
-/**
- * As colunas ordenáveis, na mesma ordem em que aparecem na linha. O cabeçalho
- * do desktop e o menu do telemóvel leem os dois daqui: rótulo e direção natural
- * vivem num sítio só.
- *
- * `valor` devolve `null` quando a linha não tem o dado — carga sem etapa aberta,
- * OS que não veio no carregamento. Essas caem sempre para o fim, nos dois
- * sentidos: um "—" no topo da lista não informa nada.
- */
-const COLUNAS: {
-  chave: ChaveOrd;
-  label: string;
-  ascPadrao: boolean;
-  valor: (l: Linha, processos: ProcessoDTO[]) => string | number | null;
-}[] = [
-  { chave: "nome", label: "Carga", ascPadrao: true, valor: (l) => l.carga.nome },
-  {
-    chave: "vinculo", label: "Vínculo", ascPadrao: true,
-    // Pelo número e não pelo osNum(): "#9" antes de "#10", não depois.
-    valor: (l) => (l.ordem ? l.ordem.idExterno ?? l.ordem.id : null),
-  },
-  {
-    chave: "etapa", label: "Etapa atual", ascPadrao: true,
-    // Agrupa por etapa na ordem do processo (pré → tratamento → pós) e, dentro
-    // dela, pela descrição — é o que a célula mostra, chip e texto.
-    valor: (l, processos) => {
-      if (!l.aberto) return null;
-      const e = etapaDoLog(l.aberto, processos);
-      const i = e ? ETAPAS.findIndex((x) => x.key === e) : ETAPAS.length;
-      return `${i}${l.aberto.processoDescricao}`;
-    },
-  },
-  {
-    chave: "desde", label: "Desde", ascPadrao: true,  // mais antigo primeiro
-    valor: (l) => msDe(l.aberto),
-  },
-  {
-    // Toda etapa aberta tem `finalizadoEm: null`, logo a duração é só
-    // `agora - iniciadoEm`: maior duração ⇔ início mais antigo. Daí o sinal,
-    // e daí esta coluna ser o espelho de "Desde" — de propósito, porque clicar
-    // num cabeçalho e ele não reagir surpreende mais do que a redundância.
-    chave: "duracao", label: "Duração", ascPadrao: false,  // maior primeiro
-    valor: (l) => {
-      const ms = msDe(l.aberto);
-      return ms === null ? null : -ms;
-    },
-  },
-];
 
 function msDe(log: LogDTO | undefined): number | null {
   if (!log) return null;
@@ -99,21 +48,53 @@ function msDe(log: LogDTO | undefined): number | null {
 const porNome = (a: Linha, b: Linha) =>
   a.carga.nome.localeCompare(b.carga.nome, "pt-BR", { numeric: true });
 
-function comparar(
-  a: Linha, b: Linha, col: (typeof COLUNAS)[number], asc: boolean,
-  processos: ProcessoDTO[],
-): number {
-  const va = col.valor(a, processos);
-  const vb = col.valor(b, processos);
-  if (va === null || vb === null) {
-    if (va === vb) return porNome(a, b);
-    return va === null ? 1 : -1;  // sem dado vai ao fim nos dois sentidos
-  }
-  const d =
-    typeof va === "number" && typeof vb === "number"
-      ? va - vb
-      : String(va).localeCompare(String(vb), "pt-BR", { numeric: true });
-  return (asc ? d : -d) || porNome(a, b);
+/**
+ * As colunas ordenáveis, na mesma ordem em que aparecem na linha. O cabeçalho
+ * do desktop e o menu do telemóvel leem os dois daqui: rótulo e direção natural
+ * vivem num sítio só.
+ *
+ * `valor` devolve `null` quando a linha não tem o dado — carga sem etapa aberta,
+ * OS que não veio no carregamento. Essas caem sempre para o fim, nos dois
+ * sentidos: um "—" no topo da lista não informa nada.
+ */
+function colunasDe(processos: ProcessoDTO[]): ColunaOrd<Linha>[] {
+  return [
+    { chave: "nome", label: "Carga", ascPadrao: true, valor: (l) => l.carga.nome },
+    {
+      chave: "vinculo", label: "Vínculo", ascPadrao: true,
+      // Pelo número e não pelo osNum(): "#9" antes de "#10", não depois.
+      valor: (l) => (l.ordem ? l.ordem.idExterno ?? l.ordem.id : null),
+    },
+    {
+      chave: "etapa", label: "Etapa atual", ascPadrao: true,
+      // Agrupa por etapa na ordem do processo (pré → tratamento → pós) e, dentro
+      // dela, pela descrição — é o que a célula mostra, chip e texto.
+      valor: (l) => {
+        if (!l.aberto) return null;
+        const e = etapaDoLog(l.aberto, processos);
+        const i = e ? ETAPAS.findIndex((x) => x.key === e) : ETAPAS.length;
+        return `${i}${l.aberto.processoDescricao}`;
+      },
+    },
+    {
+      // A ordem com que a lista abre: o que acabou de entrar em etapa está no
+      // topo. Cargas ainda sem etapa caem para o fim, pela regra dos nulos.
+      chave: "desde", label: "Desde", ascPadrao: false,  // mais recente primeiro
+      valor: (l) => msDe(l.aberto),
+    },
+    {
+      // Toda etapa aberta tem `finalizadoEm: null`, logo a duração é só
+      // `agora - iniciadoEm`: maior duração ⇔ início mais antigo. Daí o sinal —
+      // no valor esta coluna é o espelho de "Desde". No padrão não: "Desde" abre
+      // no mais recente e esta no que está parado há mais tempo, que é o que se
+      // procura quando se clica em "Duração".
+      chave: "duracao", label: "Duração", ascPadrao: false,  // maior primeiro
+      valor: (l) => {
+        const ms = msDe(l.aberto);
+        return ms === null ? null : -ms;
+      },
+    },
+  ];
 }
 
 export function Dashboard({
@@ -130,7 +111,13 @@ export function Dashboard({
   const [modal, setModal] = useState<ModalState>(null);
   const [sel, setSel] = useState<string[]>([]);
   const [pagina, setPagina] = useState(0);
-  const [ord, setOrd] = useState<Ord>({ chave: "nome", asc: true });
+
+  const colunas = useMemo(() => colunasDe(data.processos), [data.processos]);
+  /** Reordenar volta à página 1: manter a página 3 depois de reordenar
+      mostraria um pedaço arbitrário de uma lista nova. */
+  const { ord, ordenarPor, ordenar } = useOrdenacao(
+    colunas, { chave: "desde", asc: false }, () => setPagina(0),
+  );
 
   const label = posLabel(posicao);
   const naPos = data.ordens.filter((o) => o.emProcesso && o.posicao === posicao);
@@ -140,20 +127,23 @@ export function Dashboard({
 
   /** Cargas desta posição já vinculadas a alguma OS — as linhas da tabela,
       com OS e etapa aberta já cruzadas e na ordem pedida pelo cabeçalho. */
-  const linhasNaPos = useMemo(() => {
-    const col = COLUNAS.find((c) => c.chave === ord.chave) ?? COLUNAS[0];
-    return data.cargas
-      .filter((c) => c.posicao === posicao && c.ordemAtualId !== null)
-      .map<Linha>((carga) => {
-        const ordem = data.ordens.find((o) => o.id === carga.ordemAtualId);
-        return {
-          carga,
-          ordem,
-          aberto: ordem ? logAbertoDaCarga(carga.nome, logsDe(data, ordem.id)) : undefined,
-        };
-      })
-      .sort((a, b) => comparar(a, b, col, ord.asc, data.processos));
-  }, [data, posicao, ord]);
+  const linhasNaPos = useMemo(
+    () =>
+      ordenar(
+        data.cargas
+          .filter((c) => c.posicao === posicao && c.ordemAtualId !== null)
+          .map<Linha>((carga) => {
+            const ordem = data.ordens.find((o) => o.id === carga.ordemAtualId);
+            return {
+              carga,
+              ordem,
+              aberto: ordem ? logAbertoDaCarga(carga.nome, logsDe(data, ordem.id)) : undefined,
+            };
+          }),
+        porNome,
+      ),
+    [data, posicao, ordenar],
+  );
 
   const porPagina = isMobile ? POR_PAGINA_MOBILE : POR_PAGINA;
   const totalPaginas = Math.max(1, Math.ceil(linhasNaPos.length / porPagina));
@@ -185,18 +175,6 @@ export function Dashboard({
 
   const alternar = (nome: string) =>
     setSel((s) => (s.includes(nome) ? s.filter((n) => n !== nome) : [...s, nome]));
-
-  /** Coluna activa outra vez inverte; coluna nova adopta a direção natural
-      dela. Volta à página 1: manter a página 3 depois de reordenar mostraria
-      um pedaço arbitrário de uma lista nova. */
-  const ordenarPor = (chave: ChaveOrd) => {
-    setOrd((o) =>
-      o.chave === chave
-        ? { chave, asc: !o.asc }
-        : { chave, asc: COLUNAS.find((c) => c.chave === chave)!.ascPadrao },
-    );
-    setPagina(0);
-  };
 
   return (
     <div className="dash-root">
@@ -286,7 +264,8 @@ export function Dashboard({
           <div className="grp-h" style={{ marginTop: 2 }}>
             <span>Cargas na posição</span>
             <i />
-            {isMobile && <OrdenarMenu ord={ord} ordenarPor={ordenarPor} />}
+            {/* No desktop o próprio `.clhead` ordena; aqui ele está escondido. */}
+            {isMobile && <OrdenarMenu colunas={colunas} ord={ord} ordenarPor={ordenarPor} />}
           </div>
 
           <div className="bp cl-wrap">
@@ -300,7 +279,7 @@ export function Dashboard({
               >
                 <IconCheck />
               </span>
-              {COLUNAS.map((c) => (
+              {colunas.map((c) => (
                 <button
                   key={c.chave}
                   type="button"
@@ -419,57 +398,3 @@ export function Dashboard({
   );
 }
 
-/**
- * Ordenação no telemóvel em pé, onde `.clhead` não existe: ali a linha vira um
- * cartão de duas linhas e os rótulos de coluna não alinhariam com nada. Mesma
- * regra do cabeçalho — tocar na coluna activa inverte, tocar noutra troca —
- * porque as duas passam pelo mesmo `ordenarPor`.
- */
-function OrdenarMenu({
-  ord, ordenarPor,
-}: {
-  ord: Ord;
-  ordenarPor: (chave: ChaveOrd) => void;
-}) {
-  const [aberto, setAberto] = useState(false);
-  const atual = COLUNAS.find((c) => c.chave === ord.chave) ?? COLUNAS[0];
-  const seta = ord.asc ? "↑" : "↓";
-
-  return (
-    <div className="ordwrap">
-      <button
-        type="button"
-        className="ordb"
-        aria-expanded={aberto}
-        onClick={() => setAberto((v) => !v)}
-      >
-        ⇅ {atual.label} {seta}
-      </button>
-      {aberto && (
-        <>
-          {/* Fecha ao tocar fora. Um backdrop, e não um listener no document,
-              porque o listener corre o risco de disparar no mesmo toque que já
-              vai marcar/desmarcar a carga da linha por baixo. */}
-          <div className="ordbd" onClick={() => setAberto(false)} />
-          <div className="ordmenu bp">
-            <Corners />
-            {COLUNAS.map((c) => (
-              <button
-                key={c.chave}
-                type="button"
-                className={`ordi ${ord.chave === c.chave ? "on" : ""}`}
-                onClick={() => {
-                  ordenarPor(c.chave);
-                  setAberto(false);
-                }}
-              >
-                <span>{c.label}</span>
-                {ord.chave === c.chave && <i className="ordseta">{seta}</i>}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}

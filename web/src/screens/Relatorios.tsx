@@ -4,13 +4,14 @@ import type { LogDTO, OrdemDetalheDTO } from "../api/types";
 import { Corners } from "../components/Blueprint";
 import { Vazio } from "../components/Modal";
 import { etapaStyle, etapaDoLog, labelEtapaDoLog, logSub, pillStyle, situacaoOrdem } from "../domain/derive";
-import { diaHora, duracao, hhmm, horasEntre, osNum, posLabel } from "../domain/format";
+import { diaHora, duracao, hhmm, horasEntre, iso, osNum, posLabel } from "../domain/format";
 import type { AppData } from "../state/useAppData";
+import { Auditoria } from "./Auditoria";
 
-type Rel = 1 | 2 | 3 | 4;
+type Rel = 0 | 1 | 2 | 3 | 4;
 
 export function Relatorios({ data, onErro }: { data: AppData; onErro: (e: unknown) => void }) {
-  const [rel, setRel] = useState<Rel>(1);
+  const [rel, setRel] = useState<Rel>(0);
 
   return (
     <div className="rel-body">
@@ -20,6 +21,7 @@ export function Relatorios({ data, onErro }: { data: AppData; onErro: (e: unknow
         </div>
         {(
           [
+            [0, "Auditoria do dia", "O que aconteceu hoje, passo a passo e por quem"],
             [1, "Histórico completo de uma OS", "Todos os passos em ordem cronológica"],
             [2, "OS por cliente", "Todas as ordens de um cliente"],
             [3, "Tempo médio de conclusão", "Média entre abertura e expedição total"],
@@ -40,6 +42,7 @@ export function Relatorios({ data, onErro }: { data: AppData; onErro: (e: unknow
       </div>
 
       <div className="rel-main">
+        {rel === 0 && <Auditoria data={data} onErro={onErro} />}
         {rel === 1 && <HistoricoOS data={data} onErro={onErro} />}
         {rel === 2 && <OSPorCliente data={data} />}
         {rel === 3 && <TempoMedio data={data} onErro={onErro} />}
@@ -325,17 +328,6 @@ function TempoMedio({ data, onErro }: { data: AppData; onErro: (e: unknown) => v
 }
 
 /* ── 4 · relatório por período (.xlsx) ──────────────────────────────────── */
-
-/**
- * `toISOString()` converte para UTC antes de cortar: à noite no fuso da fábrica
- * (UTC-3) devolveria o dia seguinte. Os getters locais montam o dia que o
- * operador vê no calendário.
- */
-function iso(d: Date): string {
-  const mes = String(d.getMonth() + 1).padStart(2, "0");
-  const dia = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mes}-${dia}`;
-}
 
 function PlanilhaPeriodo({ onErro }: { onErro: (e: unknown) => void }) {
   // Abre no mês corrente: é o recorte pedido na esmagadora maioria das vezes.
