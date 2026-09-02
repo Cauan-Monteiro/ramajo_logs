@@ -154,8 +154,9 @@ export function Dashboard({
   const todasSelecionadas =
     linhasNaPos.length > 0 && linhasNaPos.every((l) => selSet.has(l.carga.nome));
 
-  const semCargasCount = data.ordens.filter(
-    (o) => o.emProcesso && !data.cargas.some((c) => c.ordemAtualId === o.id),
+  /** Mesma conta do modal de inspeção final — e, como lá, só desta posição. */
+  const semCargasCount = naPos.filter(
+    (o) => !data.cargas.some((c) => c.ordemAtualId === o.id),
   ).length;
 
   const ctx: Ctx = {

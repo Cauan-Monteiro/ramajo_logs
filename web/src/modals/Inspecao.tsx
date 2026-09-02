@@ -4,7 +4,7 @@ import type { OrdemResumoDTO } from "../api/types";
 import { Corners } from "../components/Blueprint";
 import { Modal, Vazio } from "../components/Modal";
 import { OrdenarMenu, useOrdenacao, type ColunaOrd } from "../components/Ordenar";
-import { diaHora, osNum } from "../domain/format";
+import { diaHora, osNum, posLabel } from "../domain/format";
 import { logsDe } from "../state/useAppData";
 import { SEM_API, type Ctx } from "./tipos";
 
@@ -24,24 +24,32 @@ const porNumero = (a: OrdemResumoDTO, b: OrdemResumoDTO) => numDe(a) - numDe(b);
 /**
  * Inspeção final: OS abertas que já não têm carga vinculada — só falta
  * expedir. "Expedir" é a expedição total (POST /{id}/finalizar).
+ *
+ * Só as OS da posição onde o modal foi aberto: `data.ordens` traz a fábrica
+ * inteira, e expedir daqui a OS de outra posição seria um engano irreversível
+ * para quem está no terminal.
  */
 export function InspecaoModal({ ctx }: { ctx: Ctx }) {
   const { ord, ordenarPor, ordenar } = useOrdenacao(COLUNAS, { chave: "os", asc: true });
+  const label = posLabel(ctx.posicao);
 
   const semCargas = useMemo(
     () =>
       ordenar(
         ctx.data.ordens.filter(
-          (o) => o.emProcesso && !ctx.data.cargas.some((c) => c.ordemAtualId === o.id),
+          (o) =>
+            o.emProcesso &&
+            o.posicao === ctx.posicao &&
+            !ctx.data.cargas.some((c) => c.ordemAtualId === o.id),
         ),
         porNumero,
       ),
-    [ctx.data, ordenar],
+    [ctx.data, ctx.posicao, ordenar],
   );
 
   return (
     <Modal
-      kicker="INSPEÇÃO FINAL"
+      kicker={`INSPEÇÃO FINAL · ${label.toUpperCase()}`}
       titulo="OS sem cargas vinculadas"
       onClose={ctx.fechar}
       footer={
@@ -56,7 +64,7 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
         {/* O `.lbl` traz margem inferior própria — aqui quem espaça é o wrapper,
             senão o rótulo fica desalinhado do botão. */}
         <span className="lbl" style={{ margin: 0 }}>
-          Ordens de serviço sem cargas vinculadas ({semCargas.length})
+          Ordens de serviço sem cargas vinculadas em {label} ({semCargas.length})
         </span>
         <OrdenarMenu
           colunas={COLUNAS}
@@ -141,7 +149,9 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
             </div>
           );
         })}
-        {semCargas.length === 0 && <Vazio>Nenhuma OS aberta sem cargas vinculadas.</Vazio>}
+        {semCargas.length === 0 && (
+          <Vazio>Nenhuma OS aberta sem cargas vinculadas em {label}.</Vazio>
+        )}
       </div>
     </Modal>
   );
