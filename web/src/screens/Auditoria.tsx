@@ -5,10 +5,10 @@ import { LinhaDoTempo } from "../components/LinhaDoTempo";
 import { Vazio } from "../components/Modal";
 import { useOrdenacao, type ColunaOrd } from "../components/Ordenar";
 import {
-  ROTULO_EVENTO, eventosDoDia, faixasDoDia, janelaVisivel, porOperador,
-  type Evento, type TipoEvento,
+  ROTULO_EVENTO, eventosDoDia, faixasDoDia, janelaVisivel, porCarga, porOperador,
+  type Evento, type ResumoCarga, type TipoEvento,
 } from "../domain/auditoria";
-import { SEL_SEG, etapaStyle, pillStyle } from "../domain/derive";
+import { SEL_SEG, dotStyle, etapaStyle, pillStyle } from "../domain/derive";
 import {
   POSICOES, dataLonga, duracao, etapaLabel, iniciais, iso, posLabel,
 } from "../domain/format";
@@ -103,6 +103,7 @@ export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown
 
   const conta = (t: TipoEvento) => eventos.filter((e) => e.tipo === t).length;
   const operadores = useMemo(() => porOperador(eventos), [eventos]);
+  const cargas = useMemo(() => porCarga(grupos), [grupos]);
 
   return (
     <>
@@ -159,6 +160,7 @@ export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown
       <div className="aud-cols">
         <OrdensDoDia eventos={eventos} />
         <QuemFez operadores={operadores} />
+        <CargasDoDia cargas={cargas} />
       </div>
 
       <Feed eventos={eventos} />
@@ -261,6 +263,49 @@ function QuemFez({ operadores }: { operadores: ReturnType<typeof porOperador> })
         </div>
       ))}
       {operadores.length === 0 && <Vazio>Ninguém registou ações neste dia.</Vazio>}
+    </div>
+  );
+}
+
+/* ── cargas do dia ──────────────────────────────────────────────────────── */
+
+/**
+ * Quantas vezes cada carga entrou em processo. A conta é por OS: duas etapas da
+ * mesma carga dentro da mesma ordem são uma entrada só — ver `porCarga`.
+ */
+function CargasDoDia({ cargas }: { cargas: ResumoCarga[] }) {
+  const topo = cargas[0]?.total ?? 1;
+  // Conta entradas, não cargas: a mesma carga em três OS conta três vezes.
+  const entradas = cargas.reduce((s, c) => s + c.total, 0);
+  return (
+    <div className="bp aud-card aud-cargas">
+      <Corners />
+      <div className="aud-card-h">Cargas em processo · {entradas}</div>
+      {cargas.map((c) => (
+        <div key={c.cargaNome} className="aud-op">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              {c.etapas.map((e) => (
+                <span
+                  key={e}
+                  className="turn-dot"
+                  style={dotStyle(e)}
+                  title={etapaLabel(e)}
+                />
+              ))}
+              <span style={{ font: "600 16px 'Barlow Condensed'" }}>{c.cargaNome}</span>
+            </div>
+            <div className="os-tv aud-el" title={c.osLabels.join(" · ")}>
+              {c.osLabels.join(" · ")}
+            </div>
+            <div className="aud-op-bar">
+              <i style={{ width: `${(c.total / topo) * 100}%` }} />
+            </div>
+          </div>
+          <span className="aud-op-n">{c.total}</span>
+        </div>
+      ))}
+      {cargas.length === 0 && <Vazio>Nenhuma carga entrou em processo neste dia.</Vazio>}
     </div>
   );
 }

@@ -263,7 +263,9 @@ export function PassoModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
   if (!ordem) return null;
 
   const cargas = cargasDe(ctx.data, osId);
-  const permitidos = ctx.data.processos.filter((p) => p.posicoes.includes(ordem.posicao));
+  const permitidos = ctx.data.processos.filter(
+    (p) => p.ativo && p.posicoes.includes(ordem.posicao),
+  );
   const grupos = ETAPAS.map((g) => ({ ...g, itens: permitidos.filter((p) => p.etapa === g.key) }))
     .filter((g) => g.itens.length > 0);
 

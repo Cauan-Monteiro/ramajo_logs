@@ -9,6 +9,8 @@ import com.ramajo.logs.system.exceptions.OrdemForaDeCirculacaoException;
 import com.ramajo.logs.system.exceptions.PassoJaFinalizadoException;
 import com.ramajo.logs.system.exceptions.PeriodoInvalidoException;
 import com.ramajo.logs.system.exceptions.PosicaoIncompativelException;
+import com.ramajo.logs.system.exceptions.ProcessoEmUsoException;
+import com.ramajo.logs.system.exceptions.ProcessoInativoException;
 import com.ramajo.logs.system.exceptions.RecursoNaoEncontradoException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -30,10 +32,11 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  *   - recurso inexistente ...................... 404 NOT FOUND
  *   - conflito de ESTADO (já finalizada, carga
  *     em outra OS, passo já fechado, corrida
- *     de lote no índice único) ................. 409 CONFLICT
+ *     de lote no índice único, processo ainda
+ *     configurado como entrada de setor) ....... 409 CONFLICT
  *   - requisição semanticamente inválida
- *     (operador/carga inativa, carga não
- *     vinculada, regra de domínio genérica) .... 422 UNPROCESSABLE ENTITY
+ *     (operador/carga/processo inativo, carga
+ *     não vinculada, regra genérica) ........... 422 UNPROCESSABLE ENTITY
  *   - falha de validação de entrada (@Valid, query
  *     param ausente/malformado, período que não
  *     fecha) .................................... 400 BAD REQUEST
@@ -50,7 +53,8 @@ public class RestExceptionHandler {
     @ExceptionHandler({
             OrdemForaDeCirculacaoException.class,
             CargaIndisponivelException.class,
-            PassoJaFinalizadoException.class})
+            PassoJaFinalizadoException.class,
+            ProcessoEmUsoException.class})
     public ResponseEntity<ApiError> conflito(DominioException ex, HttpServletRequest req) {
         return build(ex, HttpStatus.CONFLICT, req);
     }
@@ -59,7 +63,8 @@ public class RestExceptionHandler {
             CargaInativaException.class,
             CargaNaoVinculadaException.class,
             OperadorInativoException.class,
-            PosicaoIncompativelException.class})
+            PosicaoIncompativelException.class,
+            ProcessoInativoException.class})
     public ResponseEntity<ApiError> naoProcessavel(DominioException ex, HttpServletRequest req) {
         return build(ex, HttpStatus.UNPROCESSABLE_ENTITY, req);
     }

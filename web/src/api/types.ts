@@ -30,6 +30,23 @@ export interface ProcessoDTO {
   etapa: Etapa;
   posicoes: Posicao[];
   tagId: string | null;
+  /**
+   * Arquivado (false) sai das listas de escolha, mas continua vindo no GET: os
+   * logs históricos são cruzados por descrição contra este catálogo (etapaDoLog
+   * em domain/derive.ts). Filtrar aqui apagaria a etapa de todo passo antigo.
+   */
+  ativo: boolean;
+}
+
+/**
+ * dtos/ProcessoInicialDtos.ProcessoInicialDTO — o processo em que toda carga
+ * entra ao ser vinculada a uma OS daquele setor. Uma linha por posição; uma
+ * posição sem linha cai no fallback configurado na API.
+ */
+export interface ProcessoInicialDTO {
+  posicao: Posicao;
+  processoId: number;
+  processoDescricao: string;
 }
 
 /** dtos/CargaDtos.CargaDTO */

@@ -3,6 +3,7 @@ import { ApiErrorException } from "./api/client";
 import { AppNav, type Aba } from "./components/AppNav";
 import { Toast, type Aviso } from "./components/Toast";
 import { POSICOES } from "./domain/format";
+import { Ajustes } from "./screens/Ajustes";
 import { Dashboard } from "./screens/Dashboard";
 import { Login } from "./screens/Login";
 import { RegistrarCargas } from "./screens/RegistrarCargas";
@@ -114,6 +115,8 @@ export function App() {
         />
       ) : aba === "rel" && isAdmin ? (
         <Relatorios data={data} onErro={reportarErro} />
+      ) : aba === "config" && isAdmin ? (
+        <Ajustes data={data} agir={agir} ocupado={ocupado} />
       ) : (
         <Dashboard
           key={posicaoAtual}

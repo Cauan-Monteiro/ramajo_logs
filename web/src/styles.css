@@ -1835,8 +1835,20 @@ select.inp {
 /* — colunas do dia — */
 .aud-cols {
    display: grid;
-   grid-template-columns: 1fr 1fr;
+   grid-template-columns: repeat(3, 1fr);
    gap: 16px
+}
+
+/* Não há breakpoint de tablet no projeto: entre o desktop largo e o `is-mobile`
+   as três colunas espremem os nomes de carga, então a terceira desce inteira. */
+@media (max-width: 1180px) {
+   .aud-cols {
+      grid-template-columns: 1fr 1fr
+   }
+
+   .aud-cargas {
+      grid-column: 1 / -1
+   }
 }
 
 .aud-card {

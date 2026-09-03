@@ -2,7 +2,7 @@ import type {
   Etapa, LogDTO, OrdemDetalheDTO, OrdemResumoDTO, Posicao, ProcessoDTO,
 } from "../api/types";
 import { etapaDoLog } from "./derive";
-import { osNum } from "./format";
+import { ETAPAS, osNum } from "./format";
 
 /**
  * Derivações da aba "Auditoria do dia". Tudo aqui é puro: recebe o que a API já
@@ -361,4 +361,48 @@ export function porOperador(eventos: Evento[]): ResumoOperador[] {
   return [...mapa.values()].sort(
     (a, b) => b.total - a.total || a.nome.localeCompare(b.nome, "pt-BR"),
   );
+}
+
+export interface ResumoCarga {
+  cargaNome: string;
+  /** Nº de OS distintas em que a carga entrou em processo no dia. */
+  total: number;
+  /** Rótulos das OS tocadas, na ordem em que o swimlane as mostra. */
+  osLabels: string[];
+  /** Etapas por que passou, sem repetir e na ordem canónica. */
+  etapas: Etapa[];
+}
+
+/**
+ * Quantas vezes cada carga entrou em processo no dia. A conta é *por OS*: uma
+ * carga que percorreu três processos da mesma ordem entrou nela uma vez só, e é
+ * essa a leitura que o chão de fábrica faz ao perguntar quantas voltas um tambor
+ * deu hoje.
+ *
+ * Parte de `faixasDoDia` e não dos eventos porque as faixas já são exatamente
+ * isso — uma por par (OS, carga), com o recorte do dia feito, incluindo a etapa
+ * que atravessa a meia-noite e a que ficou por fechar.
+ */
+export function porCarga(grupos: Grupo[]): ResumoCarga[] {
+  const mapa = new Map<string, ResumoCarga>();
+  for (const g of grupos) {
+    for (const f of g.faixas) {
+      const r = mapa.get(f.cargaNome)
+        ?? { cargaNome: f.cargaNome, total: 0, osLabels: [], etapas: [] };
+      r.total++;
+      r.osLabels.push(osNum(g.ordem));
+      for (const b of f.barras) {
+        if (b.etapa && !r.etapas.includes(b.etapa)) r.etapas.push(b.etapa);
+      }
+      mapa.set(f.cargaNome, r);
+    }
+  }
+  const ordem = (e: Etapa) => ETAPAS.findIndex((x) => x.key === e);
+  return [...mapa.values()]
+    .map((r) => ({ ...r, etapas: r.etapas.sort((a, b) => ordem(a) - ordem(b)) }))
+    .sort(
+      (a, b) =>
+        b.total - a.total
+        || a.cargaNome.localeCompare(b.cargaNome, "pt-BR", { numeric: true }),
+    );
 }

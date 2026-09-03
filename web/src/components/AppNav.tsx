@@ -3,7 +3,7 @@ import { tabStyle } from "../domain/derive";
 import { POSICOES, iniciais } from "../domain/format";
 import { IconLogo } from "./Icons";
 
-export type Aba = Posicao | "cargas" | "rel";
+export type Aba = Posicao | "cargas" | "rel" | "config";
 
 export function AppNav({
   aba, onAba, operador, isAdmin, onSair,
@@ -31,9 +31,18 @@ export function AppNav({
           Registrar cargas
         </button>
         {isAdmin && (
-          <button className="tabbtn" style={tabStyle(aba === "rel")} onClick={() => onAba("rel")}>
-            Relatórios
-          </button>
+          <>
+            <button className="tabbtn" style={tabStyle(aba === "rel")} onClick={() => onAba("rel")}>
+              Relatórios
+            </button>
+            <button
+              className="tabbtn"
+              style={tabStyle(aba === "config")}
+              onClick={() => onAba("config")}
+            >
+              Ajustes
+            </button>
+          </>
         )}
       </div>
       <div className="opchip">

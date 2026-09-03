@@ -1,7 +1,8 @@
 import { http, NotFoundError } from "./client";
 import type {
-  CargaDTO, ClienteDTO, LogDTO, LoteDTO, OperadorDTO,
-  OrdemDetalheDTO, OrdemResumoDTO, Posicao, ProcessoDTO, RevisaoDTO, TipoCarga,
+  CargaDTO, ClienteDTO, Etapa, LogDTO, LoteDTO, OperadorDTO,
+  OrdemDetalheDTO, OrdemResumoDTO, Posicao, ProcessoDTO, ProcessoInicialDTO,
+  RevisaoDTO, TipoCarga,
 } from "./types";
 
 /** Uma função por rota de system_API. Nada mais mora aqui. */
@@ -22,7 +23,41 @@ export async function operadorPorTag(tagId: string): Promise<OperadorDTO | null>
 export const listarClientes = () => http.get<ClienteDTO[]>("/api/clientes");
 
 // ── processos ───────────────────────────────────────────────────────────
+/** Traz ativos E arquivados — ver o comentário de ProcessoDTO.ativo. */
 export const listarProcessos = () => http.get<ProcessoDTO[]>("/api/processos");
+
+/** O cadastro vai inteiro num request: a API exige ao menos uma posição. */
+export const criarProcesso = (dto: {
+  descricao: string; etapa: Etapa; tagId: string | null; posicoes: Posicao[];
+}) => http.post<ProcessoDTO>("/api/processos", dto);
+
+export const atualizarProcesso = (id: number, dto: {
+  descricao: string; etapa: Etapa; tagId: string | null; posicoes: Posicao[];
+}) => http.put<ProcessoDTO>(`/api/processos/${id}`, dto);
+
+/**
+ * Soft-delete ("Arquivar" na tela): o processo sai das listas de escolha, o
+ * histórico fica. Recusa com 409 o processo que ainda é a entrada de algum
+ * setor — a mensagem do ApiError já vem pronta para o toast.
+ */
+export const arquivarProcesso = (id: number) => http.del<void>(`/api/processos/${id}`);
+
+export const reativarProcesso = (id: number) =>
+  http.post<ProcessoDTO>(`/api/processos/${id}/reativar`);
+
+// ── processos iniciais ──────────────────────────────────────────────────
+export const listarProcessosIniciais = () =>
+  http.get<ProcessoInicialDTO[]>("/api/processos-iniciais");
+
+/**
+ * A posição vai CRUA na URL (OXIDACAO/AUTOMATICA/PENDURADO) — é o
+ * @PathVariable Posicao do Spring, não o rótulo de tela do posLabel().
+ *
+ * Recusa com 422 um processo que não roda naquele setor; a mensagem do
+ * ApiError já vem pronta para o toast.
+ */
+export const definirProcessoInicial = (posicao: Posicao, processoId: number) =>
+  http.put<ProcessoInicialDTO>(`/api/processos-iniciais/${posicao}`, { processoId });
 
 // ── cargas ──────────────────────────────────────────────────────────────
 export const listarCargas = () => http.get<CargaDTO[]>("/api/cargas");

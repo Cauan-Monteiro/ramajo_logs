@@ -25,11 +25,12 @@ public class OrdemServicoService {
     private final ProcessoRepository processoRepo;
     private final LogRepository logRepo;
     private final LoteRepository loteRepo;
+    private final ProcessoInicialRepository processoInicialRepo;
 
-    // Processo em que todo passo inicial é aberto ('Desengraxante(Inicio)',
-    // semeado por V3__processo_inicial.sql). Campo NÃO-final de propósito:
-    // @RequiredArgsConstructor só injeta os finais, então o @Value continua
-    // valendo sem alterar o construtor gerado.
+    // Fallback do processo inicial, usado só quando a posição não tem linha em
+    // posicao_processo_inicial (V7) — o valor global que valia antes dela.
+    // Campo NÃO-final de propósito: @RequiredArgsConstructor só injeta os
+    // finais, então o @Value continua valendo sem alterar o construtor gerado.
     @Value("${app.processo-inicial-id:0}")
     private Long processoInicialId;
 
@@ -44,10 +45,11 @@ public class OrdemServicoService {
     // CRIAÇÃO  ===============================================================================
     /**
      * Cria a OS e, se `cargaIds` vier preenchido, vincula cada carga e abre
-     * para ela um passo no processo inicial — tudo numa transação só. É o que
-     * torna a criação atômica: qualquer carga inválida derruba a operação
-     * inteira, em vez de deixar uma OS meio-montada que ninguém consegue
-     * desfazer (não existe endpoint de desvincular carga nem de apagar OS).
+     * para ela um passo no processo inicial DO SETOR da OS — tudo numa
+     * transação só. É o que torna a criação atômica: qualquer carga inválida
+     * derruba a operação inteira, em vez de deixar uma OS meio-montada que
+     * ninguém consegue desfazer (não existe endpoint de desvincular carga nem
+     * de apagar OS).
      */
     @Transactional
     public OrdemCriada criar(Long clienteId, Long operadorId, Long idExterno, Posicao posicao,
@@ -87,7 +89,7 @@ public class OrdemServicoService {
             return new OrdemCriada(salva, List.of());
         }
 
-        Processo inicial = processoInicial();
+        Processo inicial = processoInicial(salva.getPosicao());
 
         List<Log> logs = new ArrayList<>();
 
@@ -190,7 +192,8 @@ public class OrdemServicoService {
 
     /**
      * Vincula a carga à OS e já abre o passo inicial dela — a mesma regra da
-     * criação da OS: toda carga que entra numa ordem entra pelo desengraxante.
+     * criação da OS: toda carga que entra numa ordem entra pelo processo
+     * inicial configurado para o setor daquela OS.
      * Devolve o passo aberto. Tudo numa transação só: se qualquer validação
      * recusar, o vínculo também não fica gravado.
      *
@@ -220,7 +223,7 @@ public class OrdemServicoService {
         // setOrdemAtual acima porque é a mesma sessão. Sem add() em
         // os.getCargas(): aqui a coleção é LAZY e a resposta é o passo, não a
         // OS — tocá-la só provocaria um SELECT inútil.
-        return abrirLog(os, carga, processoInicial(), operador);
+        return abrirLog(os, carga, processoInicial(os.getPosicao()), operador);
     }
 
     @Transactional
@@ -285,6 +288,12 @@ public class OrdemServicoService {
             throw new OperadorInativoException(op.getId());
         }
 
+        // Processo arquivado saiu do catálogo em uso: o front nem o oferece,
+        // mas a API não tem autenticação e a guarda de verdade é esta.
+        if (!processo.isAtivo()){
+            throw new ProcessoInativoException(processo.getId(), processo.getDescricao());
+        }
+
         // Sem posição cadastrada o processo não roda em setor nenhum — é
         // cadastro incompleto, não incompatibilidade. Código de erro próprio
         // porque a ação corretiva é outra.
@@ -345,11 +354,24 @@ public class OrdemServicoService {
         return iniciou;
     }
 
-    /** O processo em que toda carga entra ao ser vinculada — semeado pela V3. */
-    private Processo processoInicial(){
-        return processoRepo.findById(processoInicialId)
-                .orElseThrow(() -> new RecursoNaoEncontradoException(
-                        "Processo inicial", processoInicialId));
+    /**
+     * O processo em que toda carga entra ao ser vinculada, por setor: cada
+     * posição tem seu primeiro tanque, e a relação mora em
+     * posicao_processo_inicial (V7), configurável por
+     * PUT /api/processos-iniciais/{posicao}.
+     *
+     * Sem linha para a posição, cai no app.processo-inicial-id — o valor
+     * global que valia antes da V7. É rede de segurança para banco que ainda
+     * não migrou, não a fonte da verdade.
+     */
+    private Processo processoInicial(Posicao posicao){
+        return processoInicialRepo.findById(posicao)
+                .map(ProcessoInicial::getProcesso)
+                .orElseGet(() -> processoRepo.findById(processoInicialId)
+                        .orElseThrow(() -> new RecursoNaoEncontradoException(
+                                "Processo inicial da posição " + posicao
+                                        + " (nem configurado, nem no fallback "
+                                        + processoInicialId + ")")));
     }
 
     /** A carga tem que rodar no mesmo setor da OS — senão o passo é impossível. */

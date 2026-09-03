@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../api/endpoints";
 import type {
-  CargaDTO, ClienteDTO, LogDTO, OrdemResumoDTO, ProcessoDTO,
+  CargaDTO, ClienteDTO, LogDTO, OrdemResumoDTO, ProcessoDTO, ProcessoInicialDTO,
 } from "../api/types";
 
 export interface AppData {
   clientes: ClienteDTO[];
   processos: ProcessoDTO[];
+  /** Processo de entrada de cada setor. No máximo uma linha por posição. */
+  processosIniciais: ProcessoInicialDTO[];
   cargas: CargaDTO[];
   ordens: OrdemResumoDTO[];
   /** Histórico por OS em processo, indexado por id da OS. */
@@ -14,7 +16,8 @@ export interface AppData {
 }
 
 const VAZIO: AppData = {
-  clientes: [], processos: [], cargas: [], ordens: [], logsPorOrdem: {},
+  clientes: [], processos: [], processosIniciais: [], cargas: [], ordens: [],
+  logsPorOrdem: {},
 };
 
 /**
@@ -40,16 +43,18 @@ export function useAppData(onError: (e: unknown) => void) {
     const meu = ++emVoo.current;
     setCarregando(true);
     try {
-      const [revisao, clientes, processos, cargas, ordens] = await Promise.all([
-        // Lida junto com os dados, nunca depois: se algo mudar no meio desta
-        // carga, a marca guardada fica atrasada e o próximo poll corrige. O
-        // contrário (ler depois) perderia a alteração para sempre.
-        api.revisaoEstado(),
-        api.listarClientes(),
-        api.listarProcessos(),
-        api.listarCargas(),
-        api.listarOrdens(false),
-      ]);
+      const [revisao, clientes, processos, processosIniciais, cargas, ordens] =
+        await Promise.all([
+          // Lida junto com os dados, nunca depois: se algo mudar no meio desta
+          // carga, a marca guardada fica atrasada e o próximo poll corrige. O
+          // contrário (ler depois) perderia a alteração para sempre.
+          api.revisaoEstado(),
+          api.listarClientes(),
+          api.listarProcessos(),
+          api.listarProcessosIniciais(),
+          api.listarCargas(),
+          api.listarOrdens(false),
+        ]);
 
       const emProcesso = ordens.filter((o) => o.emProcesso);
       const historicos = await Promise.all(
@@ -60,7 +65,7 @@ export function useAppData(onError: (e: unknown) => void) {
       if (meu !== emVoo.current) return;
 
       setData({
-        clientes, processos, cargas, ordens,
+        clientes, processos, processosIniciais, cargas, ordens,
         logsPorOrdem: Object.fromEntries(historicos),
       });
       setMarca(`${revisao.instancia}:${revisao.revisao}`);

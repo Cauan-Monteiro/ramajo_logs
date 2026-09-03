@@ -50,6 +50,11 @@ public class Processo {
     @Column(name = "tag_id", length = 64)
     private String tagId;
 
+    // Soft-delete (V8), como em Carga: arquivar tira o processo das listas de
+    // escolha sem apagar a linha que os logs históricos referenciam.
+    @Column(nullable = false)
+    private boolean ativo = true;
+
     protected Processo() {
     }
 
@@ -88,5 +93,13 @@ public class Processo {
 
     public void setTagId(String tagId) {
         this.tagId = tagId;
+    }
+
+    public boolean isAtivo() {
+        return ativo;
+    }
+
+    public void setAtivo(boolean ativo) {
+        this.ativo = ativo;
     }
 }

@@ -93,7 +93,7 @@ fidelidade.
 
 | Precisa de | Vem de |
 |---|---|
-| `Etapa` de um passo (chip colorido) | `LogDTO.processoDescricao` cruzado com `GET /api/processos` — o LogDTO não traz etapa nem processoId |
+| `Etapa` de um passo (chip colorido) | `LogDTO.processoDescricao` cruzado com `GET /api/processos` — o LogDTO não traz etapa nem processoId. É por isso que a rota devolve também os processos arquivados (`ativo: false`): sem eles, todo passo de um processo arquivado perderia a cor da etapa. Quem *oferece* processo ao utilizador é que filtra por `ativo` |
 | id da carga de um passo | `LogDTO.cargaNome` cruzado com `GET /api/cargas` |
 | cliente de uma OS na listagem | `OrdemResumoDTO` só tem `clienteNome`, não `clienteId` |
 | `finalizadaEm` de uma OS | só no `OrdemDetalheDTO` — o relatório de tempo médio busca cada OS encerrada |

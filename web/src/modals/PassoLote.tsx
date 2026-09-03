@@ -20,7 +20,9 @@ export function PassoLoteModal({ ctx, selecao }: { ctx: Ctx; selecao: string[] }
     .map((nome) => ctx.data.cargas.find((c) => c.nome === nome))
     .filter((c): c is NonNullable<typeof c> => !!c && c.ordemAtualId !== null);
 
-  const permitidos = ctx.data.processos.filter((p) => p.posicoes.includes(ctx.posicao));
+  const permitidos = ctx.data.processos.filter(
+    (p) => p.ativo && p.posicoes.includes(ctx.posicao),
+  );
 
   const grupos = ETAPAS.map((g) => ({
     ...g,
