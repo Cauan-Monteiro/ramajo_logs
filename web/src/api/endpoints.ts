@@ -1,6 +1,6 @@
 import { http, NotFoundError } from "./client";
 import type {
-  CargaDTO, ClienteDTO, Etapa, LogDTO, LoteDTO, OperadorDTO,
+  CargaDTO, ClienteDTO, Etapa, LogDTO, LoteDTO, OperadorDTO, Permissao,
   OrdemDetalheDTO, OrdemResumoDTO, Posicao, ProcessoDTO, ProcessoInicialDTO,
   RevisaoDTO, TipoCarga,
 } from "./types";
@@ -8,7 +8,33 @@ import type {
 /** Uma função por rota de system_API. Nada mais mora aqui. */
 
 // ── operadores ──────────────────────────────────────────────────────────
+/** Traz ativos E inativos: a tela de Ajustes precisa dos dois. */
 export const listarOperadores = () => http.get<OperadorDTO[]>("/api/operadores");
+
+/** O mesmo corpo serve POST e PUT — do lado do Java é um CriarOperadorDTO só. */
+export const criarOperador = (dto: {
+  nome: string; permissao: Permissao; tagId: string | null;
+}) => http.post<OperadorDTO>("/api/operadores", dto);
+
+export const atualizarOperador = (id: number, dto: {
+  nome: string; permissao: Permissao; tagId: string | null;
+}) => http.put<OperadorDTO>(`/api/operadores/${id}`, dto);
+
+/**
+ * Soft-delete ("Desativar" na tela): o operador sai do início de turno, tudo
+ * que ele assinou continua legível. Recusa com 409 o último admin ativo.
+ */
+export const desativarOperador = (id: number) => http.del<void>(`/api/operadores/${id}`);
+
+export const reativarOperador = (id: number) =>
+  http.post<OperadorDTO>(`/api/operadores/${id}/reativar`);
+
+/**
+ * Hard delete: apaga a linha. Recusa com 409 (OPERADOR_EM_USO) quem já assinou
+ * passos, ordens ou lotes — a mensagem do ApiError já vem pronta para o toast.
+ */
+export const excluirOperador = (id: number) =>
+  http.del<void>(`/api/operadores/${id}?definitivo=true`);
 
 export async function operadorPorTag(tagId: string): Promise<OperadorDTO | null> {
   try {

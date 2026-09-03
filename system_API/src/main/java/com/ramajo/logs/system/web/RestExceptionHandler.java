@@ -4,6 +4,7 @@ import com.ramajo.logs.system.exceptions.CargaIndisponivelException;
 import com.ramajo.logs.system.exceptions.CargaInativaException;
 import com.ramajo.logs.system.exceptions.CargaNaoVinculadaException;
 import com.ramajo.logs.system.exceptions.DominioException;
+import com.ramajo.logs.system.exceptions.OperadorEmUsoException;
 import com.ramajo.logs.system.exceptions.OperadorInativoException;
 import com.ramajo.logs.system.exceptions.OrdemForaDeCirculacaoException;
 import com.ramajo.logs.system.exceptions.PassoJaFinalizadoException;
@@ -33,7 +34,8 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  *   - conflito de ESTADO (já finalizada, carga
  *     em outra OS, passo já fechado, corrida
  *     de lote no índice único, processo ainda
- *     configurado como entrada de setor) ....... 409 CONFLICT
+ *     configurado como entrada de setor, operador
+ *     com histórico ou último admin) ........... 409 CONFLICT
  *   - requisição semanticamente inválida
  *     (operador/carga/processo inativo, carga
  *     não vinculada, regra genérica) ........... 422 UNPROCESSABLE ENTITY
@@ -54,7 +56,8 @@ public class RestExceptionHandler {
             OrdemForaDeCirculacaoException.class,
             CargaIndisponivelException.class,
             PassoJaFinalizadoException.class,
-            ProcessoEmUsoException.class})
+            ProcessoEmUsoException.class,
+            OperadorEmUsoException.class})
     public ResponseEntity<ApiError> conflito(DominioException ex, HttpServletRequest req) {
         return build(ex, HttpStatus.CONFLICT, req);
     }

@@ -14,6 +14,9 @@ public interface LoteRepository extends JpaRepository<Lote, Long> {
 
     List<Lote> findByOrdemServicoIdOrderByNumeroAsc(Long ordemServicoId);
 
+    // Referências a um operador; ver countByResponsavelId em LogRepository.
+    long countByFinalizadoPorId(Long operadorId);
+
     // Para a planilha: o operador que fechou cada lote já vem junto.
     // LEFT porque o lote aberto ainda não tem quem o finalizou.
     @Query("""

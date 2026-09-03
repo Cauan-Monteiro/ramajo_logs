@@ -13,6 +13,11 @@ public interface OrdemServicoRepository extends JpaRepository<OrdemServico, Long
     List<OrdemServico> findByEmProcessoTrue();
     Optional<OrdemServico> findByIdExterno(Long idExterno);
 
+    // Referências a um operador nas duas pontas da OS (quem abriu, quem fechou);
+    // ver countByResponsavelId em LogRepository. Os dois parâmetros são o mesmo
+    // id — o Spring Data exige um por termo do OR.
+    long countByIniciadaPorIdOrFinalizadaPorId(Long iniciadaPorId, Long finalizadaPorId);
+
     // As OSs ABERTAS na janela, com as relações LAZY que o relatório lê já
     // resolvidas — sem isto seriam 3N queries. iniciadaPor/finalizadaPor são
     // opcionais, daí o left join. O fim da janela é EXCLUSIVO (ver DataHoraBr).

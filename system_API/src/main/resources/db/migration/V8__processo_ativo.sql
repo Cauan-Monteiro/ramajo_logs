@@ -11,3 +11,8 @@
 -- =====================================================================
 
 ALTER TABLE processos ADD COLUMN ativo BOOLEAN NOT NULL DEFAULT TRUE;
+
+INSERT INTO clientes (id, nome) VALUES
+    (   0, 'CLIENTE GENÉRICO')
+ON CONFLICT (id) DO NOTHING;
+

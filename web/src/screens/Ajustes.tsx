@@ -1,6 +1,6 @@
 import { useState } from "react";
 import * as api from "../api/endpoints";
-import type { Posicao, ProcessoDTO } from "../api/types";
+import type { OperadorDTO, Posicao, ProcessoDTO } from "../api/types";
 import { Corners } from "../components/Blueprint";
 import { Modal, Vazio } from "../components/Modal";
 import { SEL_PICK, SEL_SEG, dotStyle } from "../domain/derive";
@@ -8,21 +8,24 @@ import { ETAPAS, posLabel, POSICOES } from "../domain/format";
 import type { AppData } from "../state/useAppData";
 import type { Ctx } from "../modals/tipos";
 import { AjustesCatalogo } from "./AjustesCatalogo";
+import { AjustesOperadores } from "./AjustesOperadores";
 
 /** O que o diálogo de confirmação precisa saber: para onde e para qual. */
 type Troca = { pos: Posicao; processo: ProcessoDTO };
 
-type Sub = "inicial" | "catalogo";
+type Sub = "inicial" | "catalogo" | "operadores";
 
 const SUBS: { key: Sub; label: string }[] = [
   { key: "inicial", label: "Processo inicial" },
   { key: "catalogo", label: "Catálogo" },
+  { key: "operadores", label: "Operadores" },
 ];
 
 /**
- * Ajustes de configuração, em duas frentes: o processo inicial de cada setor
- * (em que processo toda carga entra ao ser vinculada a uma OS daquela posição)
- * e o catálogo de processos em si — cadastrar, editar e arquivar.
+ * Ajustes de configuração, em três frentes: o processo inicial de cada setor
+ * (em que processo toda carga entra ao ser vinculada a uma OS daquela posição),
+ * o catálogo de processos em si — cadastrar, editar e arquivar — e o cadastro
+ * de operadores.
  *
  * Tela de ADMIN (App.tsx só a monta com isAdmin), mas o gate é de conveniência:
  * a API não tem autenticação, então quem sabe a rota chama o PUT direto. Mesma
@@ -33,9 +36,11 @@ const SUBS: { key: Sub; label: string }[] = [
  * `agir`/`ocupado` soltos, como os sub-componentes de Relatórios fazem.
  */
 export function Ajustes({
-  data, agir, ocupado,
+  data, operador, agir, ocupado,
 }: {
   data: AppData;
+  /** O operador do turno — a sub-aba de operadores usa para não removê-lo. */
+  operador: OperadorDTO;
   agir: Ctx["agir"];
   ocupado: boolean;
 }) {
@@ -59,8 +64,15 @@ export function Ajustes({
 
       {sub === "inicial" ? (
         <ProcessoInicialPainel data={data} agir={agir} ocupado={ocupado} />
-      ) : (
+      ) : sub === "catalogo" ? (
         <AjustesCatalogo data={data} agir={agir} ocupado={ocupado} />
+      ) : (
+        <AjustesOperadores
+          data={data}
+          operador={operador}
+          agir={agir}
+          ocupado={ocupado}
+        />
       )}
     </div>
   );

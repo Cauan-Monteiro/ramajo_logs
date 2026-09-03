@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../api/endpoints";
 import type {
-  CargaDTO, ClienteDTO, LogDTO, OrdemResumoDTO, ProcessoDTO, ProcessoInicialDTO,
+  CargaDTO, ClienteDTO, LogDTO, OperadorDTO, OrdemResumoDTO, ProcessoDTO,
+  ProcessoInicialDTO,
 } from "../api/types";
 
 export interface AppData {
   clientes: ClienteDTO[];
+  /** Ativos e inativos — Ajustes precisa dos dois; o Login filtra por conta. */
+  operadores: OperadorDTO[];
   processos: ProcessoDTO[];
   /** Processo de entrada de cada setor. No máximo uma linha por posição. */
   processosIniciais: ProcessoInicialDTO[];
@@ -16,8 +19,8 @@ export interface AppData {
 }
 
 const VAZIO: AppData = {
-  clientes: [], processos: [], processosIniciais: [], cargas: [], ordens: [],
-  logsPorOrdem: {},
+  clientes: [], operadores: [], processos: [], processosIniciais: [], cargas: [],
+  ordens: [], logsPorOrdem: {},
 };
 
 /**
@@ -43,13 +46,14 @@ export function useAppData(onError: (e: unknown) => void) {
     const meu = ++emVoo.current;
     setCarregando(true);
     try {
-      const [revisao, clientes, processos, processosIniciais, cargas, ordens] =
+      const [revisao, clientes, operadores, processos, processosIniciais, cargas, ordens] =
         await Promise.all([
           // Lida junto com os dados, nunca depois: se algo mudar no meio desta
           // carga, a marca guardada fica atrasada e o próximo poll corrige. O
           // contrário (ler depois) perderia a alteração para sempre.
           api.revisaoEstado(),
           api.listarClientes(),
+          api.listarOperadores(),
           api.listarProcessos(),
           api.listarProcessosIniciais(),
           api.listarCargas(),
@@ -65,7 +69,7 @@ export function useAppData(onError: (e: unknown) => void) {
       if (meu !== emVoo.current) return;
 
       setData({
-        clientes, processos, processosIniciais, cargas, ordens,
+        clientes, operadores, processos, processosIniciais, cargas, ordens,
         logsPorOrdem: Object.fromEntries(historicos),
       });
       setMarca(`${revisao.instancia}:${revisao.revisao}`);

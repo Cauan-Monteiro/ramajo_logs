@@ -1,4 +1,4 @@
-import type { Etapa, Posicao } from "../api/types";
+import type { Etapa, Permissao, Posicao } from "../api/types";
 
 /** A API carimba Instant em UTC; a tela mostra sempre hora local. */
 
@@ -48,6 +48,15 @@ export const ETAPAS: { key: Etapa; label: string }[] = [
 
 export function etapaLabel(e: Etapa | null | undefined): string {
   return ETAPAS.find((x) => x.key === e)?.label ?? "Sem etapa";
+}
+
+export const PERMISSOES: { key: Permissao; label: string }[] = [
+  { key: "ADMIN", label: "Administrador" },
+  { key: "FUNCIONARIO", label: "Funcionário" },
+];
+
+export function permissaoLabel(p: Permissao | null | undefined): string {
+  return PERMISSOES.find((x) => x.key === p)?.label ?? String(p ?? "—");
 }
 
 export function iniciais(nome: string): string {

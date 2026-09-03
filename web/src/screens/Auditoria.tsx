@@ -5,8 +5,8 @@ import { LinhaDoTempo } from "../components/LinhaDoTempo";
 import { Vazio } from "../components/Modal";
 import { useOrdenacao, type ColunaOrd } from "../components/Ordenar";
 import {
-  ROTULO_EVENTO, eventosDoDia, faixasDoDia, janelaVisivel, porCarga, porOperador,
-  type Evento, type ResumoCarga, type TipoEvento,
+  ROTULO_EVENTO, eventosDoDia, faixasDoDia, janelaVisivel, porOperador, porOrdem,
+  type Evento, type ResumoOrdem, type TipoEvento,
 } from "../domain/auditoria";
 import { SEL_SEG, dotStyle, etapaStyle, pillStyle } from "../domain/derive";
 import {
@@ -103,7 +103,7 @@ export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown
 
   const conta = (t: TipoEvento) => eventos.filter((e) => e.tipo === t).length;
   const operadores = useMemo(() => porOperador(eventos), [eventos]);
-  const cargas = useMemo(() => porCarga(grupos), [grupos]);
+  const cargas = useMemo(() => porOrdem(grupos), [grupos]);
 
   return (
     <>
@@ -270,19 +270,20 @@ function QuemFez({ operadores }: { operadores: ReturnType<typeof porOperador> })
 /* ── cargas do dia ──────────────────────────────────────────────────────── */
 
 /**
- * Quantas vezes cada carga entrou em processo. A conta é por OS: duas etapas da
- * mesma carga dentro da mesma ordem são uma entrada só — ver `porCarga`.
+ * Quantas cargas cada OS levou. A conta é por carga: duas etapas da mesma carga
+ * dentro da mesma ordem são uma entrada só — ver `porOrdem`.
  */
-function CargasDoDia({ cargas }: { cargas: ResumoCarga[] }) {
+function CargasDoDia({ cargas }: { cargas: ResumoOrdem[] }) {
   const topo = cargas[0]?.total ?? 1;
-  // Conta entradas, não cargas: a mesma carga em três OS conta três vezes.
+  // Conta entradas, não cargas: a mesma carga em três OS conta três vezes. O
+  // total não muda com o reagrupamento — é a soma dos pares (OS, carga).
   const entradas = cargas.reduce((s, c) => s + c.total, 0);
   return (
     <div className="bp aud-card aud-cargas">
       <Corners />
-      <div className="aud-card-h">Cargas em processo · {entradas}</div>
+      <div className="aud-card-h">Cargas processadas · {entradas}</div>
       {cargas.map((c) => (
-        <div key={c.cargaNome} className="aud-op">
+        <div key={c.osLabel} className="aud-op">
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
               {c.etapas.map((e) => (
@@ -293,10 +294,11 @@ function CargasDoDia({ cargas }: { cargas: ResumoCarga[] }) {
                   title={etapaLabel(e)}
                 />
               ))}
-              <span style={{ font: "600 16px 'Barlow Condensed'" }}>{c.cargaNome}</span>
+              <span className="os-num" style={{ fontSize: 17 }}>{c.osLabel}</span>
             </div>
-            <div className="os-tv aud-el" title={c.osLabels.join(" · ")}>
-              {c.osLabels.join(" · ")}
+            {/* O title guarda a lista inteira: .aud-el trunca numa linha só. */}
+            <div className="os-tv aud-el" title={c.cargaNomes.join(" · ")}>
+              {c.cargaNomes.join(" · ")}
             </div>
             <div className="aud-op-bar">
               <i style={{ width: `${(c.total / topo) * 100}%` }} />

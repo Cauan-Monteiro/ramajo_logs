@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -58,9 +59,26 @@ public class OperadorController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    @DeleteMapping("/{id}") // soft-delete
-    public ResponseEntity<Void> desativar(@PathVariable Long id) {
-        service.desativar(id);
+    @PostMapping("/{id}/reativar")
+    public OperadorDTO reativar(@PathVariable Long id) {
+        return OperadorDTO.from(service.reativar(id));
+    }
+
+    /**
+     * Sem `definitivo`, soft-delete: o operador sai do início de turno e todo o
+     * histórico que ele assinou continua legível. Com `definitivo=true`, apaga a
+     * linha — e aí a API recusa com 409 quem já registrou passos, ordens ou
+     * lotes (ver OperadorService.excluir).
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> remover(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "false") boolean definitivo) {
+        if (definitivo) {
+            service.excluir(id);
+        } else {
+            service.desativar(id);
+        }
         return ResponseEntity.noContent().build();
     }
 }

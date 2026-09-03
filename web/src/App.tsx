@@ -116,7 +116,7 @@ export function App() {
       ) : aba === "rel" && isAdmin ? (
         <Relatorios data={data} onErro={reportarErro} />
       ) : aba === "config" && isAdmin ? (
-        <Ajustes data={data} agir={agir} ocupado={ocupado} />
+        <Ajustes data={data} operador={operador} agir={agir} ocupado={ocupado} />
       ) : (
         <Dashboard
           key={posicaoAtual}

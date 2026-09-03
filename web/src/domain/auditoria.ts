@@ -363,46 +363,51 @@ export function porOperador(eventos: Evento[]): ResumoOperador[] {
   );
 }
 
-export interface ResumoCarga {
-  cargaNome: string;
-  /** Nº de OS distintas em que a carga entrou em processo no dia. */
+export interface ResumoOrdem {
+  osLabel: string;
+  /** Nº de cargas distintas que entraram nesta OS no dia. */
   total: number;
-  /** Rótulos das OS tocadas, na ordem em que o swimlane as mostra. */
-  osLabels: string[];
-  /** Etapas por que passou, sem repetir e na ordem canónica. */
+  /** Nomes das cargas, na ordem em que o swimlane as mostra. */
+  cargaNomes: string[];
+  /** Etapas por que a OS passou, sem repetir e na ordem canónica. */
   etapas: Etapa[];
 }
 
 /**
- * Quantas vezes cada carga entrou em processo no dia. A conta é *por OS*: uma
+ * Quantas cargas cada OS levou no dia. A conta é *por par (OS, carga)*: uma
  * carga que percorreu três processos da mesma ordem entrou nela uma vez só, e é
- * essa a leitura que o chão de fábrica faz ao perguntar quantas voltas um tambor
- * deu hoje.
+ * essa a leitura que o chão de fábrica faz ao perguntar quanta coisa uma ordem
+ * moveu hoje.
  *
  * Parte de `faixasDoDia` e não dos eventos porque as faixas já são exatamente
  * isso — uma por par (OS, carga), com o recorte do dia feito, incluindo a etapa
- * que atravessa a meia-noite e a que ficou por fechar.
+ * que atravessa a meia-noite e a que ficou por fechar. Um `Grupo` já É uma OS,
+ * então aqui não há o que agrupar: basta contar as suas faixas.
  */
-export function porCarga(grupos: Grupo[]): ResumoCarga[] {
-  const mapa = new Map<string, ResumoCarga>();
-  for (const g of grupos) {
-    for (const f of g.faixas) {
-      const r = mapa.get(f.cargaNome)
-        ?? { cargaNome: f.cargaNome, total: 0, osLabels: [], etapas: [] };
-      r.total++;
-      r.osLabels.push(osNum(g.ordem));
-      for (const b of f.barras) {
-        if (b.etapa && !r.etapas.includes(b.etapa)) r.etapas.push(b.etapa);
-      }
-      mapa.set(f.cargaNome, r);
-    }
-  }
+export function porOrdem(grupos: Grupo[]): ResumoOrdem[] {
   const ordem = (e: Etapa) => ETAPAS.findIndex((x) => x.key === e);
-  return [...mapa.values()]
-    .map((r) => ({ ...r, etapas: r.etapas.sort((a, b) => ordem(a) - ordem(b)) }))
+  return grupos
+    // OS que só teve marcos no dia (ver a guarda em faixasDoDia) não moveu
+    // carga nenhuma: fora da lista, senão entraria com barra de comprimento
+    // zero a dizer que foi processada.
+    .filter((g) => g.faixas.length > 0)
+    .map((g) => {
+      const etapas: Etapa[] = [];
+      for (const f of g.faixas) {
+        for (const b of f.barras) {
+          if (b.etapa && !etapas.includes(b.etapa)) etapas.push(b.etapa);
+        }
+      }
+      return {
+        osLabel: osNum(g.ordem),
+        total: g.faixas.length,
+        cargaNomes: g.faixas.map((f) => f.cargaNome),
+        etapas: etapas.sort((a, b) => ordem(a) - ordem(b)),
+      };
+    })
     .sort(
       (a, b) =>
         b.total - a.total
-        || a.cargaNome.localeCompare(b.cargaNome, "pt-BR", { numeric: true }),
+        || a.osLabel.localeCompare(b.osLabel, "pt-BR", { numeric: true }),
     );
 }
