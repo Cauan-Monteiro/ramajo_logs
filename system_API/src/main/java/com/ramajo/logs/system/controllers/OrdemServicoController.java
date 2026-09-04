@@ -6,6 +6,7 @@ import com.ramajo.logs.system.dtos.OrdemDtos.FinalizarLoteDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.FinalizarOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.IniciarLogDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.IniciarLogPorTagDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.LiberarCargasDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.LogDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.LoteDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.OrdemDetalheDTO;
@@ -157,9 +158,21 @@ public class OrdemServicoController {
         return LogDTO.from(service.finalizarLog(logId));
     }
 
-    // passo 2b: fim de uma PARTE da produção. Fecha o lote corrente e abre o
-    // seguinte; a OS segue aberta. Retorna o lote recém-aberto. Com `cargaIds`
-    // no corpo é expedição parcial: essas cargas fecham o passo e saem da OS.
+    // passo 2c: fim do trabalho de algumas cargas. Fecha o passo aberto de cada
+    // uma e as devolve ao pool de livres; a OS segue aberta e o LOTE NÃO MUDA.
+    // É a rotina "encerrar etapas" da home — virar o lote é decisão de
+    // expedição parcial, na rota abaixo.
+    @PostMapping("/{id}/cargas/liberar")
+    public ResponseEntity<Void> liberarCargas(
+            @PathVariable Long id, @Valid @RequestBody LiberarCargasDTO dto) {
+        service.liberarCargas(id, dto.operadorId(), dto.cargaIds());
+        return ResponseEntity.noContent().build();
+    }
+
+    // passo 2b: fim de uma PARTE da produção (expedição parcial). Fecha o lote
+    // corrente e abre o seguinte; a OS segue aberta. Retorna o lote recém-aberto.
+    // É o único caminho que leva uma OS ao 2º lote. Com `cargaIds` no corpo,
+    // essas cargas fecham o passo e saem da OS junto com o lote.
     @PostMapping("/{id}/lotes/finalizar")
     public LoteDTO finalizarLote(
             @PathVariable Long id, @Valid @RequestBody FinalizarLoteDTO dto) {

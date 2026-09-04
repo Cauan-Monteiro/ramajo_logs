@@ -9,23 +9,25 @@ import type { AppData } from "../state/useAppData";
 import type { Ctx } from "../modals/tipos";
 import { AjustesCatalogo } from "./AjustesCatalogo";
 import { AjustesOperadores } from "./AjustesOperadores";
+import { RegistrarCargas } from "./RegistrarCargas";
 
 /** O que o diálogo de confirmação precisa saber: para onde e para qual. */
 type Troca = { pos: Posicao; processo: ProcessoDTO };
 
-type Sub = "inicial" | "catalogo" | "operadores";
+type Sub = "inicial" | "catalogo" | "operadores" | "cargas";
 
 const SUBS: { key: Sub; label: string }[] = [
   { key: "inicial", label: "Processo inicial" },
   { key: "catalogo", label: "Catálogo" },
   { key: "operadores", label: "Operadores" },
+  { key: "cargas", label: "Registrar cargas" },
 ];
 
 /**
- * Ajustes de configuração, em três frentes: o processo inicial de cada setor
+ * Ajustes de configuração, em quatro frentes: o processo inicial de cada setor
  * (em que processo toda carga entra ao ser vinculada a uma OS daquela posição),
- * o catálogo de processos em si — cadastrar, editar e arquivar — e o cadastro
- * de operadores.
+ * o catálogo de processos em si — cadastrar, editar e arquivar —, o cadastro
+ * de operadores e o cadastro de cargas.
  *
  * Tela de ADMIN (App.tsx só a monta com isAdmin), mas o gate é de conveniência:
  * a API não tem autenticação, então quem sabe a rota chama o PUT direto. Mesma
@@ -36,13 +38,16 @@ const SUBS: { key: Sub; label: string }[] = [
  * `agir`/`ocupado` soltos, como os sub-componentes de Relatórios fazem.
  */
 export function Ajustes({
-  data, operador, agir, ocupado,
+  data, operador, posicaoAtual, agir, ocupado, isMobile,
 }: {
   data: AppData;
   /** O operador do turno — a sub-aba de operadores usa para não removê-lo. */
   operador: OperadorDTO;
+  /** Posição pré-selecionada no formulário da sub-aba de cargas. */
+  posicaoAtual: Posicao;
   agir: Ctx["agir"];
   ocupado: boolean;
+  isMobile: boolean;
 }) {
   const [sub, setSub] = useState<Sub>("inicial");
 
@@ -66,6 +71,14 @@ export function Ajustes({
         <ProcessoInicialPainel data={data} agir={agir} ocupado={ocupado} />
       ) : sub === "catalogo" ? (
         <AjustesCatalogo data={data} agir={agir} ocupado={ocupado} />
+      ) : sub === "cargas" ? (
+        <RegistrarCargas
+          data={data}
+          posicaoAtual={posicaoAtual}
+          agir={agir}
+          ocupado={ocupado}
+          isMobile={isMobile}
+        />
       ) : (
         <AjustesOperadores
           data={data}

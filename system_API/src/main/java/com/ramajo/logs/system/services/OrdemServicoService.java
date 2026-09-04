@@ -126,54 +126,88 @@ public class OrdemServicoService {
 
     }
 
-    // LOTES  =================================================================
+    // CARGAS: LIBERAÇÃO  =====================================================
     /**
-     * Fecha o lote em produção e abre o seguinte — a OS continua aberta.
-     * Retorna o lote recém-aberto, para o operador ver em qual está agora.
+     * Fecha o passo aberto de cada carga listada e a devolve ao pool de livres
+     * (`ordemAtual = null`). A OS continua aberta e **o lote não muda**.
      *
-     * `cargaIds` é opcional. Preenchido, é a expedição parcial: cada carga
-     * listada tem o passo aberto fechado e sai da OS (`ordemAtual = null`),
-     * voltando ao pool de livres. Tudo na mesma transação — carga inválida na
-     * lista derruba a operação inteira, sem lote meio-fechado.
+     * É a rotina de chão de fábrica ("encerrar etapas"), separada de propósito
+     * de finalizarLote(): virar o lote é decisão de expedição parcial, tomada
+     * na Inspeção Final, não efeito colateral de fechar etapas em massa.
+     *
+     * Tudo na mesma transação — carga inválida na lista derruba a operação
+     * inteira, sem cargas meio-liberadas.
      */
     @Transactional
-    public Lote finalizarLote(Long osId, Long operadorId, List<Long> cargaIds){
-        OrdemServico os = carregarAberta(osId);
+    public void liberarCargas(Long osId, Long operadorId, List<Long> cargaIds){
+        carregarAberta(osId);
+        exigirOperadorAtivo(operadorId);
 
+        // Um instante só para todos os passos: são o mesmo evento, e datas
+        // diferentes sujariam o relatório de duração.
+        liberar(osId, cargaIds, Instant.now());
+    }
+
+    /**
+     * O laço de liberação em si, compartilhado com finalizarLote(). `cargaIds`
+     * nulo é no-op — a chamada "só avança o lote" passa por aqui sem efeito.
+     */
+    private void liberar(Long osId, List<Long> cargaIds, Instant at){
+        if (cargaIds == null) return;
+
+        for (Long cargaId : new LinkedHashSet<>(cargaIds)){
+            Carga carga = cargaRepo.findById(cargaId)
+                    .orElseThrow(() -> new RecursoNaoEncontradoException("Carga", cargaId));
+
+            if (carga.getOrdemAtual() == null
+                    || !carga.getOrdemAtual().getId().equals(osId)){
+                throw new CargaNaoVinculadaException(cargaId, osId);
+            }
+
+            // Passo aberto não sobrevive à liberação: com
+            // ux_logs_carga_aberto ele impediria a carga de iniciar
+            // qualquer passo futuro, em qualquer OS. Mesma regra de
+            // finalizar(); nem toda carga tem um, daí o ifPresent.
+            logRepo.findByCargaIdAndFinalizadoEmIsNull(cargaId)
+                    .ifPresent(aberto -> fecharPasso(aberto, at));
+
+            carga.setOrdemAtual(null);
+        }
+    }
+
+    private Operador exigirOperadorAtivo(Long operadorId){
         Operador op = operadorRepo.findById(operadorId)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Operador", operadorId));
 
         if (!op.isAtivo()){
             throw new OperadorInativoException(operadorId);
         }
+        return op;
+    }
+
+    // LOTES  =================================================================
+    /**
+     * Expedição parcial: fecha o lote em produção e abre o seguinte — a OS
+     * continua aberta. Retorna o lote recém-aberto, para o operador ver em
+     * qual está agora. É o ÚNICO caminho que leva uma OS ao 2º lote.
+     *
+     * `cargaIds` é opcional e hoje vem sempre vazio: a Inspeção Final, de onde
+     * a rota é chamada, só lista OS que já não têm carga vinculada. Preenchido,
+     * cada carga listada tem o passo aberto fechado e sai da OS junto com o
+     * lote. Tudo na mesma transação — carga inválida na lista derruba a
+     * operação inteira, sem lote meio-fechado.
+     */
+    @Transactional
+    public Lote finalizarLote(Long osId, Long operadorId, List<Long> cargaIds){
+        OrdemServico os = carregarAberta(osId);
+
+        Operador op = exigirOperadorAtivo(operadorId);
 
         // Um instante só para o lote e para os passos que fecham com ele: são
         // o mesmo evento, e datas diferentes sujariam o relatório de duração.
         Instant at = Instant.now();
 
-        // Expedição parcial: as cargas listadas terminaram o tratamento e saem
-        // da OS junto com o lote. Sem elas a rota continua só avançando o lote,
-        // que é como ela nasceu.
-        if (cargaIds != null){
-            for (Long cargaId : new LinkedHashSet<>(cargaIds)){
-                Carga carga = cargaRepo.findById(cargaId)
-                        .orElseThrow(() -> new RecursoNaoEncontradoException("Carga", cargaId));
-
-                if (carga.getOrdemAtual() == null
-                        || !carga.getOrdemAtual().getId().equals(osId)){
-                    throw new CargaNaoVinculadaException(cargaId, osId);
-                }
-
-                // Passo aberto não sobrevive à liberação: com
-                // ux_logs_carga_aberto ele impediria a carga de iniciar
-                // qualquer passo futuro, em qualquer OS. Mesma regra de
-                // finalizar(); nem toda carga tem um, daí o ifPresent.
-                logRepo.findByCargaIdAndFinalizadoEmIsNull(cargaId)
-                        .ifPresent(aberto -> fecharPasso(aberto, at));
-
-                carga.setOrdemAtual(null);
-            }
-        }
+        liberar(osId, cargaIds, at);
 
         Lote atual = loteRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(osId)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Lote aberto da OS", osId));

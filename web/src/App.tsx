@@ -4,9 +4,9 @@ import { AppNav, type Aba } from "./components/AppNav";
 import { Toast, type Aviso } from "./components/Toast";
 import { POSICOES } from "./domain/format";
 import { Ajustes } from "./screens/Ajustes";
+import { Auditoria } from "./screens/Auditoria";
 import { Dashboard } from "./screens/Dashboard";
 import { Login } from "./screens/Login";
-import { RegistrarCargas } from "./screens/RegistrarCargas";
 import { Relatorios } from "./screens/Relatorios";
 import { useAppData } from "./state/useAppData";
 import { useSession } from "./state/useSession";
@@ -105,18 +105,25 @@ export function App() {
             </>
           )}
         </div>
-      ) : aba === "cargas" ? (
-        <RegistrarCargas
+      ) : aba === "geral" ? (
+        // Auditoria devolve um fragment e sempre viveu dentro de .rel-main:
+        // reaproveitar o par .rel-body/.rel-main dá o mesmo scroll sem CSS novo.
+        <div className="rel-body">
+          <div className="rel-main">
+            <Auditoria data={data} onErro={reportarErro} />
+          </div>
+        </div>
+      ) : aba === "rel" && isAdmin ? (
+        <Relatorios data={data} onErro={reportarErro} />
+      ) : aba === "config" && isAdmin ? (
+        <Ajustes
           data={data}
+          operador={operador}
           posicaoAtual={posicaoAtual}
           agir={agir}
           ocupado={ocupado}
           isMobile={isMobile}
         />
-      ) : aba === "rel" && isAdmin ? (
-        <Relatorios data={data} onErro={reportarErro} />
-      ) : aba === "config" && isAdmin ? (
-        <Ajustes data={data} operador={operador} agir={agir} ocupado={ocupado} />
       ) : (
         <Dashboard
           key={posicaoAtual}

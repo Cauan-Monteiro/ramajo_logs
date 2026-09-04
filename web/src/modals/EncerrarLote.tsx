@@ -9,10 +9,13 @@ import type { Ctx } from "./tipos";
 
 /**
  * Encerrar etapas em lote: fecha a etapa aberta de cada carga selecionada na
- * home e libera a carga da sua OS. É a expedição parcial vista pelo lado da
- * carga — cargas que saem da OS *são* um lote, então cada OS afetada leva um
- * POST /api/ordens/{osId}/lotes/finalizar com os seus cargaIds, o que fecha o
- * lote corrente e abre o seguinte.
+ * home e libera a carga da sua OS, que volta ao pool de livres. Cada OS afetada
+ * leva um POST /api/ordens/{osId}/cargas/liberar com os seus cargaIds.
+ *
+ * O **lote da OS não muda** aqui, de propósito: virar o lote é decisão de
+ * expedição parcial, tomada no botão "Expedir parcial" da Inspeção Final —
+ * o único caminho para o 2º lote. Esta tela é rotina de chão de fábrica e
+ * roda dezenas de vezes por turno.
  *
  * A seleção pode cruzar várias OS (cada carga aponta para a sua), daí o
  * agrupamento: uma chamada por OS, não uma por carga.
@@ -48,7 +51,7 @@ export function EncerrarLoteModal({ ctx, selecao }: { ctx: Ctx; selecao: string[
     ctx.agir({
       fazer: () =>
         Promise.all(
-          porOS.map(([osId, ids]) => api.finalizarLote(osId, ctx.operador.id, ids)),
+          porOS.map(([osId, ids]) => api.liberarCargas(osId, ctx.operador.id, ids)),
         ),
       ok: `${itens.length} carga(s) liberada(s) em ${porOS.length} OS.`,
       depois: ctx.fechar,
@@ -149,8 +152,8 @@ export function EncerrarLoteModal({ ctx, selecao }: { ctx: Ctx; selecao: string[
       </div>
 
       <div className="os-tv" style={{ marginTop: 16 }}>
-        Cada OS afetada fecha o lote atual e abre o seguinte · as cargas voltam para o pool de
-        livres, e a OS que ficar sem cargas aparece em Inspeção final.
+        As cargas voltam para o pool de livres e o lote da OS não muda · a OS que ficar sem cargas
+        aparece em Inspeção final, onde "Expedir parcial" encerra o lote.
       </div>
     </Modal>
   );

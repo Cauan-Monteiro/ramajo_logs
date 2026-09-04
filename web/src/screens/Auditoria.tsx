@@ -16,9 +16,9 @@ import { useAuditoriaDia } from "../state/useAuditoriaDia";
 import type { AppData } from "../state/useAppData";
 
 /**
- * Auditoria do dia — a aba onde o admin vai quando surge a dúvida de se algo
- * foi mesmo feito, por quem e a que horas. É estritamente de leitura: não há
- * um único botão aqui que mude o estado da fábrica.
+ * Visão Geral — a aba, aberta a todo operador, para quando surge a dúvida de
+ * se algo foi mesmo feito, por quem e a que horas. É estritamente de leitura:
+ * não há um único botão aqui que mude o estado da fábrica.
  */
 
 const TIPOS: TipoEvento[] = [
@@ -107,7 +107,7 @@ export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown
 
   return (
     <>
-      <div className="reg-h" style={{ fontSize: 13 }}>Auditoria do dia</div>
+      <div className="reg-h" style={{ fontSize: 13 }}>Visão Geral</div>
 
       <div className="aud-bar">
         <button className="btn2" onClick={() => setDia((d) => deslocar(d, -1))}>◀</button>

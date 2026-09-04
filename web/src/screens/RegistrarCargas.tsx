@@ -65,7 +65,8 @@ export function RegistrarCargas({
   }
 
   return (
-    <div className="cargas-body">
+    // Sem raiz própria: é montada dentro do .cargas-body de Ajustes.
+    <>
       <div className="reg-h" style={{ fontSize: 13 }}>
         Registrar cargas
         <span className="ct">{data.cargas.length} cadastradas</span>
@@ -246,6 +247,6 @@ export function RegistrarCargas({
           </button>
         </div>
       </div>
-    </div>
+    </>
   );
 }

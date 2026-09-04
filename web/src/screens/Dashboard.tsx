@@ -20,6 +20,7 @@ import {
   CancelarModal, DetalheOSModal, ExpedirModal, PassoModal, VincularModal,
 } from "../modals/DetalheOS";
 import { EncerrarLoteModal } from "../modals/EncerrarLote";
+import { ExpedirParcialModal } from "../modals/ExpedirParcial";
 import { InspecaoModal } from "../modals/Inspecao";
 import { PassoLoteModal } from "../modals/PassoLote";
 import { ProcessosModal } from "../modals/Processos";
@@ -394,6 +395,7 @@ export function Dashboard({
       {modal?.tipo === "vinc" && <VincularModal ctx={ctx} osId={modal.osId} />}
       {modal?.tipo === "passo" && <PassoModal ctx={ctx} osId={modal.osId} />}
       {modal?.tipo === "exp" && <ExpedirModal ctx={ctx} osId={modal.osId} />}
+      {modal?.tipo === "expParcial" && <ExpedirParcialModal ctx={ctx} osId={modal.osId} />}
       {modal?.tipo === "cancel" && <CancelarModal ctx={ctx} osId={modal.osId} />}
     </div>
   );

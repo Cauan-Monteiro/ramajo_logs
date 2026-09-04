@@ -137,9 +137,18 @@ export const finalizarLog = (logId: string) =>
   http.patch<LogDTO>(`/api/ordens/logs/${logId}/finalizar`);
 
 /**
- * Expedição parcial: fecha o lote corrente e abre o seguinte, liberando as
- * cargas indicadas (o passo aberto de cada uma fecha junto). A OS segue aberta.
- * `cargaIds` vazio só avança o lote.
+ * Fecha o passo aberto de cada carga indicada e a devolve ao pool de livres.
+ * A OS segue aberta e o **lote não muda** — é a rotina "encerrar etapas" da
+ * home, deliberadamente separada da expedição parcial.
+ */
+export const liberarCargas = (osId: number, operadorId: number, cargaIds: number[]) =>
+  http.post<void>(`/api/ordens/${osId}/cargas/liberar`, { operadorId, cargaIds });
+
+/**
+ * Expedição parcial: fecha o lote corrente e abre o seguinte; a OS segue
+ * aberta. É o único caminho que leva uma OS ao 2º lote, e quem o usa é o botão
+ * "Expedir parcial" da Inspeção Final — que age sobre OS já sem cargas, daí
+ * `cargaIds` vazio. Preenchido, as cargas listadas saem da OS junto com o lote.
  */
 export const finalizarLote = (osId: number, operadorId: number, cargaIds: number[]) =>
   http.post<LoteDTO>(`/api/ordens/${osId}/lotes/finalizar`, { operadorId, cargaIds });

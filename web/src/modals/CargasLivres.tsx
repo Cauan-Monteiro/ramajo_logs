@@ -26,7 +26,7 @@ export function CargasLivresModal({ ctx }: { ctx: Ctx }) {
         ))}
         {livres.length === 0 && (
           <span className="os-tv">
-            Nenhuma carga livre nesta posição. Cadastre em “Registrar cargas”.
+            Nenhuma carga livre nesta posição. Cadastre em “Ajustes › Registrar cargas”.
           </span>
         )}
       </div>

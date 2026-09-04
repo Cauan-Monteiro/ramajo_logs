@@ -6,9 +6,8 @@ import { Vazio } from "../components/Modal";
 import { etapaStyle, etapaDoLog, labelEtapaDoLog, logSub, pillStyle, situacaoOrdem } from "../domain/derive";
 import { diaHora, duracao, hhmm, horasEntre, iso, osNum, posLabel } from "../domain/format";
 import type { AppData } from "../state/useAppData";
-import { Auditoria } from "./Auditoria";
 
-type Rel = 0 | 1 | 2 | 3 | 4;
+type Rel = 0 | 1 | 2 | 3;
 
 export function Relatorios({ data, onErro }: { data: AppData; onErro: (e: unknown) => void }) {
   const [rel, setRel] = useState<Rel>(0);
@@ -21,11 +20,10 @@ export function Relatorios({ data, onErro }: { data: AppData; onErro: (e: unknow
         </div>
         {(
           [
-            [0, "Auditoria do dia", "O que aconteceu hoje, passo a passo e por quem"],
-            [1, "Histórico completo de uma OS", "Todos os passos em ordem cronológica"],
-            [2, "OS por cliente", "Todas as ordens de um cliente"],
-            [3, "Tempo médio de conclusão", "Média entre abertura e expedição total"],
-            [4, "Relatório por período", "Planilha .xlsx das OSs de um intervalo"],
+            [0, "Histórico completo de uma OS", "Todos os passos em ordem cronológica"],
+            [1, "OS por cliente", "Todas as ordens de um cliente"],
+            [2, "Tempo médio de conclusão", "Média entre abertura e expedição total"],
+            [3, "Relatório por período", "Planilha .xlsx das OSs de um intervalo"],
           ] as const
         ).map(([n, titulo, sub]) => (
           <div
@@ -42,11 +40,10 @@ export function Relatorios({ data, onErro }: { data: AppData; onErro: (e: unknow
       </div>
 
       <div className="rel-main">
-        {rel === 0 && <Auditoria data={data} onErro={onErro} />}
-        {rel === 1 && <HistoricoOS data={data} onErro={onErro} />}
-        {rel === 2 && <OSPorCliente data={data} />}
-        {rel === 3 && <TempoMedio data={data} onErro={onErro} />}
-        {rel === 4 && <PlanilhaPeriodo onErro={onErro} />}
+        {rel === 0 && <HistoricoOS data={data} onErro={onErro} />}
+        {rel === 1 && <OSPorCliente data={data} />}
+        {rel === 2 && <TempoMedio data={data} onErro={onErro} />}
+        {rel === 3 && <PlanilhaPeriodo onErro={onErro} />}
       </div>
     </div>
   );

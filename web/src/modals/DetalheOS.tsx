@@ -434,8 +434,9 @@ export function ExpedirModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
         <div className="os-tv">
           <b>Total:</b> libera todas as cargas restantes e encerra a OS.
           <br />
-          <b>Parcial:</b> liberaria só algumas cargas, mantendo a OS aberta. Ainda indisponível —
-          depende de uma mudança na API.
+          <b>Parcial:</b> encerra o lote corrente e abre o seguinte, mantendo a OS aberta. Feita na
+          Inspeção final, sobre OS que já não têm cargas — para liberar cargas daqui sem mexer no
+          lote, use o hub “Encerrar etapas” da home.
         </div>
       </div>
     </Modal>

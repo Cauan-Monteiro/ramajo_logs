@@ -25,6 +25,11 @@ const porNumero = (a: OrdemResumoDTO, b: OrdemResumoDTO) => numDe(a) - numDe(b);
  * Inspeção final: OS abertas que já não têm carga vinculada — só falta
  * expedir. "Expedir" é a expedição total (POST /{id}/finalizar).
  *
+ * "Expedir parcial" encerra só o lote corrente e abre o seguinte, deixando a OS
+ * aberta à espera de novas cargas — é o único caminho do sistema para uma OS
+ * entrar em 2º lote. Sendo irreversível, o botão daqui só abre o diálogo de
+ * confirmação (ExpedirParcialModal), que é quem chama a API.
+ *
  * Só as OS da posição onde o modal foi aberto: `data.ordens` traz a fábrica
  * inteira, e expedir daqui a OS de outra posição seria um engano irreversível
  * para quem está no terminal.
@@ -129,9 +134,12 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
                   Desidrogenizar
                   <span className="na">Indisponível</span>
                 </button>
-                <button className="btn2" disabled title={SEM_API.expedirParcial}>
+                <button
+                  className="btn2"
+                  title="Confirmar o encerramento do lote e, se quiser, já vincular novas cargas."
+                  onClick={() => ctx.abrir({ tipo: "expParcial", osId: o.id })}
+                >
                   Expedir parcial
-                  <span className="na">Indisponível</span>
                 </button>
                 <button
                   className="btn2 btn2-x"

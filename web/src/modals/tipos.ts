@@ -14,6 +14,7 @@ export type ModalState =
   | { tipo: "vinc"; osId: number }
   | { tipo: "passo"; osId: number }
   | { tipo: "exp"; osId: number }
+  | { tipo: "expParcial"; osId: number }
   | { tipo: "cancel"; osId: number }
   | null;
 
@@ -36,8 +37,10 @@ export interface Ctx {
  */
 export const SEM_API = {
   expedirParcial:
-    "POST /api/ordens/{id}/lotes/finalizar já aceita cargaIds — falta a UI de " +
-    "seleção de cargas aqui. Em lote, pela home: hub “Encerrar etapas”.",
+    "A expedição parcial é feita na Inspeção final, sobre OS que já não têm " +
+    "cargas vinculadas — é o único caminho para o 2º lote. Para liberar " +
+    "algumas cargas desta OS sem encerrar o lote, use o hub “Encerrar etapas” " +
+    "da home.",
   reativarCarga:
     "DELETE /api/cargas/{id} só desativa; não há rota de reativação na API.",
   desidrogenizar: "Etapa ainda não modelada na API.",

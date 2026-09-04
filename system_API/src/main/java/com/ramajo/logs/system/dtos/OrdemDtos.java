@@ -6,6 +6,7 @@ import com.ramajo.logs.system.entities.Lote;
 import com.ramajo.logs.system.entities.OrdemServico;
 import com.ramajo.logs.system.enums.Posicao;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
@@ -75,11 +76,19 @@ public final class OrdemDtos {
     }
 
     /**
-     * `cargaIds` é opcional: ausente ou vazio, o lote só avança (comportamento
-     * histórico da rota). Preenchido, as cargas listadas têm o passo aberto
-     * fechado e saem da OS — é a expedição parcial.
+     * `cargaIds` é opcional: ausente ou vazio, o lote só avança — é assim que a
+     * Inspeção Final chama a rota, sobre OS que já não têm carga vinculada.
+     * Preenchido, as cargas listadas têm o passo aberto fechado e saem da OS.
      */
     public record FinalizarLoteDTO(@NotNull Long operadorId, List<@NotNull Long> cargaIds) {
+    }
+
+    /**
+     * Liberação de cargas sem virar o lote. Ao contrário de FinalizarLoteDTO,
+     * `cargaIds` é obrigatório: sem cargas a operação não faria nada.
+     */
+    public record LiberarCargasDTO(
+            @NotNull Long operadorId, @NotEmpty List<@NotNull Long> cargaIds) {
     }
 
     // ------------------------------------------------------------------ saída

@@ -134,25 +134,44 @@ com o motivo no `title`. Os textos estão centralizados em
 
 | Controle | Falta na API |
 |---|---|
-| **Expedição parcial** (modal Expedir) | Nada — falta a UI de seleção de cargas neste diálogo |
-| **Expedir parcial** (Inspeção final) | idem |
+| **Expedição parcial** (modal Expedir) | Nada — a operação vive na Inspeção final; ver abaixo |
 | **Reativar** carga (Registrar cargas) | `DELETE /api/cargas/{id}` só desativa; não há rota de reativação |
 | **Desidrogenizar** (Inspeção final) | Etapa não modelada — já vinha desabilitada no próprio design |
 
-O patch `cargaIds` (`entrega/PATCH-finalizarLote.md` no projeto de design)
-**já foi aplicado**: `FinalizarLoteDTO` ganhou `List<Long> cargaIds` opcional e
-`OrdemServicoService.finalizarLote` agora fecha o passo aberto de cada carga
-listada e a libera (`ordemAtual = null`) antes de virar o lote. Carga que não
-esteja vinculada àquela OS → 422 `CARGA_NAO_VINCULADA`.
+### Liberar cargas vs. virar o lote
 
-Quem usa isso hoje é o hub **Encerrar etapas** da home (`modals/EncerrarLote.tsx`):
-seleciona-se cargas na tabela e cada OS afetada leva um POST com os seus
-`cargaIds`. Os dois botões de expedição parcial continuam desabilitados apenas
-porque a UI de escolher *quais* cargas ainda não existe nesses diálogos — a rota
-já os atende.
+As duas operações moravam na mesma rota, e o resultado era que a rotina de chão
+de fábrica jogava as OS em "2º lote" sem ninguém ter expedido nada. Hoje são
+rotas separadas:
+
+| Rota | Efeito | Quem chama |
+|---|---|---|
+| `POST /api/ordens/{id}/cargas/liberar` | fecha o passo aberto de cada carga da lista e a devolve ao pool (`ordemAtual = null`). **Não toca no lote.** | hub **Encerrar etapas** da home (`modals/EncerrarLote.tsx`) |
+| `POST /api/ordens/{id}/lotes/finalizar` | fecha o lote corrente e abre o seguinte; a OS segue aberta. **Único caminho para o 2º lote.** | diálogo de confirmação `modals/ExpedirParcial.tsx`, aberto pelo botão **Expedir parcial** da Inspeção final |
+| `POST /api/ordens/{id}/finalizar` | expedição total: libera as cargas restantes, fecha o lote corrente e encerra a OS. | **Expedir** (Inspeção final) e **Expedição total** (modal Expedir) |
+
+A Inspeção final só lista OS que já não têm carga vinculada, por isso o
+"Expedir parcial" manda `cargaIds` vazio — não há carga a escolher. É por isso
+também que o botão **Expedição parcial** do modal Expedir (detalhe da OS)
+continua desabilitado: ali a OS ainda tem cargas, e a decisão de liberá-las é
+do hub Encerrar etapas.
+
+Sendo irreversível, a expedição parcial não acontece no clique: o botão abre
+`ExpedirParcialModal`, e só a confirmação chama a API. Como a OS fica aberta à
+espera de novas cargas, o diálogo já permite escolhê-las (mesma seleção por
+chips e `ScanField` do vínculo normal); confirmando, ele emenda um
+`POST /api/ordens/{id}/cargas` por carga **depois** do `lotes/finalizar` — nessa
+ordem, senão as cargas novas cairiam no lote que está sendo expedido. Não
+escolher nenhuma é um caminho válido: o lote vira e as cargas entram depois,
+pelo detalhe da OS.
+
+`liberarCargas` e `finalizarLote` compartilham o mesmo laço no service
+(`OrdemServicoService.liberar`), então as validações não divergem: carga que
+não esteja vinculada àquela OS → 422 `CARGA_NAO_VINCULADA`, e tudo numa
+transação só.
 
 Finalizar um passo isolado continua no detalhe da OS (Buscar OS ou Processos →
-abrir a OS → "Finalizar" em cada passo em andamento).
+abrir a OS → "Finalizar" em cada passo em andamento) — isso nunca mexeu no lote.
 
 ## Leitores RFID
 

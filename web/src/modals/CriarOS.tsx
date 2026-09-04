@@ -146,7 +146,7 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
       ))}
       {livres.length === 0 && (
         <span className="os-tv">
-          Sem cargas livres em {posLabel(posAlvo)}. Cadastre em “Registrar cargas”.
+          Sem cargas livres em {posLabel(posAlvo)}. Cadastre em “Ajustes › Registrar cargas”.
         </span>
       )}
     </div>
