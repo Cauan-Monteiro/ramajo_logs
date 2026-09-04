@@ -1,17 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import type { Posicao } from "../api/types";
+import { BarraDia } from "../components/BarraDia";
 import { Corners } from "../components/Blueprint";
+import { Kpi } from "../components/Kpi";
 import { LinhaDoTempo } from "../components/LinhaDoTempo";
 import { Vazio } from "../components/Modal";
 import { useOrdenacao, type ColunaOrd } from "../components/Ordenar";
 import {
-  ROTULO_EVENTO, eventosDoDia, faixasDoDia, janelaVisivel, porOperador, porOrdem,
+  FECHA, ROTULO_EVENTO, eventosDoDia, faixasDoDia, janelaVisivel, porOperador, porOrdem,
   type Evento, type ResumoOrdem, type TipoEvento,
 } from "../domain/auditoria";
 import { SEL_SEG, dotStyle, etapaStyle, pillStyle } from "../domain/derive";
 import {
-  POSICOES, dataLonga, duracao, etapaLabel, iniciais, iso, posLabel,
+  POSICOES, duracao, etapaLabel, hm, iniciais, iso, posLabel,
 } from "../domain/format";
+import { useAgora } from "../state/useAgora";
 import { useAuditoriaDia } from "../state/useAuditoriaDia";
 import type { AppData } from "../state/useAppData";
 
@@ -25,55 +28,12 @@ const TIPOS: TipoEvento[] = [
   "OS_ABERTA", "ETAPA_ABERTA", "ETAPA_FECHADA", "LOTE_FECHADO", "OS_ENCERRADA", "OS_CANCELADA",
 ];
 
-/** Relógio de parede da tela. A régua do "agora" e a ponta das etapas abertas
-    andam sozinhas; meio minuto é fino de mais para se notar o salto e grosso o
-    suficiente para não repintar a página à toa. */
-function useAgora(passoMs: number): number {
-  const [agora, setAgora] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setAgora(Date.now()), passoMs);
-    return () => clearInterval(t);
-  }, [passoMs]);
-  return agora;
-}
-
-/** Conta de 0 até ao valor na entrada, e do valor antigo para o novo depois. */
-function useContagem(valor: number): number {
-  const [n, setN] = useState(valor);
-  const de = useRef(valor);
-  useEffect(() => {
-    const inicio = de.current;
-    const t0 = performance.now();
-    let raf = 0;
-    const passo = (t: number) => {
-      const k = Math.min(1, (t - t0) / 420);
-      setN(Math.round(inicio + (valor - inicio) * (1 - (1 - k) * (1 - k))));
-      if (k < 1) raf = requestAnimationFrame(passo);
-      else de.current = valor;
-    };
-    raf = requestAnimationFrame(passo);
-    return () => cancelAnimationFrame(raf);
-  }, [valor]);
-  return n;
-}
-
-function deslocar(dia: string, dias: number): string {
-  const [a, m, d] = dia.split("-").map(Number);
-  return iso(new Date(a, m - 1, d + dias));
-}
-
-const hm = (t: number) => {
-  const d = new Date(t);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-};
-
 export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown) => void }) {
   const agora = useAgora(30000);
   const [dia, setDia] = useState(() => iso(new Date()));
   const [posicao, setPosicao] = useState<Posicao | "TODAS">("TODAS");
 
-  const hoje = iso(new Date(agora));
-  const ehHoje = dia === hoje;
+  const ehHoje = dia === iso(new Date(agora));
   const { detalhes, logs, carregando } = useAuditoriaDia(data, dia, onErro);
 
   const ordens = useMemo(
@@ -103,20 +63,16 @@ export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown
 
   const conta = (t: TipoEvento) => eventos.filter((e) => e.tipo === t).length;
   const operadores = useMemo(() => porOperador(eventos), [eventos]);
-  const cargas = useMemo(() => porOrdem(grupos), [grupos]);
+  const cargas = useMemo(
+    () => porOrdem(grupos, data.processosIniciais),
+    [grupos, data.processosIniciais],
+  );
 
   return (
     <>
       <div className="reg-h" style={{ fontSize: 13 }}>Visão Geral</div>
 
-      <div className="aud-bar">
-        <button className="btn2" onClick={() => setDia((d) => deslocar(d, -1))}>◀</button>
-        <span className="aud-data">{dataLonga(dia)}</span>
-        <button className="btn2" disabled={ehHoje} onClick={() => setDia((d) => deslocar(d, 1))}>
-          ▶
-        </button>
-        <button className="btn2" disabled={ehHoje} onClick={() => setDia(hoje)}>Hoje</button>
-
+      <BarraDia dia={dia} onDia={setDia} agora={agora} carregando={carregando}>
         <div className="aud-seg">
           {([["TODAS", "Todas"], ...POSICOES.map((p) => [p.key, p.label] as const)] as const).map(
             ([k, label]) => (
@@ -131,14 +87,7 @@ export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown
             ),
           )}
         </div>
-
-        {ehHoje && (
-          <span className="live-pill" style={{ marginLeft: "auto" }}>
-            <i className="live-dot" /> ao vivo
-          </span>
-        )}
-        {carregando && <span className="spin" style={{ marginLeft: ehHoje ? 0 : "auto" }} />}
-      </div>
+      </BarraDia>
 
       <div className="aud-kpis">
         <Kpi n={conta("OS_ABERTA")} label="OS abertas" />
@@ -171,17 +120,6 @@ export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown
         A API guarda quem <b>abriu</b> cada etapa, mas não quem a fechou.
       </div>
     </>
-  );
-}
-
-function Kpi({ n, label }: { n: number; label: string }) {
-  const v = useContagem(n);
-  return (
-    <div className="bp aud-kpi">
-      <Corners />
-      <span className="aud-kpi-n">{v}</span>
-      <span className="aud-kpi-l">{label}</span>
-    </div>
   );
 }
 
@@ -270,13 +208,14 @@ function QuemFez({ operadores }: { operadores: ReturnType<typeof porOperador> })
 /* ── cargas do dia ──────────────────────────────────────────────────────── */
 
 /**
- * Quantas cargas cada OS levou. A conta é por carga: duas etapas da mesma carga
- * dentro da mesma ordem são uma entrada só — ver `porOrdem`.
+ * Quanta carga cada OS moveu. A conta é por *entrada*: duas etapas da mesma
+ * carga dentro da mesma ordem são uma entrada só, mas a carga desvinculada e
+ * vinculada outra vez à mesma OS entra de novo — ver `porOrdem`.
  */
 function CargasDoDia({ cargas }: { cargas: ResumoOrdem[] }) {
   const topo = cargas[0]?.total ?? 1;
-  // Conta entradas, não cargas: a mesma carga em três OS conta três vezes. O
-  // total não muda com o reagrupamento — é a soma dos pares (OS, carga).
+  // Soma das entradas: a mesma carga em três OS conta três vezes, e o número
+  // não muda com o reagrupamento por OS.
   const entradas = cargas.reduce((s, c) => s + c.total, 0);
   return (
     <div className="bp aud-card aud-cargas">
@@ -428,5 +367,3 @@ function Feed({ eventos }: { eventos: Evento[] }) {
     </div>
   );
 }
-
-const FECHA: TipoEvento[] = ["ETAPA_FECHADA", "LOTE_FECHADO", "OS_ENCERRADA", "OS_CANCELADA"];

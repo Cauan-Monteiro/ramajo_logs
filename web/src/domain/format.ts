@@ -88,3 +88,19 @@ export function dataLonga(diaIso: string): string {
   if (Number.isNaN(dt.getTime())) return diaIso;
   return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${a} · ${SEMANA[dt.getDay()]}`;
 }
+
+/**
+ * O dia vizinho, em `yyyy-MM-dd`. Vai por `new Date(a, m-1, d+n)` e não por
+ * aritmética de ms: assim atravessa fim de mês e mudança de horário sem casos
+ * especiais, e nunca cai no parsing UTC de `Date.parse("2025-08-31")`.
+ */
+export function deslocar(dia: string, dias: number): string {
+  const [a, m, d] = dia.split("-").map(Number);
+  return iso(new Date(a, m - 1, d + dias));
+}
+
+/** "14:35" a partir de um instante em ms — o irmão de `hhmm`, que recebe ISO. */
+export function hm(t: number): string {
+  const d = new Date(t);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}

@@ -95,7 +95,7 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
               {!ordem.emProcesso
                 ? "Encerrada"
                 : ordem.lotesFinalizados > 0
-                  ? `2º lote — lote ${ordem.lotesFinalizados} expedido`
+                  ? `${ordem.lotesFinalizados}º lote — Expedido`
                   : "Em produção"}
             </span>
           </div>

@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { ApiErrorException } from "./api/client";
-import { AppNav, type Aba } from "./components/AppNav";
+import { AppNav } from "./components/AppNav";
 import { Toast, type Aviso } from "./components/Toast";
 import { POSICOES } from "./domain/format";
 import { Ajustes } from "./screens/Ajustes";
@@ -8,6 +8,7 @@ import { Auditoria } from "./screens/Auditoria";
 import { Dashboard } from "./screens/Dashboard";
 import { Login } from "./screens/Login";
 import { Relatorios } from "./screens/Relatorios";
+import { useAba } from "./state/useAba";
 import { useAppData } from "./state/useAppData";
 import { useSession } from "./state/useSession";
 import { useSync } from "./state/useSync";
@@ -17,9 +18,15 @@ import type { Ctx } from "./modals/tipos";
 export function App() {
   const { operador, entrar, sair, isAdmin } = useSession();
   const { isMobile } = useViewMode();
+  const { aba, setAba, limparAba } = useAba(isAdmin);
   const [aviso, setAviso] = useState<Aviso | null>(null);
-  const [aba, setAba] = useState<Aba>("OXIDACAO");
   const [ocupado, setOcupado] = useState(false);
+
+  // Sair limpa a aba guardada: o próximo operador começa em Oxidação.
+  const encerrar = useCallback(() => {
+    limparAba();
+    sair();
+  }, [limparAba, sair]);
 
   const reportarErro = useCallback((e: unknown) => {
     if (e instanceof ApiErrorException) {
@@ -86,7 +93,7 @@ export function App() {
         onAba={setAba}
         operador={operador}
         isAdmin={isAdmin}
-        onSair={sair}
+        onSair={encerrar}
       />
 
       {!pronto ? (

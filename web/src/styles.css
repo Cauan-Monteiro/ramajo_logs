@@ -2889,3 +2889,35 @@ body.is-mobile .aud-card .table {
 body.is-mobile .aud-sel {
    width: 100%
 }
+
+/* — relatório: produção por operador — */
+
+/* A escolha do operador é a mesma lista de chips do "Histórico completo de uma
+   OS", só com o selo de iniciais e o total do dia dentro do botão. */
+.rel-ops {
+   max-height: none
+}
+
+.opsel {
+   display: flex;
+   align-items: center;
+   gap: 9px
+}
+
+.opsel .opav {
+   width: 26px;
+   height: 26px;
+   font-size: 13px;
+   border-color: rgba(0, 0, 0, .18);
+   color: #5980a6
+}
+
+.opsel .aud-op-n {
+   font-size: 18px
+}
+
+/* Quem não registou nada continua clicável — "não fez nada hoje" é resposta,
+   e uma etapa aberta ontem e ainda a correr aparece na linha do tempo dele. */
+.opsel.zero {
+   opacity: .55
+}

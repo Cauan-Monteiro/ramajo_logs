@@ -1,5 +1,6 @@
 import type {
   Etapa, LogDTO, OrdemDetalheDTO, OrdemResumoDTO, Posicao, ProcessoDTO,
+  ProcessoInicialDTO,
 } from "../api/types";
 import { etapaDoLog } from "./derive";
 import { ETAPAS, osNum } from "./format";
@@ -365,26 +366,62 @@ export function porOperador(eventos: Evento[]): ResumoOperador[] {
 
 export interface ResumoOrdem {
   osLabel: string;
-  /** Nº de cargas distintas que entraram nesta OS no dia. */
+  /** Nº de entradas de carga nesta OS no dia — ver `entradasDaFaixa`. */
   total: number;
-  /** Nomes das cargas, na ordem em que o swimlane as mostra. */
+  /**
+   * Nomes das cargas, na ordem em que o swimlane as mostra. A que entrou mais
+   * de uma vez leva o multiplicador: "TB01 ×2".
+   */
   cargaNomes: string[];
   /** Etapas por que a OS passou, sem repetir e na ordem canónica. */
   etapas: Etapa[];
 }
 
+/** Descrição do processo de entrada de um setor; `null` quando não configurado. */
+function entradaDaPosicao(pos: Posicao, iniciais: ProcessoInicialDTO[]): string | null {
+  return iniciais.find((pi) => pi.posicao === pos)?.processoDescricao ?? null;
+}
+
 /**
- * Quantas cargas cada OS levou no dia. A conta é *por par (OS, carga)*: uma
- * carga que percorreu três processos da mesma ordem entrou nela uma vez só, e é
- * essa a leitura que o chão de fábrica faz ao perguntar quanta coisa uma ordem
- * moveu hoje.
+ * Quantas vezes a carga entrou nesta OS dentro do dia. Toda vinculação abre um
+ * passo no processo de entrada do setor (`OrdemServicoService.vincularCarga`, e
+ * a criação da OS), e só a vinculação o faz — então cada barra nesse processo é
+ * uma entrada. É o que distingue a carga que percorreu o fluxo de uma vez da que
+ * foi desvinculada e mais tarde vinculada de novo à *mesma* OS.
+ *
+ * A primeira barra do dia que não seja de entrada é uma carga que já vinha de
+ * ontem: conta como a entrada em curso. Mínimo de 1 — a faixa só existe porque a
+ * carga esteve na OS.
+ *
+ * Duas limitações, ambas do cruzamento por descrição (a única chave que `LogDTO`
+ * dá, tal como em `etapaDoLog`): posição sem processo inicial configurado cai no
+ * fallback global da API, que o cliente não conhece — aí conta 1, como antes; e
+ * trocar o processo inicial de um setor deixa as entradas anteriores à troca sem
+ * reconhecimento.
+ *
+ * `barras` tem de vir na ordem do tempo — é como `faixasDoDia` as devolve.
+ */
+export function entradasDaFaixa(barras: Barra[], entrada: string | null): number {
+  if (entrada === null) return 1;
+  const n = barras.filter((b) => b.processoDescricao === entrada).length;
+  return Math.max(1, barras[0]?.processoDescricao === entrada ? n : n + 1);
+}
+
+/**
+ * Quanta carga cada OS moveu no dia. A conta é *por entrada*: uma carga que
+ * percorreu três processos da mesma ordem entrou nela uma vez só, mas a que foi
+ * desvinculada e depois vinculada outra vez à mesma OS conta duas — ver
+ * `entradasDaFaixa`. É a leitura que o chão de fábrica faz ao perguntar quanta
+ * coisa uma ordem moveu hoje.
  *
  * Parte de `faixasDoDia` e não dos eventos porque as faixas já são exatamente
  * isso — uma por par (OS, carga), com o recorte do dia feito, incluindo a etapa
  * que atravessa a meia-noite e a que ficou por fechar. Um `Grupo` já É uma OS,
- * então aqui não há o que agrupar: basta contar as suas faixas.
+ * então aqui não há o que agrupar: basta somar as entradas das suas faixas.
  */
-export function porOrdem(grupos: Grupo[]): ResumoOrdem[] {
+export function porOrdem(
+  grupos: Grupo[], processosIniciais: ProcessoInicialDTO[],
+): ResumoOrdem[] {
   const ordem = (e: Etapa) => ETAPAS.findIndex((x) => x.key === e);
   return grupos
     // OS que só teve marcos no dia (ver a guarda em faixasDoDia) não moveu
@@ -398,10 +435,14 @@ export function porOrdem(grupos: Grupo[]): ResumoOrdem[] {
           if (b.etapa && !etapas.includes(b.etapa)) etapas.push(b.etapa);
         }
       }
+      const entrada = entradaDaPosicao(g.ordem.posicao, processosIniciais);
+      const vezes = g.faixas.map((f) => entradasDaFaixa(f.barras, entrada));
       return {
         osLabel: osNum(g.ordem),
-        total: g.faixas.length,
-        cargaNomes: g.faixas.map((f) => f.cargaNome),
+        total: vezes.reduce((s, n) => s + n, 0),
+        cargaNomes: g.faixas.map(
+          (f, i) => (vezes[i] > 1 ? `${f.cargaNome} ×${vezes[i]}` : f.cargaNome),
+        ),
         etapas: etapas.sort((a, b) => ordem(a) - ordem(b)),
       };
     })
@@ -410,4 +451,102 @@ export function porOrdem(grupos: Grupo[]): ResumoOrdem[] {
         b.total - a.total
         || a.osLabel.localeCompare(b.osLabel, "pt-BR", { numeric: true }),
     );
+}
+
+/** Tipos de evento que representam um fecho — a pílula deles é a "encerrada". */
+export const FECHA: TipoEvento[] = [
+  "ETAPA_FECHADA", "LOTE_FECHADO", "OS_ENCERRADA", "OS_CANCELADA",
+];
+
+/**
+ * Junta ao ranking os operadores do cadastro que não aparecem nos eventos.
+ * `porOperador` só conhece quem assinou alguma coisa; a lista de escolha do
+ * relatório precisa também dos zerados — "este não fez nada hoje" é uma
+ * resposta, e um nome que some da lista parece antes um bug.
+ */
+export function rankingComCadastro(
+  resumos: ResumoOperador[], nomes: string[],
+): ResumoOperador[] {
+  const out = [...resumos];
+  const vistos = new Set(resumos.map((r) => r.nome));
+  for (const nome of nomes) {
+    if (vistos.has(nome)) continue;
+    vistos.add(nome);
+    out.push({ nome, etapasAbertas: 0, osAbertas: 0, osEncerradas: 0, lotes: 0, total: 0 });
+  }
+  return out.sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+export interface AtividadeOperador {
+  /** Só os eventos que este operador assinou. */
+  eventos: Evento[];
+  /** Os grupos de `faixasDoDia`, podados às barras dele — o que o swimlane desenha. */
+  grupos: Grupo[];
+  /**
+   * Soma de (ate - de) das barras dele, já recortadas ao dia. É um somatório e
+   * não um relógio de parede: três etapas abertas em paralelo contam três
+   * vezes, e o total pode passar da duração do turno. O rótulo na tela tem de
+   * dizer isso.
+   */
+  msEmEtapas: number;
+  /** Entradas de carga que ele tocou no dia — conta reentradas, ver `entradasDaFaixa`. */
+  cargas: number;
+  /** OS distintas em que mexeu. */
+  osTocadas: number;
+  /**
+   * Etapas que ele **abriu** e que já fecharam. Não é "etapas que ele
+   * concluiu": a API não regista quem fecha um passo (ver `Evento.autor`), por
+   * isso o fecho pode ter sido de outra pessoa.
+   */
+  etapasConcluidas: number;
+}
+
+/**
+ * O recorte de um operador dentro do dia já apurado. Recebe o que
+ * `eventosDoDia` e `faixasDoDia` devolveram — não refaz a apuração — para que
+ * a tela possa trocar de operador sem recalcular o dia inteiro.
+ *
+ * O cruzamento é por *nome*, único elo que os DTOs oferecem (ver `porOperador`).
+ * Eventos sem autor — o fecho de etapa — não entram em ninguém.
+ */
+export function atividadeDoOperador(
+  eventos: Evento[], grupos: Grupo[], nome: string,
+  processosIniciais: ProcessoInicialDTO[],
+): AtividadeOperador {
+  const meus = eventos.filter((e) => e.autor === nome);
+
+  const podados: Grupo[] = [];
+  let msEmEtapas = 0;
+  let cargas = 0;
+  let etapasConcluidas = 0;
+
+  for (const g of grupos) {
+    const faixas: Faixa[] = [];
+    const entrada = entradaDaPosicao(g.ordem.posicao, processosIniciais);
+    for (const f of g.faixas) {
+      const barras = f.barras.filter((b) => b.responsavelNome === nome);
+      if (barras.length === 0) continue;
+      for (const b of barras) {
+        msEmEtapas += b.ate - b.de;
+        if (b.finalizadoEm && !b.cancelado) etapasConcluidas++;
+      }
+      // O filtro preserva a ordem do tempo que faixasDoDia deu às barras.
+      cargas += entradasDaFaixa(barras, entrada);
+      faixas.push({ cargaNome: f.cargaNome, barras });
+    }
+    const marcos = g.marcos.filter((m) => m.autor === nome);
+    // Uma OS onde ele só assinou um marco (abriu e não mexeu mais) continua a
+    // ser uma OS que ele tocou: entra, tal como entra na Visão Geral.
+    if (faixas.length === 0 && marcos.length === 0) continue;
+    podados.push({ ordem: g.ordem, detalhe: g.detalhe, faixas, marcos });
+  }
+
+  return {
+    eventos: meus,
+    grupos: podados,
+    msEmEtapas,
+    cargas,
+    osTocadas: podados.length,
+    etapasConcluidas,
+  };
 }
