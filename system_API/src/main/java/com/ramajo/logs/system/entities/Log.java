@@ -1,6 +1,8 @@
 package com.ramajo.logs.system.entities;
 
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
@@ -8,7 +10,10 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.UuidGenerator;
@@ -62,6 +67,26 @@ public class Log {
     @Column(nullable = false)
     private boolean cancelado = false;
 
+    /**
+     * OS que pegaram carona neste passo: peças delas estavam na MESMA carga
+     * física quando o processo rodou. A titular continua sendo `ordemServico`
+     * (a dona da carga) — estas são as demais.
+     *
+     * Só ids, sem @ManyToMany: o passo não navega para as OS acopladas, quem
+     * pergunta é sempre a OS ("quais passos peguei carona"), e isso é uma
+     * query indexada. Mesma forma de Processo.posicoes.
+     */
+    @ElementCollection(fetch = FetchType.LAZY)
+    // O relatório por período lê esta coleção de todos os passos acoplados do
+    // recorte para saber a que OS cada linha pertence; sem o lote seria um
+    // SELECT por passo. Mesmo remédio de OrdemServico.lotes.
+    @BatchSize(size = 100)
+    @CollectionTable(
+            name = "log_ordens_acopladas",
+            joinColumns = @JoinColumn(name = "log_id"))
+    @Column(name = "ordem_servico_id", nullable = false)
+    private Set<Long> ordensAcopladas = new HashSet<>();
+
     protected Log() {
     }
 
@@ -102,6 +127,10 @@ public class Log {
 
     public void setFinalizadoEm(Instant finalizadoEm) {
         this.finalizadoEm = finalizadoEm;
+    }
+
+    public Set<Long> getOrdensAcopladas() {
+        return ordensAcopladas;
     }
 
     public boolean isCancelado() {

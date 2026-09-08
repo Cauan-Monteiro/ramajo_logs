@@ -25,7 +25,8 @@ import type { AppData } from "../state/useAppData";
  */
 
 const TIPOS: TipoEvento[] = [
-  "OS_ABERTA", "ETAPA_ABERTA", "ETAPA_FECHADA", "LOTE_FECHADO", "OS_ENCERRADA", "OS_CANCELADA",
+  "OS_ABERTA", "ETAPA_ABERTA", "ETAPA_FECHADA", "LOTE_FECHADO", "DESIDRO_APLICADA",
+  "OS_ENCERRADA", "OS_CANCELADA",
 ];
 
 export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown) => void }) {
@@ -95,6 +96,7 @@ export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown
         <Kpi n={conta("LOTE_FECHADO")} label="Lotes fechados" />
         <Kpi n={conta("ETAPA_ABERTA")} label="Etapas iniciadas" />
         <Kpi n={conta("ETAPA_FECHADA")} label="Etapas concluídas" />
+        <Kpi n={conta("DESIDRO_APLICADA")} label="Desidrogenizações" />
         <Kpi n={abertasAgora} label={ehHoje ? "Em curso agora" : "Ficaram em curso"} />
       </div>
 
@@ -117,7 +119,9 @@ export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown
       <div className="aud-nota os-tv">
         Este recorte é montado a partir do histórico da API. Um passo só aparece
         depois de ser aberto no terminal — o que não foi registado não existe aqui.
-        A API guarda quem <b>abriu</b> cada etapa, mas não quem a fechou.
+        A API guarda quem <b>abriu</b> cada etapa, mas não quem a fechou. A
+        desidrogenização é registada na <b>ordem</b>, não numa carga: aparece como
+        marco da faixa "Ordem" e sem carga no feed.
       </div>
     </>
   );

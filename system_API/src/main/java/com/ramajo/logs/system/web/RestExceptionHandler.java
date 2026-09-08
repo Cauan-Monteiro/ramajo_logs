@@ -3,6 +3,7 @@ package com.ramajo.logs.system.web;
 import com.ramajo.logs.system.exceptions.CargaIndisponivelException;
 import com.ramajo.logs.system.exceptions.CargaInativaException;
 import com.ramajo.logs.system.exceptions.CargaNaoVinculadaException;
+import com.ramajo.logs.system.exceptions.DesidrogenizacaoInativaException;
 import com.ramajo.logs.system.exceptions.DominioException;
 import com.ramajo.logs.system.exceptions.OperadorEmUsoException;
 import com.ramajo.logs.system.exceptions.OperadorInativoException;
@@ -65,6 +66,7 @@ public class RestExceptionHandler {
     @ExceptionHandler({
             CargaInativaException.class,
             CargaNaoVinculadaException.class,
+            DesidrogenizacaoInativaException.class,
             OperadorInativoException.class,
             PosicaoIncompativelException.class,
             ProcessoInativoException.class})

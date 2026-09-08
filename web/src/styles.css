@@ -363,6 +363,34 @@ body {
    cursor: default
 }
 
+/* Chip com ação: o × fica ao lado do rótulo, não empilhado sob ele. */
+.cg-chip.chip-row {
+   flex-direction: row;
+   gap: 7px;
+   min-width: 0;
+   padding: 5px 7px 5px 10px;
+   font-size: 14px
+}
+
+.chip-x {
+   border: 0;
+   background: transparent;
+   color: rgba(65, 97, 128, .75);
+   font: 600 16px "Barlow Condensed", system-ui, sans-serif;
+   line-height: 1;
+   padding: 2px 4px;
+   cursor: pointer
+}
+
+.chip-x:hover:not(:disabled) {
+   color: #8c3b3b
+}
+
+.chip-x:disabled {
+   opacity: .4;
+   cursor: default
+}
+
 .cg-chip .tp {
    font: 600 9px "Barlow Condensed";
    letter-spacing: .12em;
@@ -710,6 +738,19 @@ body {
    background: #1d2d3d;
    color: #f2f2f3;
    flex: none
+}
+
+/* Identificação e stats crescem por igual a partir de zero; o indicativo, entre
+   os dois com flex:none, fica no centro geométrico da barra qualquer que seja o
+   comprimento do nome da posição. Um `margin:auto` só o centraria no espaço que
+   sobra, e um `position:absolute` partiria nos breakpoints em que a barra faz
+   wrap. */
+.posbar-id {
+   flex: 1 1 0;
+   min-width: 0;
+   display: flex;
+   align-items: center;
+   gap: 24px
 }
 
 .posbar .plbl {
@@ -1110,9 +1151,37 @@ body {
 }
 
 .pos-stats {
-   margin-left: auto;
+   flex: 1 1 0;
    display: flex;
+   justify-content: flex-end;
    gap: 30px
+}
+
+/* O indicativo do forno: um .posmini que também é botão. Sem chrome em repouso
+   — a barra tem informação de sobra sem molduras —, mas com um estado de foco
+   visível, porque é o único alvo clicável da posbar. */
+.desidro-ind {
+   flex: none;
+   border: 1px solid transparent;
+   background: transparent;
+   color: inherit;
+   cursor: pointer;
+   padding: 6px 12px;
+   transition: background .12s, border-color .12s
+}
+
+@media (hover:hover) {
+   .desidro-ind:hover {
+      background: rgba(255, 255, 255, .06);
+      border-color: rgba(255, 255, 255, .28)
+   }
+}
+
+.desidro-ind:active,
+.desidro-ind:focus-visible {
+   background: rgba(255, 255, 255, .1);
+   border-color: rgba(255, 255, 255, .4);
+   outline: none
 }
 
 .cl-wrap {
@@ -1549,9 +1618,12 @@ select.inp {
 }
 
 /* — indicadores — */
+/* Sete indicadores desde que a desidrogenização entrou; `auto-fit` com um piso
+   de 130px evita ter de recontar a grelha a cada KPI novo e reflui sozinho nos
+   ecrãs estreitos, em vez de espremer sete colunas fixas. */
 .aud-kpis {
    display: grid;
-   grid-template-columns: repeat(6, 1fr);
+   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
    gap: 10px;
    margin-bottom: 22px
 }
@@ -1738,6 +1810,19 @@ select.inp {
    text-decoration: line-through
 }
 
+/* Etapa acoplada: as peças desta OS correram na carga de OUTRA ordem. Filete
+   claro à esquerda — o mesmo bloco, com um elo, para se ler que a etapa é a
+   mesma e não uma segunda etapa. */
+.aud-b.ac {
+   box-shadow: inset 3px 0 0 rgba(255, 255, 255, .9)
+}
+
+.aud-ac {
+   font-style: normal;
+   margin-right: 3px;
+   opacity: .95
+}
+
 .aud-b.sel {
    outline: 2px solid #1d2d3d;
    outline-offset: 1px;
@@ -1768,6 +1853,12 @@ select.inp {
 
 .aud-marco.m-OS_ENCERRADA {
    color: #2f6b3c
+}
+
+/* O âmbar do indicativo do forno, escurecido para a faixa clara do swimlane —
+   o #e0a53f da .posbar foi feito para fundo escuro e some aqui. */
+.aud-marco.m-DESIDRO_APLICADA {
+   color: #9a6510
 }
 
 /* — régua do agora — */
@@ -2091,7 +2182,7 @@ body.is-mobile .posbar {
    flex-wrap: wrap
 }
 
-body.is-mobile .posbar>svg {
+body.is-mobile .posbar-id>svg {
    width: 26px;
    height: 26px
 }
@@ -2100,11 +2191,20 @@ body.is-mobile .posbar .pname {
    font-size: 30px
 }
 
-body.is-mobile .posbar>div:last-child {
-   margin-left: 0;
+/* A barra faz wrap: linha 1 leva a identificação e o indicativo do forno,
+   linha 2 os stats desta posição, espalhados a toda a largura. */
+body.is-mobile .pos-stats {
    flex: 1 0 100%;
    gap: 0;
    justify-content: space-between
+}
+
+body.is-mobile .posbar-id {
+   gap: 12px
+}
+
+body.is-mobile .desidro-ind {
+   padding: 4px 8px
 }
 
 body.is-mobile .posmini .n {
@@ -2561,6 +2661,10 @@ body.is-mobile .toast {
       gap: 18px
    }
 
+   body:not(.is-mobile) .posbar-id {
+      gap: 18px
+   }
+
    body:not(.is-mobile) .pos-stats {
       gap: 22px
    }
@@ -2702,7 +2806,15 @@ body.is-mobile .toast {
       flex-wrap: nowrap
    }
 
-   body:not(.is-mobile) .posbar>svg {
+   body:not(.is-mobile) .posbar-id {
+      gap: 14px
+   }
+
+   body:not(.is-mobile) .desidro-ind {
+      padding: 2px 8px
+   }
+
+   body:not(.is-mobile) .posbar-id>svg {
       width: 24px;
       height: 24px
    }

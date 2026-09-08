@@ -1,6 +1,8 @@
 import { http, NotFoundError } from "./client";
 import type {
-  CargaDTO, ClienteDTO, Etapa, LogDTO, LoteDTO, OperadorDTO, Permissao,
+  CargaDTO, ClienteDTO, ConfigDesidrogenizacaoDTO, DesidroEmAndamentoDTO,
+  DesidrogenizacaoDTO, Etapa,
+  LogDTO, LoteDTO, OperadorDTO, OrdemDesidrogenizacaoDTO, Permissao,
   OrdemDetalheDTO, OrdemResumoDTO, Posicao, ProcessoDTO, ProcessoInicialDTO,
   RevisaoDTO, TipoCarga,
 } from "./types";
@@ -85,6 +87,44 @@ export const listarProcessosIniciais = () =>
 export const definirProcessoInicial = (posicao: Posicao, processoId: number) =>
   http.put<ProcessoInicialDTO>(`/api/processos-iniciais/${posicao}`, { processoId });
 
+// ── desidrogenizações ───────────────────────────────────────────────────
+/** Só as ativas por padrão; a tela de cadastro pede `arquivadas` para ver tudo. */
+export const listarDesidrogenizacoes = (arquivadas = false) =>
+  http.get<DesidrogenizacaoDTO[]>(
+    `/api/desidrogenizacoes${arquivadas ? "?arquivadas=true" : ""}`);
+
+/** O mesmo corpo serve POST e PUT — do lado do Java é um CriarDesidrogenizacaoDTO só. */
+export const criarDesidrogenizacao = (dto: {
+  nome: string; duracaoMin: number; observacao: string | null;
+}) => http.post<DesidrogenizacaoDTO>("/api/desidrogenizacoes", dto);
+
+export const atualizarDesidrogenizacao = (id: number, dto: {
+  nome: string; duracaoMin: number; observacao: string | null;
+}) => http.put<DesidrogenizacaoDTO>(`/api/desidrogenizacoes/${id}`, dto);
+
+/** Soft-delete ("Arquivar" na tela): sai da lista de escolha, o histórico fica. */
+export const arquivarDesidrogenizacao = (id: number) =>
+  http.del<void>(`/api/desidrogenizacoes/${id}`);
+
+export const reativarDesidrogenizacao = (id: number) =>
+  http.post<DesidrogenizacaoDTO>(`/api/desidrogenizacoes/${id}/reativar`);
+
+/**
+ * As desidrogenizações das OS em produção — a fonte do indicativo da barra do
+ * Dashboard. Traz também as que já passaram do horário; o corte de "o que ainda
+ * importa" é feito no cliente, em domain/desidro.ts.
+ */
+export const listarDesidrogenizacoesEmAndamento = () =>
+  http.get<DesidroEmAndamentoDTO[]>("/api/desidrogenizacoes/em-andamento");
+
+/** Uma só, para TODAS as desidrogenizações — é parâmetro do forno. */
+export const temperaturaDesidrogenizacao = () =>
+  http.get<ConfigDesidrogenizacaoDTO>("/api/desidrogenizacoes/temperatura");
+
+export const definirTemperaturaDesidrogenizacao = (temperatura: number) =>
+  http.put<ConfigDesidrogenizacaoDTO>(
+    "/api/desidrogenizacoes/temperatura", { temperatura });
+
 // ── cargas ──────────────────────────────────────────────────────────────
 export const listarCargas = () => http.get<CargaDTO[]>("/api/cargas");
 export const listarCargasDisponiveis = () =>
@@ -128,13 +168,29 @@ export const criarOrdem = (dto: {
 export const vincularCarga = (osId: number, cargaId: number, operadorId: number) =>
   http.post<LogDTO>(`/api/ordens/${osId}/cargas`, { cargaId, operadorId });
 
-/** Abre o passo; o service fecha sozinho o passo anterior da mesma carga. */
+/**
+ * Abre o passo; o service fecha sozinho o passo anterior da mesma carga.
+ *
+ * `ordensAcopladasIds` são outras OS cujas peças foram na MESMA carga. O passo
+ * continua sendo UM registro (osId é a titular) e aparece no histórico de
+ * todas — é o que impede um evento físico de contar 2-3 vezes na produção.
+ */
 export const iniciarLog = (
   osId: number, cargaId: number, processoId: number, responsavelId: number,
-) => http.post<LogDTO>(`/api/ordens/${osId}/logs`, { cargaId, processoId, responsavelId });
+  ordensAcopladasIds: number[] = [],
+) => http.post<LogDTO>(`/api/ordens/${osId}/logs`,
+  { cargaId, processoId, responsavelId, ordensAcopladasIds });
 
 export const finalizarLog = (logId: string) =>
   http.patch<LogDTO>(`/api/ordens/logs/${logId}/finalizar`);
+
+/**
+ * Desfaz um acoplamento: as peças daquela OS não estavam nesta carga.
+ * Só vale com o passo ABERTO — depois de fechado a composição é histórico e a
+ * API devolve 409 PASSO_JA_FINALIZADO.
+ */
+export const desacoplar = (logId: string, osId: number) =>
+  http.del(`/api/ordens/logs/${logId}/acopladas/${osId}`);
 
 /**
  * Fecha o passo aberto de cada carga indicada e a devolve ao pool de livres.
@@ -152,6 +208,20 @@ export const liberarCargas = (osId: number, operadorId: number, cargaIds: number
  */
 export const finalizarLote = (osId: number, operadorId: number, cargaIds: number[]) =>
   http.post<LoteDTO>(`/api/ordens/${osId}/lotes/finalizar`, { operadorId, cargaIds });
+
+/**
+ * Aplica uma receita do catálogo à OS. O início é o relógio do servidor e o
+ * fim já vem calculado (início + duração) — nada de horário no corpo.
+ * Recusa com 422 uma receita arquivada; a mensagem do ApiError já vem pronta
+ * para o toast.
+ */
+export const aplicarDesidrogenizacao = (
+  osId: number, desidrogenizacaoId: number, operadorId: number,
+) => http.post<OrdemDesidrogenizacaoDTO>(
+  `/api/ordens/${osId}/desidrogenizacoes`, { desidrogenizacaoId, operadorId });
+
+export const desidrogenizacoesDaOrdem = (osId: number) =>
+  http.get<OrdemDesidrogenizacaoDTO[]>(`/api/ordens/${osId}/desidrogenizacoes`);
 
 /** Expedição total: libera as cargas restantes e encerra a OS. */
 export const finalizarOrdem = (osId: number, operadorId: number) =>

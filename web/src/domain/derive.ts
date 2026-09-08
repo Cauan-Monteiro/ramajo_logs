@@ -68,6 +68,25 @@ export function logAbertoDaCarga(nome: string, logs: LogDTO[]): LogDTO | undefin
   return logs.find((l) => l.cargaNome === nome && isAberto(l));
 }
 
+/* ── acoplamento de OS num passo ────────────────────────────────────────── */
+
+/**
+ * Este passo é de carona para a OS pedida? Peças dela estavam na carga, mas
+ * quem executou foi outra ordem — a titular, dona da carga.
+ *
+ * A API devolve o passo no histórico de todas as OS envolvidas, sempre com a
+ * titular em `ordemServicoId`; a divergência é o próprio sinal.
+ */
+export const ehAcoplada = (l: LogDTO, osId: number) => l.ordemServicoId !== osId;
+
+/**
+ * A OS tem peças numa carga alheia AGORA. Vale como "tem carga vinculada":
+ * enquanto o passo estiver aberto, as peças estão dentro de um tanque e a OS
+ * não pode ser tratada como pronta para inspeção.
+ */
+export const temAcoplamentoAberto = (logs: LogDTO[], osId: number) =>
+  logs.some((l) => isAberto(l) && ehAcoplada(l, osId));
+
 /* ── agregados de OS ────────────────────────────────────────────────────── */
 
 /** O design chama de "2º lote" toda OS que já expediu ao menos um lote. */

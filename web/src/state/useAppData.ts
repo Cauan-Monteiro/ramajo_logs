@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../api/endpoints";
 import type {
-  CargaDTO, ClienteDTO, LogDTO, OperadorDTO, OrdemResumoDTO, ProcessoDTO,
-  ProcessoInicialDTO,
+  CargaDTO, ClienteDTO, DesidroEmAndamentoDTO, DesidrogenizacaoDTO, LogDTO,
+  OperadorDTO, OrdemResumoDTO, ProcessoDTO, ProcessoInicialDTO,
 } from "../api/types";
 
 export interface AppData {
@@ -13,6 +13,12 @@ export interface AppData {
   /** Processo de entrada de cada setor. No máximo uma linha por posição. */
   processosIniciais: ProcessoInicialDTO[];
   cargas: CargaDTO[];
+  /** Catálogo de desidrogenização, ativas e arquivadas — como `processos`. */
+  desidrogenizacoes: DesidrogenizacaoDTO[];
+  /** A temperatura do forno, a mesma para todas. */
+  temperaturaDesidro: number | null;
+  /** Desidrogenizações das OS em produção — alimentam o indicativo da barra. */
+  desidrosEmAndamento: DesidroEmAndamentoDTO[];
   ordens: OrdemResumoDTO[];
   /** Histórico por OS em processo, indexado por id da OS. */
   logsPorOrdem: Record<number, LogDTO[]>;
@@ -20,6 +26,7 @@ export interface AppData {
 
 const VAZIO: AppData = {
   clientes: [], operadores: [], processos: [], processosIniciais: [], cargas: [],
+  desidrogenizacoes: [], temperaturaDesidro: null, desidrosEmAndamento: [],
   ordens: [], logsPorOrdem: {},
 };
 
@@ -46,7 +53,10 @@ export function useAppData(onError: (e: unknown) => void) {
     const meu = ++emVoo.current;
     setCarregando(true);
     try {
-      const [revisao, clientes, operadores, processos, processosIniciais, cargas, ordens] =
+      const [
+        revisao, clientes, operadores, processos, processosIniciais, cargas,
+        desidrogenizacoes, configDesidro, desidrosEmAndamento, ordens,
+      ] =
         await Promise.all([
           // Lida junto com os dados, nunca depois: se algo mudar no meio desta
           // carga, a marca guardada fica atrasada e o próximo poll corrige. O
@@ -57,6 +67,14 @@ export function useAppData(onError: (e: unknown) => void) {
           api.listarProcessos(),
           api.listarProcessosIniciais(),
           api.listarCargas(),
+          // Arquivadas junto: a tela de cadastro alterna entre as duas listas,
+          // e quem oferece receita ao operador filtra por `ativo`.
+          api.listarDesidrogenizacoes(true),
+          api.temperaturaDesidrogenizacao(),
+          // O progresso de cada uma anda sozinho no relógio da tela; esta lista
+          // só precisa mudar quando alguém aplica ou expede, e disso o useSync
+          // já cuida (POST -> revisão nova -> recarga).
+          api.listarDesidrogenizacoesEmAndamento(),
           api.listarOrdens(false),
         ]);
 
@@ -69,7 +87,9 @@ export function useAppData(onError: (e: unknown) => void) {
       if (meu !== emVoo.current) return;
 
       setData({
-        clientes, operadores, processos, processosIniciais, cargas, ordens,
+        clientes, operadores, processos, processosIniciais, cargas,
+        desidrogenizacoes, temperaturaDesidro: configDesidro.temperatura,
+        desidrosEmAndamento, ordens,
         logsPorOrdem: Object.fromEntries(historicos),
       });
       setMarca(`${revisao.instancia}:${revisao.revisao}`);

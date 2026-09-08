@@ -1,13 +1,16 @@
 package com.ramajo.logs.system.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.Mockito.when;
 
 import com.ramajo.logs.system.entities.Carga;
 import com.ramajo.logs.system.entities.Cliente;
 import com.ramajo.logs.system.entities.Log;
 import com.ramajo.logs.system.entities.Lote;
+import com.ramajo.logs.system.entities.Desidrogenizacao;
 import com.ramajo.logs.system.entities.Operador;
+import com.ramajo.logs.system.entities.OrdemDesidrogenizacao;
 import com.ramajo.logs.system.entities.OrdemServico;
 import com.ramajo.logs.system.entities.Processo;
 import com.ramajo.logs.system.enums.Etapa;
@@ -16,9 +19,11 @@ import com.ramajo.logs.system.enums.Posicao;
 import com.ramajo.logs.system.enums.TipoCarga;
 import com.ramajo.logs.system.repositories.LogRepository;
 import com.ramajo.logs.system.repositories.LoteRepository;
+import com.ramajo.logs.system.repositories.OrdemDesidrogenizacaoRepository;
 import com.ramajo.logs.system.repositories.OrdemServicoRepository;
 import java.io.ByteArrayInputStream;
 import java.lang.reflect.Field;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -49,11 +54,12 @@ class PlanilhaOrdemServicoServiceTest {
     @Mock private OrdemServicoRepository osRepo;
     @Mock private LogRepository logRepo;
     @Mock private LoteRepository loteRepo;
+    @Mock private OrdemDesidrogenizacaoRepository desidroRepo;
 
     @InjectMocks private PlanilhaOrdemServicoService service;
 
     @Test
-    void geraAsTresAbasComSubtotalSomavel() throws Exception {
+    void geraAsQuatroAbasComSubtotalSomavel() throws Exception {
         OrdemServico os = ordem();
         Carga tambor = carga(10L, "TAMBOR-01", TipoCarga.TAMBOR);
         Carga cesto = carga(20L, "CESTO-04", TipoCarga.CESTO);
@@ -70,14 +76,22 @@ class PlanilhaOrdemServicoServiceTest {
         when(osRepo.findById(42L)).thenReturn(Optional.of(os));
         when(logRepo.buscarParaRelatorio(42L)).thenReturn(logs);
         when(loteRepo.buscarParaRelatorio(42L)).thenReturn(List.of(lote(os, (short) 1, joao)));
+        when(desidroRepo.buscarDaOrdem(42L)).thenReturn(List.of(desidro(os, joao, 120)));
 
         byte[] bytes = service.gerar(42L);
 
         try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
-            assertThat(wb.getNumberOfSheets()).isEqualTo(3);
+            assertThat(wb.getNumberOfSheets()).isEqualTo(4);
             assertThat(wb.getSheetName(0)).isEqualTo("Relatório");
             assertThat(wb.getSheetName(1)).isEqualTo("Lotes");
-            assertThat(wb.getSheetName(2)).isEqualTo("Dados");
+            assertThat(wb.getSheetName(2)).isEqualTo("Desidrogenizações");
+            assertThat(wb.getSheetName(3)).isEqualTo("Dados");
+
+            // a aba do forno traz a aplicação, com a duração somável do Excel
+            Sheet forno = wb.getSheetAt(2);
+            assertThat(forno.getRow(1).getCell(0).getStringCellValue()).isEqualTo("Têmpera");
+            assertThat(forno.getRow(1).getCell(1).getNumericCellValue())
+                    .isCloseTo(120 / 1440d, within(1e-9));
 
             XSSFSheet relatorio = wb.getSheetAt(0);
 
@@ -100,7 +114,73 @@ class PlanilhaOrdemServicoServiceTest {
 
             // autofiltro só na aba plana
             assertThat(relatorio.getCTWorksheet().isSetAutoFilter()).isFalse();
-            assertThat(wb.getSheetAt(2).getCTWorksheet().isSetAutoFilter()).isTrue();
+            assertThat(wb.getSheetAt(3).getCTWorksheet().isSetAutoFilter()).isTrue();
+        }
+    }
+
+    /**
+     * A OS carona: as peças dela rodaram na carga de outra ordem. A etapa tem
+     * de aparecer no relatório dela — era esta a lacuna — mas cercada: bloco
+     * próprio, subtotal com nome próprio, e fora dos indicadores, que continuam
+     * medindo só o que ESTA OS executou.
+     */
+    @Test
+    void etapaAcopladaGanhaBlocoESubtotalProprios() throws Exception {
+        OrdemServico os = ordem();
+        OrdemServico titular = ordemDe(99L, 77001L);
+        Carga tambor = carga(10L, "TAMBOR-01", TipoCarga.TAMBOR);
+        Carga alheia = carga(30L, "CESTO-09", TipoCarga.CESTO);
+        Operador joao = new Operador("João", Permissao.FUNCIONARIO, "T1");
+
+        when(osRepo.findById(42L)).thenReturn(Optional.of(os));
+        when(logRepo.buscarParaRelatorio(42L)).thenReturn(List.of(
+                log(os, joao, tambor, "Desengraxe", Etapa.PRE_TRATAMENTO, 0, 15, false)));
+        // O passo é da OS 99; esta ordem só pegou carona nele.
+        when(logRepo.buscarAcopladasParaRelatorio(42L)).thenReturn(List.of(
+                log(titular, joao, alheia, "Banho ácido", Etapa.TRATAMENTO, 20, 50, false)));
+        when(loteRepo.buscarParaRelatorio(42L)).thenReturn(List.of());
+        when(desidroRepo.buscarDaOrdem(42L)).thenReturn(List.of());
+
+        try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(service.gerar(42L)))) {
+            XSSFSheet relatorio = wb.getSheetAt(0);
+
+            // O bloco próprio continua sendo um só: o acoplado NÃO se disfarça
+            // de carga desta OS.
+            assertThat(subtitulos(relatorio)).hasSize(1);
+            assertThat(textos(relatorio, "ETAPA ACOPLADA")).hasSize(1);
+            assertThat(textos(relatorio, "ETAPA ACOPLADA").get(0))
+                    .contains("OS 99").contains("CESTO-09");
+
+            // Dois subtotais, e o do acoplado diz para não somar no total da OS.
+            assertThat(textos(relatorio, "Subtotal da carga")).hasSize(1);
+            assertThat(textos(relatorio, "Subtotal acoplado")).hasSize(1);
+
+            // A aba plana traz os dois passos, separados pela última coluna.
+            Sheet dados = wb.getSheet("Dados");
+            assertThat(dados.getRow(0).getCell(11).getStringCellValue()).isEqualTo("Acoplada à OS");
+            assertThat(dados.getLastRowNum()).isEqualTo(2);
+            assertThat(dados.getRow(1).getCell(11).getCellType()).isEqualTo(CellType.BLANK);
+            assertThat(dados.getRow(2).getCell(11).getStringCellValue()).isEqualTo("99");
+        }
+    }
+
+    /**
+     * A aba do forno existe mesmo sem forno nenhum: uma aba em falta faria
+     * duvidar se o relatório saiu completo.
+     */
+    @Test
+    void semDesidrogenizacaoAAbaDoFornoAindaAssimExiste() throws Exception {
+        OrdemServico os = ordem();
+        when(osRepo.findById(42L)).thenReturn(Optional.of(os));
+        when(logRepo.buscarParaRelatorio(42L)).thenReturn(List.of());
+        when(loteRepo.buscarParaRelatorio(42L)).thenReturn(List.of());
+        when(desidroRepo.buscarDaOrdem(42L)).thenReturn(List.of());
+
+        try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(service.gerar(42L)))) {
+            Sheet forno = wb.getSheet("Desidrogenizações");
+            assertThat(forno).isNotNull();
+            assertThat(forno.getRow(1).getCell(0).getStringCellValue())
+                    .startsWith("Nenhuma desidrogenização");
         }
     }
 
@@ -114,6 +194,16 @@ class PlanilhaOrdemServicoServiceTest {
                 .filter(c -> c != null && c.getCellType() == CellType.STRING)
                 .map(Cell::getStringCellValue)
                 .filter(v -> v.startsWith("CARGA: "))
+                .toList();
+    }
+
+    /** Textos da coluna A que começam pelo prefixo — títulos de bloco e rótulos. */
+    private List<String> textos(Sheet aba, String prefixo) {
+        return java.util.stream.StreamSupport.stream(aba.spliterator(), false)
+                .map(r -> r.getCell(0))
+                .filter(c -> c != null && c.getCellType() == CellType.STRING)
+                .map(Cell::getStringCellValue)
+                .filter(v -> v.startsWith(prefixo))
                 .toList();
     }
 
@@ -140,8 +230,12 @@ class PlanilhaOrdemServicoServiceTest {
     }
 
     private OrdemServico ordem() throws Exception {
-        OrdemServico os = new OrdemServico(99123L, new Cliente(1L, "ACME LTDA"), Posicao.OXIDACAO);
-        set(os, "id", 42L);
+        return ordemDe(42L, 99123L);
+    }
+
+    private OrdemServico ordemDe(Long id, Long idExterno) throws Exception {
+        OrdemServico os = new OrdemServico(idExterno, new Cliente(1L, "ACME LTDA"), Posicao.OXIDACAO);
+        set(os, "id", id);
         set(os, "iniciadaEm", T0);
         os.setFinalizadaEm(T0.plus(8, ChronoUnit.HOURS));
         return os;
@@ -166,6 +260,17 @@ class PlanilhaOrdemServicoServiceTest {
         }
         l.setCancelado(cancelado);
         return l;
+    }
+
+    private OrdemDesidrogenizacao desidro(OrdemServico os, Operador op, int duracaoMin)
+            throws Exception {
+        OrdemDesidrogenizacao d = new OrdemDesidrogenizacao(
+                os, new Desidrogenizacao("Têmpera", duracaoMin), op, new BigDecimal("190"));
+        // Carimbos do banco (clock_timestamp e a trigger do término): no teste
+        // entram por reflexão, como os das demais entidades.
+        set(d, "iniciadaEm", T0);
+        set(d, "finalizadaEm", T0.plus(duracaoMin, ChronoUnit.MINUTES));
+        return d;
     }
 
     private Lote lote(OrdemServico os, short numero, Operador op) throws Exception {

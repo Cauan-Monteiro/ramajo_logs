@@ -10,8 +10,10 @@ import static org.mockito.Mockito.when;
 
 import com.ramajo.logs.system.entities.Carga;
 import com.ramajo.logs.system.entities.Cliente;
+import com.ramajo.logs.system.entities.Desidrogenizacao;
 import com.ramajo.logs.system.entities.Log;
 import com.ramajo.logs.system.entities.Operador;
+import com.ramajo.logs.system.entities.OrdemDesidrogenizacao;
 import com.ramajo.logs.system.entities.OrdemServico;
 import com.ramajo.logs.system.entities.Processo;
 import com.ramajo.logs.system.enums.Etapa;
@@ -20,12 +22,14 @@ import com.ramajo.logs.system.enums.Posicao;
 import com.ramajo.logs.system.enums.TipoCarga;
 import com.ramajo.logs.system.exceptions.PeriodoInvalidoException;
 import com.ramajo.logs.system.repositories.LogRepository;
+import com.ramajo.logs.system.repositories.OrdemDesidrogenizacaoRepository;
 import com.ramajo.logs.system.repositories.OrdemServicoRepository;
 import com.ramajo.logs.system.util.DataHoraBr;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.lang.reflect.Field;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -84,6 +88,10 @@ class PlanilhaPeriodoServiceTest {
     private static final int COL_PRE = 16;
     private static final int COL_TRATAMENTO = 17;
     private static final int COL_POS = 18;
+    // As duas do forno vão no fim, para não deslocar nenhuma das anteriores.
+    private static final int COL_DESIDROS = 19;
+    private static final int COL_TEMPO_FORNO = 20;
+    private static final int COL_ACOPLADAS = 21;
 
     /** Índices na aba Etapas (ver CABECALHO_ETAPAS). */
     private static final int ET_OS = 0;
@@ -95,9 +103,11 @@ class PlanilhaPeriodoServiceTest {
     private static final int ET_FIM = 12;
     private static final int ET_DURACAO = 13;
     private static final int ET_SITUACAO = 14;
+    private static final int ET_ACOPLADA = 15;
 
     @Mock private OrdemServicoRepository osRepo;
     @Mock private LogRepository logRepo;
+    @Mock private OrdemDesidrogenizacaoRepository desidroRepo;
 
     @InjectMocks private PlanilhaPeriodoService service;
 
@@ -127,14 +137,17 @@ class PlanilhaPeriodoServiceTest {
                 DataHoraBr.inicioDoDia(INICIO), DataHoraBr.inicioDoDiaSeguinte(FIM)))
                 .thenReturn(List.of(finalizada, emProcesso, cancelada));
         when(logRepo.buscarParaRelatorioDeOrdens(List.of(10L, 11L, 12L))).thenReturn(etapas);
+        when(desidroRepo.buscarDeOrdens(List.of(10L, 11L, 12L)))
+                .thenReturn(List.of(desidro(finalizada, joao, 120)));
 
         byte[] bytes = service.gerar(INICIO, FIM);
 
         try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
-            assertThat(wb.getNumberOfSheets()).isEqualTo(3);
+            assertThat(wb.getNumberOfSheets()).isEqualTo(4);
             assertThat(wb.getSheetName(0)).isEqualTo("Relatório");
             assertThat(wb.getSheetName(1)).isEqualTo("Dados");
             assertThat(wb.getSheetName(2)).isEqualTo("Etapas");
+            assertThat(wb.getSheetName(3)).isEqualTo("Desidrogenizações");
 
             XSSFSheet relatorio = wb.getSheetAt(0);
             List<Row> linhas = linhasDeDados(relatorio);
@@ -161,6 +174,11 @@ class PlanilhaPeriodoServiceTest {
                     .isCloseTo(horas(1), PRECISAO);
             // a única etapa de pós foi cancelada: sem medição, célula vazia
             assertThat(comEtapas.getCell(COL_POS).getCellType()).isEqualTo(CellType.BLANK);
+            // o forno é uma medida à parte: conta 1 e soma 2h, e NÃO entra no
+            // tempo trabalhado, que continua sendo só o das etapas concluídas
+            assertThat(numero(comEtapas, COL_DESIDROS)).isEqualTo(1);
+            assertThat(comEtapas.getCell(COL_TEMPO_FORNO).getNumericCellValue())
+                    .isCloseTo(2 / 24d, within(1e-9));
             assertThat(comEtapas.getCell(COL_DURACAO).getNumericCellValue())
                     .isCloseTo(horas(8), PRECISAO);
 
@@ -235,6 +253,79 @@ class PlanilhaPeriodoServiceTest {
         }
     }
 
+    /**
+     * A regra que sustenta todo o desenho do acoplamento: peças de duas OS no
+     * MESMO tanque são UM evento físico. A OS carona ganha a linha e a
+     * contagem própria, mas nenhum número de produção pode dobrar por causa
+     * disso — nem os da titular, nem o total da coluna Duração.
+     */
+    @Test
+    void etapaAcopladaApareceNaCaronaSemInflarNenhumNumero() throws Exception {
+        OrdemServico titular = ordem(10L, 0, 8, false);
+        OrdemServico carona = ordem(11L, 0, 8, false);
+
+        Operador joao = new Operador("João", Permissao.FUNCIONARIO, "T1");
+        Carga tambor = carga(1L, "TAMBOR-01", TipoCarga.TAMBOR);
+        Processo desengraxe = processo(1L, "Desengraxe", Etapa.PRE_TRATAMENTO);
+
+        // Um único passo: a carga é da titular, e as peças da carona foram junto.
+        Log compartilhado = log(titular, joao, tambor, desengraxe, 0, 2, false);
+        compartilhado.getOrdensAcopladas().add(11L);
+
+        when(osRepo.buscarParaRelatorioPorPeriodo(
+                DataHoraBr.inicioDoDia(INICIO), DataHoraBr.inicioDoDiaSeguinte(FIM)))
+                .thenReturn(List.of(titular, carona));
+        when(logRepo.buscarParaRelatorioDeOrdens(List.of(10L, 11L)))
+                .thenReturn(List.of(compartilhado));
+        when(logRepo.buscarAcopladasDeOrdens(List.of(10L, 11L)))
+                .thenReturn(List.of(compartilhado));
+
+        byte[] bytes = service.gerar(INICIO, FIM);
+
+        try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+            List<Row> linhas = linhasDeDados(wb.getSheetAt(0));
+            assertThat(linhas).hasSize(2);
+
+            // --- titular: os números são os de sempre, como se nada tivesse
+            // sido acoplado. É esta asserção que prova a não-inflação.
+            Row daTitular = linhas.get(0);
+            assertThat(numero(daTitular, COL_ETAPAS)).isEqualTo(1);
+            assertThat(numero(daTitular, COL_CARGAS)).isEqualTo(1);
+            assertThat(numero(daTitular, COL_CONCLUIDAS)).isEqualTo(1);
+            assertThat(daTitular.getCell(COL_TRABALHADO).getNumericCellValue())
+                    .isCloseTo(horas(2), PRECISAO);
+            assertThat(numero(daTitular, COL_ACOPLADAS)).isZero();
+
+            // --- carona: o passo não é dela, então não entra em contador nem
+            // em tempo nenhum. Só a coluna nova o registra.
+            Row daCarona = linhas.get(1);
+            assertThat(numero(daCarona, COL_ETAPAS)).isZero();
+            assertThat(numero(daCarona, COL_CARGAS)).isZero();
+            assertThat(daCarona.getCell(COL_TRABALHADO).getCellType()).isEqualTo(CellType.BLANK);
+            assertThat(numero(daCarona, COL_ACOPLADAS)).isEqualTo(1);
+
+            // --- a aba Etapas: duas linhas para um passo só, uma por OS
+            XSSFSheet abaEtapas = wb.getSheetAt(2);
+            assertThat(abaEtapas.getLastRowNum()).isEqualTo(2);
+            assertThat(cabecalho(abaEtapas, ET_ACOPLADA)).isEqualTo("Acoplada à OS");
+
+            Row propria = abaEtapas.getRow(1);
+            assertThat(propria.getCell(ET_OS).getStringCellValue()).isEqualTo("90010");
+            assertThat(propria.getCell(ET_ACOPLADA).getCellType()).isEqualTo(CellType.BLANK);
+            assertThat(propria.getCell(ET_DURACAO).getNumericCellValue())
+                    .isCloseTo(horas(2), PRECISAO);
+
+            Row deCarona = abaEtapas.getRow(2);
+            assertThat(deCarona.getCell(ET_OS).getStringCellValue()).isEqualTo("90011");
+            assertThat(deCarona.getCell(ET_ACOPLADA).getStringCellValue()).isEqualTo("90010");
+            // O ponto sensível: a linha de carona mostra o passo mas NÃO repete
+            // a duração. Somar a coluna tem de continuar dando o tempo real.
+            assertThat(deCarona.getCell(ET_DURACAO).getCellType()).isEqualTo(CellType.BLANK);
+            // ...e sem perder informação: os carimbos continuam lá.
+            assertThat(deCarona.getCell(ET_FIM).getCellType()).isEqualTo(CellType.NUMERIC);
+        }
+    }
+
     @Test
     void periodoSemOrdensGeraArquivoValidoESemConsultarAsEtapas() throws Exception {
         when(osRepo.buscarParaRelatorioPorPeriodo(
@@ -243,11 +334,13 @@ class PlanilhaPeriodoServiceTest {
 
         byte[] bytes = service.gerar(INICIO, FIM);
 
-        // `in ()` é SQL inválido: sem OSs, a busca das etapas não pode nem ser chamada
+        // `in ()` é SQL inválido: sem OSs, nem as etapas nem o forno podem ser buscados
         verify(logRepo, never()).buscarParaRelatorioDeOrdens(anyCollection());
+        verify(logRepo, never()).buscarAcopladasDeOrdens(anyCollection());
+        verify(desidroRepo, never()).buscarDeOrdens(anyCollection());
 
         try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
-            assertThat(wb.getNumberOfSheets()).isEqualTo(3);
+            assertThat(wb.getNumberOfSheets()).isEqualTo(4);
             assertThat(linhasDeDados(wb.getSheetAt(0))).isEmpty();
             // sem faixa para somar, o resumo não ganha fórmula nenhuma
             assertThat(formulas(wb.getSheetAt(0))).isEmpty();
@@ -367,6 +460,16 @@ class PlanilhaPeriodoServiceTest {
         }
         l.setCancelado(cancelado);
         return l;
+    }
+
+    /** Uma aplicação de forno de `duracaoMin`, começando em T0. */
+    private OrdemDesidrogenizacao desidro(OrdemServico os, Operador op, int duracaoMin)
+            throws Exception {
+        OrdemDesidrogenizacao d = new OrdemDesidrogenizacao(
+                os, new Desidrogenizacao("Têmpera", duracaoMin), op, new BigDecimal("190"));
+        set(d, "iniciadaEm", T0);
+        set(d, "finalizadaEm", T0.plus(duracaoMin, ChronoUnit.MINUTES));
+        return d;
     }
 
     /** Os carimbos e ids são gerados pelo banco; no teste eles entram por reflexão. */

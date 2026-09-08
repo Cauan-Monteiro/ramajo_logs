@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Modal, Vazio } from "../components/Modal";
 import { Corners } from "../components/Blueprint";
 import { pillStyle, situacaoOrdem } from "../domain/derive";
+import { COR_NIVEL, emCurso, nivel, progresso } from "../domain/desidro";
 import { diaHora, osNum, posLabel } from "../domain/format";
+import { useAgora } from "../state/useAgora";
 import type { Ctx } from "./tipos";
 
 type Modo = "os" | "cliente";
@@ -14,6 +16,20 @@ type Modo = "os" | "cliente";
 export function BuscarOSModal({ ctx }: { ctx: Ctx }) {
   const [modo, setModo] = useState<Modo>("os");
   const [q, setQ] = useState("");
+  const agora = useAgora(30000);
+
+  /**
+   * As OS que estão no forno agora, com o tom do seu nível. Sai da lista que o
+   * `useAppData` já carrega — nenhuma ida à rede —, e mapeia-se uma vez em vez
+   * de varrer o array dentro do `map` dos resultados.
+   */
+  const noForno = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const d of emCurso(ctx.data.desidrosEmAndamento, agora)) {
+      m.set(d.ordemServicoId, COR_NIVEL[nivel(progresso(d, agora))]);
+    }
+    return m;
+  }, [ctx.data.desidrosEmAndamento, agora]);
 
   const termo = q.trim().toLowerCase();
   const clientesPorNome = new Map(ctx.data.clientes.map((c) => [c.nome, c.id]));
@@ -71,6 +87,19 @@ export function BuscarOSModal({ ctx }: { ctx: Ctx }) {
               <div className="os-cli">{o.clienteNome}</div>
               <div className="os-tv">{posLabel(o.posicao)} · aberta {diaHora(o.iniciadaEm)}</div>
             </div>
+            {noForno.has(o.id) && (
+              <span
+                className="lote-pill"
+                style={{
+                  flex: "none",
+                  background: "#f6ecd8",
+                  color: "#6b4a10",
+                  borderColor: noForno.get(o.id),
+                }}
+              >
+                EM FORNO
+              </span>
+            )}
             <span className="lote-pill" style={{ ...pillStyle(!o.emProcesso), flex: "none" }}>
               {situacaoOrdem(o)}
             </span>

@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
 import * as api from "../api/endpoints";
-import type { LogDTO } from "../api/types";
+import type { LogDTO, OrdemDesidrogenizacaoDTO } from "../api/types";
 import { Corners } from "../components/Blueprint";
 import { Modal, Vazio } from "../components/Modal";
 import { ScanField } from "../components/ScanField";
 import {
-  SEL_CHIP, SEL_PICK, dotStyle, etapaStyle, etapaDoLog, isAberto, labelEtapaDoLog, logSub,
+  SEL_CHIP, SEL_PICK, dotStyle, ehAcoplada, etapaStyle, etapaDoLog, isAberto, labelEtapaDoLog,
+  logSub,
 } from "../domain/derive";
-import { ETAPAS, duracao, hhmm, iniciais, osNum, posLabel } from "../domain/format";
+import {
+  ETAPAS, duracao, hhmm, iniciais, minutos, osNum, posLabel,
+} from "../domain/format";
 import { cargasDe, cargasLivres, logsDe } from "../state/useAppData";
+import { AcoplarOs } from "./AcoplarOs";
 import { SEM_API, type Ctx } from "./tipos";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -23,11 +27,20 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
   // OS encerrada não está em logsPorOrdem (só carregamos as em processo):
   // buscamos o histórico sob demanda ao abrir o detalhe.
   const [extra, setExtra] = useState<LogDTO[] | null>(null);
+  const [desidros, setDesidros] = useState<OrdemDesidrogenizacaoDTO[]>([]);
   useEffect(() => {
     if (ordem && !ordem.emProcesso) {
       api.historicoOrdem(osId).then(setExtra).catch(() => setExtra([]));
     }
   }, [osId, ordem]);
+
+  // Etapa opcional e quase sempre vazia — não vale carregá-la para TODAS as OS
+  // no useAppData, então vem sob demanda, como o histórico acima. `ctx.data` na
+  // lista de dependências faz a busca repetir depois de cada mutação (agir
+  // recarrega os dados e troca a identidade do objeto).
+  useEffect(() => {
+    api.desidrogenizacoesDaOrdem(osId).then(setDesidros).catch(() => setDesidros([]));
+  }, [osId, ctx.data]);
 
   if (!ordem) return null;
   const todos = ordem.emProcesso ? logs : extra ?? [];
@@ -109,30 +122,30 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
           </span>
           <div style={{ margin: "6px 0 18px" }}>
             {abertos.map((l) => (
-              <div key={l.id} className="openrow">
-                <span className="live-dot" />
+              <PassoAberto key={l.id} ctx={ctx} log={l} osId={osId} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {desidros.length > 0 && (
+        <>
+          <span className="lbl">Desidrogenizações</span>
+          <div style={{ margin: "6px 0 18px" }}>
+            {desidros.map((d) => (
+              <div key={d.id} className="tline">
                 <div style={{ flex: 1 }}>
-                  <div style={{ font: "600 16px 'Barlow Condensed'" }}>{l.processoDescricao}</div>
+                  <div style={{ font: "600 16px 'Barlow Condensed'" }}>{d.nome}</div>
+                  {/* Duração e temperatura são as GRAVADAS na aplicação, não as
+                      do cadastro de hoje. */}
                   <div className="os-tv">
-                    Carga {l.cargaNome} · {l.responsavelNome}
+                    {minutos(d.duracaoMin)} · {d.temperatura} °C
+                    {d.aplicadaPorNome ? ` · ${d.aplicadaPorNome}` : ""}
                   </div>
                 </div>
-                <span className="time" style={{ marginRight: 8 }}>
-                  aberto {hhmm(l.iniciadoEm)}
+                <span className="time">
+                  {hhmm(d.iniciadaEm)} → {hhmm(d.finalizadaEm)}
                 </span>
-                <button
-                  className="btn2 btn2-p"
-                  style={{ padding: "9px 16px", fontSize: 14 }}
-                  disabled={ctx.ocupado}
-                  onClick={() =>
-                    ctx.agir({
-                      fazer: () => api.finalizarLog(l.id),
-                      ok: `Etapa "${l.processoDescricao}" finalizado na carga ${l.cargaNome}.`,
-                    })
-                  }
-                >
-                  Finalizar
-                </button>
               </div>
             ))}
           </div>
@@ -150,8 +163,14 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
               {labelEtapaDoLog(l, ctx.data.processos)}
             </span>
             <div style={{ flex: 1 }}>
-              <div style={{ font: "600 16px 'Barlow Condensed'" }}>{l.processoDescricao}</div>
-              <div className="os-tv">{logSub(l, duracao(l.iniciadoEm, l.finalizadoEm))}</div>
+              <div style={{ font: "600 16px 'Barlow Condensed'" }}>
+                {ehAcoplada(l, osId) && <span className="aud-ac">⇋ </span>}
+                {l.processoDescricao}
+              </div>
+              <div className="os-tv">
+                {logSub(l, duracao(l.iniciadoEm, l.finalizadoEm))}
+                {ehAcoplada(l, osId) && ` · acoplada à OS #${l.ordemServicoId}`}
+              </div>
             </div>
             <span className="time">{hhmm(l.finalizadoEm)}</span>
           </div>
@@ -251,6 +270,117 @@ export function VincularModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
   );
 }
 
+/**
+ * Uma etapa em andamento na lista do detalhe.
+ *
+ * Componente próprio por causa do acoplamento: a mesma linha aparece na OS
+ * dona da carga e nas que pegaram carona, e o que ela precisa dizer (e
+ * permitir) é diferente dos dois lados.
+ *
+ * Fechar um passo acoplado fecha para TODAS as OS envolvidas — é um tanque só.
+ * Como `logs` é append-only, isso não se desfaz, então o encerramento pede
+ * dois toques: o mesmo princípio já aplicado à expedição parcial.
+ */
+function PassoAberto({ ctx, log, osId }: { ctx: Ctx; log: LogDTO; osId: number }) {
+  const [confirmando, setConfirmando] = useState(false);
+
+  const acoplada = ehAcoplada(log, osId);
+  const outras = acoplada
+    // Na carona: a titular mais as demais caronas, menos ela própria.
+    ? [log.ordemServicoId, ...log.ordensAcopladas.filter((id) => id !== osId)]
+    : log.ordensAcopladas;
+  const total = outras.length + 1;
+
+  const rotuloOs = (id: number) => {
+    const o = ctx.data.ordens.find((x) => x.id === id);
+    return o ? osNum(o) : `#${id}`;
+  };
+
+  function finalizar() {
+    setConfirmando(false);
+    ctx.agir({
+      fazer: () => api.finalizarLog(log.id),
+      ok: total > 1
+        ? `Etapa "${log.processoDescricao}" finalizada para ${total} OS.`
+        : `Etapa "${log.processoDescricao}" finalizada na carga ${log.cargaNome}.`,
+    });
+  }
+
+  return (
+    <div className="openrow">
+      <span className="live-dot" />
+      <div style={{ flex: 1 }}>
+        <div style={{ font: "600 16px 'Barlow Condensed'" }}>
+          {acoplada && <span className="aud-ac">⇋ </span>}
+          {log.processoDescricao}
+        </div>
+        <div className="os-tv">
+          {/* Na carona, dizer de quem é a carga é o essencial: ela NÃO é desta OS. */}
+          {acoplada
+            ? `Etapa da OS ${rotuloOs(log.ordemServicoId)} · carga ${log.cargaNome}`
+            : `Carga ${log.cargaNome} · ${log.responsavelNome}`}
+        </div>
+        {/* Do lado da titular, quem mais está no tanque — com o × para corrigir
+            uma marcação errada enquanto o passo está aberto. */}
+        {!acoplada && log.ordensAcopladas.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+            {log.ordensAcopladas.map((id) => (
+              <span key={id} className="cg-chip chip-row">
+                {rotuloOs(id)}
+                <button
+                  className="chip-x"
+                  title="Desacoplar esta OS da etapa"
+                  disabled={ctx.ocupado}
+                  onClick={() =>
+                    ctx.agir({
+                      fazer: () => api.desacoplar(log.id, id),
+                      ok: `OS ${rotuloOs(id)} desacoplada da etapa.`,
+                    })
+                  }
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <span className="time" style={{ marginRight: 8 }}>
+        aberto {hhmm(log.iniciadoEm)}
+      </span>
+      {/* Na carona, sair da etapa é correção legítima: as peças não estavam lá. */}
+      {acoplada && (
+        <button
+          className="btn2"
+          style={{ padding: "9px 14px", fontSize: 14, marginRight: 8 }}
+          disabled={ctx.ocupado}
+          onClick={() =>
+            ctx.agir({
+              fazer: () => api.desacoplar(log.id, osId),
+              ok: "OS desacoplada da etapa.",
+            })
+          }
+        >
+          Desacoplar
+        </button>
+      )}
+      <button
+        className="btn2 btn2-p"
+        style={{ padding: "9px 16px", fontSize: 14 }}
+        disabled={ctx.ocupado}
+        onClick={() => (total > 1 && !confirmando ? setConfirmando(true) : finalizar())}
+        onBlur={() => setConfirmando(false)}
+      >
+        {total > 1
+          ? confirmando
+            ? `Confirmar · encerra ${total} OS`
+            : `Finalizar (${total} OS)`
+          : "Finalizar"}
+      </button>
+    </div>
+  );
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    Abrir passo numa carga da OS
    ══════════════════════════════════════════════════════════════════════════ */
@@ -258,6 +388,8 @@ export function VincularModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
 export function PassoModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
   const [processoId, setProcessoId] = useState<number | null>(null);
   const [cargaNome, setCargaNome] = useState<string | null>(null);
+  // OS que vão junto nesta carga. Vazio é o caso comum.
+  const [acopladas, setAcopladas] = useState<number[]>([]);
 
   const ordem = ctx.data.ordens.find((o) => o.id === osId);
   if (!ordem) return null;
@@ -273,8 +405,10 @@ export function PassoModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
     const carga = cargas.find((c) => c.nome === cargaNome);
     if (!carga || processoId === null) return;
     ctx.agir({
-      fazer: () => api.iniciarLog(osId, carga.id, processoId, ctx.operador.id),
-      ok: `Etapa aberta na carga ${carga.nome}.`,
+      fazer: () => api.iniciarLog(osId, carga.id, processoId, ctx.operador.id, acopladas),
+      ok: acopladas.length === 0
+        ? `Etapa aberta na carga ${carga.nome}.`
+        : `Etapa aberta na carga ${carga.nome} para ${acopladas.length + 1} OS.`,
       depois: () => ctx.abrir({ tipo: "det", osId }),
     });
   }
@@ -368,6 +502,15 @@ export function PassoModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
         ))}
         {cargas.length === 0 && <span className="os-tv">Vincule uma carga à OS primeiro.</span>}
       </div>
+
+      <AcoplarOs
+        ctx={ctx}
+        posicao={ordem.posicao}
+        osIdTitular={osId}
+        valor={acopladas}
+        onChange={setAcopladas}
+      />
+
       <div className="os-tv" style={{ marginTop: 12 }}>
         Abre o etapa para uma carga · etapa anterior dela é fechado automaticamente
       </div>

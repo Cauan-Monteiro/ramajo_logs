@@ -15,6 +15,9 @@ export type ModalState =
   | { tipo: "passo"; osId: number }
   | { tipo: "exp"; osId: number }
   | { tipo: "expParcial"; osId: number }
+  | { tipo: "desidro"; osId: number }
+  /** O painel do forno — leitura das que estão a correr, sem `osId`. */
+  | { tipo: "desidroPainel" }
   | { tipo: "cancel"; osId: number }
   | null;
 
@@ -43,5 +46,4 @@ export const SEM_API = {
     "da home.",
   reativarCarga:
     "DELETE /api/cargas/{id} só desativa; não há rota de reativação na API.",
-  desidrogenizar: "Etapa ainda não modelada na API.",
 } as const;

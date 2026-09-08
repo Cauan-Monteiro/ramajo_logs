@@ -17,12 +17,17 @@ export function diaHora(iso: string | null | undefined): string {
   return `${dia} ${hhmm(iso)}`;
 }
 
-/** "1h05" / "42 min" — igual ao durTxt do design. */
+/** "1h05" / "42 min" — o formato de duração do design, a partir de minutos. */
+export function minutos(min: number): string {
+  const m = Math.max(0, Math.round(min));
+  const h = Math.floor(m / 60);
+  return h ? `${h}h${String(m % 60).padStart(2, "0")}` : `${m} min`;
+}
+
+/** "1h05" / "42 min" — igual ao durTxt do design. `ateIso` null = até agora. */
 export function duracao(deIso: string, ateIso: string | null): string {
   const fim = ateIso ? new Date(ateIso).getTime() : Date.now();
-  const min = Math.max(0, Math.round((fim - new Date(deIso).getTime()) / 60000));
-  const h = Math.floor(min / 60);
-  return h ? `${h}h${String(min % 60).padStart(2, "0")}` : `${min} min`;
+  return minutos((fim - new Date(deIso).getTime()) / 60000);
 }
 
 export function horasEntre(deIso: string, ateIso: string): string {

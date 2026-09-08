@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 
@@ -33,6 +34,11 @@ public class OrdemServicoService {
     // finais, então o @Value continua valendo sem alterar o construtor gerado.
     @Value("${app.processo-inicial-id:0}")
     private Long processoInicialId;
+
+    // Teto de OS acopladas a um mesmo passo. Não há limite físico exato — é
+    // guarda contra requisição absurda numa API sem autenticação. Ver
+    // resolverAcopladas.
+    private static final int MAX_OS_ACOPLADAS = 5;
 
     /**
      * OS recém-criada mais os passos que nasceram com ela — o controller
@@ -262,6 +268,21 @@ public class OrdemServicoService {
 
     @Transactional
     public Log iniciarLog(Long osId, Long cargaId, Long processoId, Long responsavelId){
+        return iniciarLog(osId, cargaId, processoId, responsavelId, List.of());
+    }
+
+    /**
+     * Abre o passo e, opcionalmente, acopla outras OS a ele: peças delas
+     * estavam na MESMA carga física quando o processo rodou.
+     *
+     * O passo continua sendo UM registro — `osId` é a titular (dona da carga)
+     * e as demais penduram-se nele. É o que mantém as contagens honestas: um
+     * evento físico conta uma vez, em vez de virar 2-3 passos irmãos que
+     * inflariam cargas processadas e tempo por etapa.
+     */
+    @Transactional
+    public Log iniciarLog(Long osId, Long cargaId, Long processoId, Long responsavelId,
+                          List<Long> osAcopladasIds){
         OrdemServico os = carregarAberta(osId);
 
         Carga carga = cargaRepo.findById(cargaId)
@@ -273,7 +294,7 @@ public class OrdemServicoService {
         Operador op = operadorRepo.findById(responsavelId)
                 .orElseThrow(()-> new RecursoNaoEncontradoException("Operador", responsavelId));
 
-        return abrirLog(os, carga, processo, op);
+        return abrirLog(os, carga, processo, op, osAcopladasIds);
     }
 
     /**
@@ -312,6 +333,12 @@ public class OrdemServicoService {
 
     /** Regras do passo, independentes de como carga/processo/operador chegaram. */
     private Log abrirLog(OrdemServico os, Carga carga, Processo processo, Operador op){
+        return abrirLog(os, carga, processo, op, List.of());
+    }
+
+    /** A mesma coisa, podendo acoplar outras OS ao passo. */
+    private Log abrirLog(OrdemServico os, Carga carga, Processo processo, Operador op,
+                         List<Long> osAcopladasIds){
         if (carga.getOrdemAtual() == null || !carga.getOrdemAtual().getId().equals(os.getId())){
             throw new CargaNaoVinculadaException(carga.getId(), os.getId());
         }
@@ -339,6 +366,11 @@ public class OrdemServicoService {
                     processo.getId(), processo.getDescricao(), os.getPosicao());
         }
 
+        // Resolvido ANTES do auto-fechamento abaixo, junto das demais recusas:
+        // uma lista de acopladas inválida não pode custar o passo anterior da
+        // carga.
+        Set<Long> acopladas = resolverAcopladas(os, osAcopladasIds);
+
         // A carga está num lugar por vez: iniciar o próximo passo é o que
         // encerra o anterior. Ninguém precisa fechá-lo à mão — e como isto
         // roda dentro da @Transactional de quem chamou, ou os dois acontecem
@@ -362,7 +394,49 @@ public class OrdemServicoService {
             logRepo.flush();
         });
 
-        return logRepo.save(new Log(os, op, carga, processo));
+        Log passo = new Log(os, op, carga, processo);
+        passo.getOrdensAcopladas().addAll(acopladas);
+        return logRepo.save(passo);
+    }
+
+    /**
+     * Valida e normaliza as OS que pegam carona no passo.
+     *
+     * Nulo/vazio é o caso comum (passo de uma OS só). Duplicatas colapsam em
+     * vez de virar erro: pedir a mesma OS duas vezes quer dizer a mesma coisa
+     * que pedir uma. As recusas são de coerência física — a mesma carga não
+     * está em dois setores, nem numa OS que já saiu de circulação.
+     */
+    private Set<Long> resolverAcopladas(OrdemServico titular, List<Long> ids){
+        if (ids == null || ids.isEmpty()){
+            return Set.of();
+        }
+
+        Set<Long> unicos = new LinkedHashSet<>(ids);
+
+        // Teto defensivo: a API não tem autenticação, então um POST cru
+        // anexaria a fábrica inteira a um passo. O uso real é 2-3.
+        if (unicos.size() > MAX_OS_ACOPLADAS){
+            throw AcoplamentoInvalidoException.demais(unicos.size(), MAX_OS_ACOPLADAS);
+        }
+
+        for (Long id : unicos){
+            if (id.equals(titular.getId())){
+                throw AcoplamentoInvalidoException.aSiMesma(id);
+            }
+
+            // carregarAberta traz as recusas de sempre: 404 se não existe,
+            // 409 se já foi expedida ou cancelada.
+            OrdemServico acoplada = carregarAberta(id);
+
+            if (acoplada.getPosicao() != titular.getPosicao()){
+                throw AcoplamentoInvalidoException.posicaoDiferente(
+                        acoplada.getId(), acoplada.getPosicao(),
+                        titular.getId(), titular.getPosicao());
+            }
+        }
+
+        return unicos;
     }
 
     /**
@@ -450,6 +524,31 @@ public class OrdemServicoService {
     }
 
     /**
+     * Desfaz um acoplamento: as peças daquela OS não estavam nesta carga.
+     *
+     * Só enquanto o passo está ABERTO. Depois de fechado a composição é
+     * histórico — e `logs` é append-only justamente para que o registro do que
+     * aconteceu não seja reescrito depois. A mesma regra é garantida pela
+     * trigger trg_loa_protege (V11); aqui ela só chega antes, com mensagem
+     * legível.
+     */
+    @Transactional
+    public void desacoplar(UUID logId, Long osId){
+        Log log = logRepo.findById(logId)
+                .orElseThrow(()-> new RecursoNaoEncontradoException("Log", logId));
+
+        if (log.getFinalizadoEm() != null){
+            throw new PassoJaFinalizadoException(logId);
+        }
+
+        // Não é 404: o passo existe e a OS também — o que não existe é o
+        // vínculo entre os dois, e isso é pedido inválido, não recurso ausente.
+        if (!log.getOrdensAcopladas().remove(osId)){
+            throw AcoplamentoInvalidoException.naoAcoplada(logId, osId);
+        }
+    }
+
+    /**
      * Fecha o intervalo de um passo protegendo contra clock skew: relógio
      * atrasado devolveria um `finalizadoEm` anterior ao `iniciadoEm` e o
      * ck_logs_janela recusaria o UPDATE. Mesmo tratamento de abrirLog.
@@ -526,9 +625,14 @@ public class OrdemServicoService {
         return loteRepo.findByOrdemServicoIdOrderByNumeroAsc(osId);
     }
 
+    /**
+     * Passos da OS, incluindo aqueles em que ela pegou carona na carga de
+     * outra (V11). Alimenta a tela; os relatórios usam as consultas de
+     * relatório, que ficam na OS titular.
+     */
     @Transactional(readOnly = true)
     public List<Log> historico(Long osId){
-        return logRepo.findByOrdemServicoIdOrderByIniciadoEmAscIdAsc(osId);
+        return logRepo.buscarHistorico(osId);
     }
 
     private OrdemServico carregarAberta(Long osId){

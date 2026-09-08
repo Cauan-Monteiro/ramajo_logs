@@ -18,10 +18,12 @@ import static com.ramajo.logs.system.services.EscritorPlanilha.valorTexto;
 import com.ramajo.logs.system.entities.Carga;
 import com.ramajo.logs.system.entities.Log;
 import com.ramajo.logs.system.entities.Lote;
+import com.ramajo.logs.system.entities.OrdemDesidrogenizacao;
 import com.ramajo.logs.system.entities.OrdemServico;
 import com.ramajo.logs.system.exceptions.RecursoNaoEncontradoException;
 import com.ramajo.logs.system.repositories.LogRepository;
 import com.ramajo.logs.system.repositories.LoteRepository;
+import com.ramajo.logs.system.repositories.OrdemDesidrogenizacaoRepository;
 import com.ramajo.logs.system.repositories.OrdemServicoRepository;
 import com.ramajo.logs.system.util.DataHoraBr;
 import java.io.ByteArrayOutputStream;
@@ -49,10 +51,13 @@ import org.springframework.transaction.annotation.Transactional;
  * do open-in-view: quando o controller devolve os bytes já não há mais sessão.
  *
  * São três abas com públicos diferentes:
- *   Relatório - para ler e imprimir: identificação, indicadores e as etapas
- *               agrupadas por carga, cada bloco com subtotal e retrátil (+/-).
- *   Lotes     - o fechamento de lote a lote.
- *   Dados     - a mesma coisa em lista plana, com autofiltro, para quem quiser
+ *   Relatório         - para ler e imprimir: identificação, indicadores e as etapas
+ *                       agrupadas por carga, cada bloco com subtotal e retrátil (+/-).
+ *   Lotes             - o fechamento de lote a lote.
+ *   Desidrogenizações - o forno: uma linha por aplicação. Fica em aba própria,
+ *                       e não entre as etapas, porque não é uma delas — não tem
+ *                       carga nem processo, e corre no nível da OS inteira.
+ *   Dados             - a mesma coisa em lista plana, com autofiltro, para quem quiser
  *               filtrar ou pivotar. O autofiltro vive só aqui: numa aba com
  *               blocos e subtotais ele esconderia os subtítulos junto.
  *
@@ -77,6 +82,7 @@ public class PlanilhaOrdemServicoService {
     private final OrdemServicoRepository osRepo;
     private final LogRepository logRepo;
     private final LoteRepository loteRepo;
+    private final OrdemDesidrogenizacaoRepository desidroRepo;
 
     @Transactional(readOnly = true)
     public byte[] gerar(Long osId) {
@@ -85,14 +91,21 @@ public class PlanilhaOrdemServicoService {
 
         List<Lote> lotes = loteRepo.buscarParaRelatorio(osId);
         List<Log> logs = logRepo.buscarParaRelatorio(osId);
+        // Passos em que ESTA OS pegou carona na carga de outra. Vêm numa lista
+        // separada e assim permanecem: os indicadores continuam apurados só
+        // sobre `logs`, senão a etapa compartilhada contaria duas vezes na
+        // fábrica — uma na titular e outra aqui.
+        List<Log> acopladas = logRepo.buscarAcopladasParaRelatorio(osId);
+        List<OrdemDesidrogenizacao> desidros = desidroRepo.buscarDaOrdem(osId);
 
         try (XSSFWorkbook wb = new XSSFWorkbook();
              ByteArrayOutputStream saida = new ByteArrayOutputStream()) {
 
             EstilosPlanilha estilos = new EstilosPlanilha(wb);
-            abaRelatorio(wb, estilos, os, lotes, logs);
+            abaRelatorio(wb, estilos, os, lotes, logs, acopladas, desidros);
             abaLotes(wb, estilos, lotes);
-            abaDados(wb, estilos, logs);
+            abaDesidrogenizacoes(wb, estilos, desidros);
+            abaDados(wb, estilos, logs, acopladas);
 
             // Os subtotais são fórmulas sem valor em cache; sem isto o
             // LibreOffice abre mostrando célula vazia até alguém editar.
@@ -110,7 +123,8 @@ public class PlanilhaOrdemServicoService {
     // ------------------------------------------------------------- relatório
 
     private void abaRelatorio(XSSFWorkbook wb, EstilosPlanilha e, OrdemServico os,
-                              List<Lote> lotes, List<Log> logs) {
+                              List<Lote> lotes, List<Log> logs, List<Log> acopladas,
+                              List<OrdemDesidrogenizacao> desidros) {
         Sheet aba = wb.createSheet("Relatório");
         for (int i = 0; i < COLUNAS; i++) {
             aba.setColumnWidth(i, LARGURAS[i] * 256);
@@ -123,11 +137,18 @@ public class PlanilhaOrdemServicoService {
         Map<Long, List<Log>> porCarga = agruparPorCarga(logs);
 
         titulo(wb, aba, e, linha);
-        identificacao(aba, e, linha, os);
+        identificacao(aba, e, linha, os, acopladas, desidros);
         indicadores(aba, e, linha, lotes, logs, porCarga.size());
 
         for (List<Log> daCarga : porCarga.values()) {
-            blocoDaCarga(aba, e, linha, daCarga);
+            blocoDaCarga(aba, e, linha, daCarga, null);
+        }
+
+        // Depois dos blocos próprios, e nunca misturado com eles: a carga é de
+        // outra OS, e o tempo tem subtotal próprio para ficar visível sem ser
+        // somado ao trabalho desta ordem.
+        for (List<Log> daCarga : agruparPorCarga(acopladas).values()) {
+            blocoDaCarga(aba, e, linha, daCarga, daCarga.get(0).getOrdemServico());
         }
 
         rodape(aba, e, linha, os);
@@ -168,7 +189,8 @@ public class PlanilhaOrdemServicoService {
         linha[0] += 2;
     }
 
-    private void identificacao(Sheet aba, EstilosPlanilha e, int[] linha, OrdemServico os) {
+    private void identificacao(Sheet aba, EstilosPlanilha e, int[] linha, OrdemServico os,
+                               List<Log> acopladas, List<OrdemDesidrogenizacao> desidros) {
         parTexto(aba, e, linha[0], "OS", String.valueOf(os.getId()),
                 "Situação", situacaoDaOrdem(os));
         parTexto(aba, e, linha[0] + 1, "Cliente", os.getCliente().getNome(),
@@ -195,7 +217,67 @@ public class PlanilhaOrdemServicoService {
         valorTexto(r5, e, 4, nome(os.getFinalizadaPor()));
         mesclarValores(aba, linha[0] + 4);
 
-        linha[0] += 6;
+        // O forno é uma quarta medida de tempo, ao lado da duração total: corre
+        // no nível da OS, sem carga e sem etapa, e por isso não entra no
+        // subtotal de nenhum bloco lá em baixo.
+        Row r6 = aba.createRow(linha[0] + 5);
+        rotulo(r6, e, 0, "Desidrogenizações");
+        valorTexto(r6, e, 1, String.valueOf(desidros.size()));
+        rotulo(r6, e, 3, "Tempo em forno");
+        valorDuracao(r6, e, 4, tempoEmForno(desidros));
+        mesclarValores(aba, linha[0] + 5);
+
+        // Quinta medida, na mesma prateleira do forno: tempo em que as peças
+        // desta OS estiveram numa carga de outra. Fica aqui, e não entre os
+        // indicadores, justamente por NÃO ser produção desta ordem — os
+        // indicadores contam o que ela executou.
+        Row r7 = aba.createRow(linha[0] + 6);
+        rotulo(r7, e, 0, "Etapas acopladas");
+        valorTexto(r7, e, 1, String.valueOf(acopladas.size()));
+        rotulo(r7, e, 3, "Tempo acoplado");
+        valorDuracao(r7, e, 4, tempoAcoplado(acopladas));
+        mesclarValores(aba, linha[0] + 6);
+
+        linha[0] += 8;
+    }
+
+    /**
+     * A soma das etapas acopladas CONCLUÍDAS, como fração de dia. Nula e não
+     * zero quando não houve nenhuma — a mesma regra do tempo em forno: célula
+     * vazia diz "não houve", um zero afirmaria duração zero.
+     */
+    private Double tempoAcoplado(List<Log> acopladas) {
+        Double total = null;
+        for (Log log : acopladas) {
+            if (log.isCancelado()) {
+                continue;
+            }
+            Double parcela =
+                    DataHoraBr.duracaoNumerica(log.getIniciadoEm(), log.getFinalizadoEm());
+            if (parcela != null) {
+                total = total == null ? parcela : total + parcela;
+            }
+        }
+        return total;
+    }
+
+    /**
+     * A soma das desidrogenizações, como fração de dia. Nenhuma devolve null e
+     * não zero: célula vazia diz "não houve", enquanto um zero afirmaria que o
+     * forno rodou por zero segundo — a mesma regra do relatório por período.
+     */
+    private Double tempoEmForno(List<OrdemDesidrogenizacao> desidros) {
+        if (desidros.isEmpty()) {
+            return null;
+        }
+        double total = 0d;
+        for (OrdemDesidrogenizacao d : desidros) {
+            Double parcela = DataHoraBr.duracaoNumerica(d.getIniciadaEm(), d.getFinalizadaEm());
+            if (parcela != null) {
+                total += parcela;
+            }
+        }
+        return total;
     }
 
     private void indicadores(Sheet aba, EstilosPlanilha e, int[] linha, List<Lote> lotes,
@@ -233,7 +315,12 @@ public class PlanilhaOrdemServicoService {
         linha[0] += 3;
     }
 
-    private void blocoDaCarga(Sheet aba, EstilosPlanilha e, int[] linha, List<Log> daCarga) {
+    /**
+     * Um bloco de etapas. `titular` nulo = carga desta OS; preenchido = a carga
+     * era de outra ordem e estas peças foram junto.
+     */
+    private void blocoDaCarga(Sheet aba, EstilosPlanilha e, int[] linha, List<Log> daCarga,
+                              OrdemServico titular) {
         Carga carga = daCarga.get(0).getCarga();
 
         Row rTitulo = aba.createRow(linha[0]);
@@ -241,7 +328,7 @@ public class PlanilhaOrdemServicoService {
         for (int i = 0; i < COLUNAS; i++) {
             rTitulo.createCell(i).setCellStyle(e.subtituloCarga);
         }
-        rTitulo.getCell(0).setCellValue(descricaoDaCarga(carga));
+        rTitulo.getCell(0).setCellValue(descricaoDaCarga(carga, titular));
         aba.addMergedRegion(new CellRangeAddress(linha[0], linha[0], 0, COLUNAS - 1));
         linha[0]++;
 
@@ -268,17 +355,22 @@ public class PlanilhaOrdemServicoService {
         }
         int ultima = linha[0] - 1;
 
-        subtotal(aba, e, linha, primeira, ultima);
+        subtotal(aba, e, linha, primeira, ultima, titular != null);
         aba.groupRow(primeira, ultima);
         linha[0]++; // respiro entre blocos
     }
 
-    private void subtotal(Sheet aba, EstilosPlanilha e, int[] linha, int primeira, int ultima) {
+    private void subtotal(Sheet aba, EstilosPlanilha e, int[] linha, int primeira, int ultima,
+                          boolean acoplado) {
         Row r = aba.createRow(linha[0]++);
         for (int i = 0; i < COLUNAS; i++) {
             r.createCell(i).setCellStyle(i == COL_DURACAO ? e.duracaoSubtotal : e.rotuloSubtotal);
         }
-        r.getCell(0).setCellValue("Subtotal da carga");
+        // O rótulo é o cerco: o tempo acoplado aparece, mas dito com todas as
+        // letras que não se soma ao das cargas próprias.
+        r.getCell(0).setCellValue(acoplado
+                ? "Subtotal acoplado (não entra no total da OS)"
+                : "Subtotal da carga");
         aba.addMergedRegion(new CellRangeAddress(linha[0] - 1, linha[0] - 1, 0, COL_DURACAO - 1));
         // Fórmula, não valor pronto: se alguém corrigir uma linha na mão, o
         // subtotal acompanha.
@@ -325,36 +417,88 @@ public class PlanilhaOrdemServicoService {
         ajustar(aba, 6);
     }
 
-    /** Lista plana, com o UUID: é a aba de quem vai filtrar, pivotar ou rastrear. */
-    private void abaDados(Workbook wb, EstilosPlanilha e, List<Log> logs) {
+    /**
+     * O forno, aplicação a aplicação. `Duração` e `Temperatura` são o que rodou —
+     * cópias feitas no momento da aplicação —, não o cadastro de hoje: editar a
+     * receita amanhã não pode reescrever o histórico de ontem.
+     */
+    private void abaDesidrogenizacoes(Workbook wb, EstilosPlanilha e,
+                                      List<OrdemDesidrogenizacao> desidros) {
+        Sheet aba = wb.createSheet("Desidrogenizações");
+        int[] linha = {0};
+        cabecalhoTabela(aba, e, linha, "Nome", "Duração", "Temperatura (°C)",
+                "Iniciada em", "Finalizada em", "Aplicada por");
+        aba.createFreezePane(0, 1);
+
+        boolean zebra = false;
+        for (OrdemDesidrogenizacao d : desidros) {
+            Row r = aba.createRow(linha[0]++);
+            texto(r, e, 0, d.getDesidrogenizacao().getNome(), zebra, false);
+            duracao(r, e, 1,
+                    DataHoraBr.duracaoNumerica(d.getIniciadaEm(), d.getFinalizadaEm()),
+                    zebra, false);
+            texto(r, e, 2, d.getTemperatura().toPlainString(), zebra, false);
+            data(r, e, 3, d.getIniciadaEm(), zebra, false);
+            data(r, e, 4, d.getFinalizadaEm(), zebra, false);
+            texto(r, e, 5, nome(d.getAplicadaPor()), zebra, false);
+            zebra = !zebra;
+        }
+        // A aba existe mesmo vazia: uma aba em falta faria duvidar se o
+        // relatório saiu completo, em vez de dizer que não houve forno.
+        if (desidros.isEmpty()) {
+            Row r = aba.createRow(linha[0]++);
+            texto(r, e, 0, "Nenhuma desidrogenização aplicada a esta OS.", false, false);
+        }
+        ajustar(aba, 6);
+    }
+
+    /**
+     * Lista plana, com o UUID: é a aba de quem vai filtrar, pivotar ou rastrear.
+     *
+     * Traz os passos próprios e os acoplados na mesma tabela, separados pela
+     * última coluna — é o que permite filtrar por um ou por outro. A coluna vai
+     * no FIM porque tudo aqui se lê por índice.
+     */
+    private void abaDados(Workbook wb, EstilosPlanilha e, List<Log> logs, List<Log> acopladas) {
         Sheet aba = wb.createSheet("Dados");
         int[] linha = {0};
         cabecalhoTabela(aba, e, linha, "ID", "Carga", "Tipo da carga", "Posição da carga",
                 "Processo", "Etapa", "Responsável", "Iniciado em", "Finalizado em",
-                "Duração", "Situação");
+                "Duração", "Situação", "Acoplada à OS");
         aba.createFreezePane(0, 1);
 
         boolean zebra = false;
         for (Log log : logs) {
-            Row r = aba.createRow(linha[0]++);
-            texto(r, e, 0, log.getId().toString(), zebra, false);
-            texto(r, e, 1, log.getCarga().getNome(), zebra, false);
-            texto(r, e, 2, log.getCarga().getTipo().name(), zebra, false);
-            texto(r, e, 3, log.getCarga().getPosicao().name(), zebra, false);
-            texto(r, e, 4, log.getProcesso().getDescricao(), zebra, false);
-            texto(r, e, 5, log.getProcesso().getEtapa().name(), zebra, false);
-            texto(r, e, 6, log.getResponsavel().getNome(), zebra, false);
-            data(r, e, 7, log.getIniciadoEm(), zebra, false);
-            data(r, e, 8, log.getFinalizadoEm(), zebra, false);
-            duracao(r, e, 9,
-                    DataHoraBr.duracaoNumerica(log.getIniciadoEm(), log.getFinalizadoEm()),
-                    zebra, false);
-            texto(r, e, 10, situacaoDaEtapa(log), zebra, false);
+            escreverDado(aba.createRow(linha[0]++), e, log, null, zebra);
+            zebra = !zebra;
+        }
+        for (Log log : acopladas) {
+            escreverDado(aba.createRow(linha[0]++), e, log, log.getOrdemServico(), zebra);
             zebra = !zebra;
         }
         // Tabela contínua e sem subtotais: aqui o autofiltro não tem o que quebrar.
-        aba.setAutoFilter(new CellRangeAddress(0, Math.max(linha[0] - 1, 0), 0, 10));
-        ajustar(aba, 11);
+        aba.setAutoFilter(new CellRangeAddress(0, Math.max(linha[0] - 1, 0), 0, 11));
+        ajustar(aba, 12);
+    }
+
+    /** `titular` nulo = passo próprio; preenchido = carga de outra OS. */
+    private void escreverDado(Row r, EstilosPlanilha e, Log log, OrdemServico titular,
+                              boolean zebra) {
+        texto(r, e, 0, log.getId().toString(), zebra, false);
+        texto(r, e, 1, log.getCarga().getNome(), zebra, false);
+        texto(r, e, 2, log.getCarga().getTipo().name(), zebra, false);
+        texto(r, e, 3, log.getCarga().getPosicao().name(), zebra, false);
+        texto(r, e, 4, log.getProcesso().getDescricao(), zebra, false);
+        texto(r, e, 5, log.getProcesso().getEtapa().name(), zebra, false);
+        texto(r, e, 6, log.getResponsavel().getNome(), zebra, false);
+        data(r, e, 7, log.getIniciadoEm(), zebra, false);
+        data(r, e, 8, log.getFinalizadoEm(), zebra, false);
+        duracao(r, e, 9,
+                DataHoraBr.duracaoNumerica(log.getIniciadoEm(), log.getFinalizadoEm()),
+                zebra, false);
+        texto(r, e, 10, situacaoDaEtapa(log), zebra, false);
+        // Vazia no passo próprio: é o valor que o filtro usa para separar os dois.
+        texto(r, e, 11, titular == null ? null : String.valueOf(titular.getId()), zebra, false);
     }
 
     // --------------------------------------------------------------- escrita
@@ -382,7 +526,17 @@ public class PlanilhaOrdemServicoService {
 
     // ----------------------------------------------------------------- apoio
 
-    private String descricaoDaCarga(Carga carga) {
+    /**
+     * O prefixo distingue os dois tipos de bloco à vista, sem depender de cor.
+     * Um bloco acoplado NÃO começa com "CARGA: " de propósito: é o que separa,
+     * na leitura e nos testes, o que a OS executou do que ela pegou carona.
+     */
+    private String descricaoDaCarga(Carga carga, OrdemServico titular) {
+        if (titular != null) {
+            return "ETAPA ACOPLADA — OS " + titular.getId()
+                    + " · carga " + carga.getNome()
+                    + " — " + carga.getTipo().name() + " / " + carga.getPosicao().name();
+        }
         StringBuilder sb = new StringBuilder("CARGA: ").append(carga.getNome())
                 .append(" — ").append(carga.getTipo().name())
                 .append(" / ").append(carga.getPosicao().name());

@@ -2,7 +2,7 @@ import type {
   Etapa, LogDTO, OrdemDetalheDTO, OrdemResumoDTO, Posicao, ProcessoDTO,
   ProcessoInicialDTO,
 } from "../api/types";
-import { etapaDoLog } from "./derive";
+import { ehAcoplada, etapaDoLog } from "./derive";
 import { ETAPAS, osNum } from "./format";
 
 /**
@@ -20,7 +20,13 @@ export type TipoEvento =
   | "OS_CANCELADA"
   | "LOTE_FECHADO"
   | "ETAPA_ABERTA"
-  | "ETAPA_FECHADA";
+  | "ETAPA_FECHADA"
+  /**
+   * O forno. Um evento só, no instante da aplicação: o término é calculado pelo
+   * banco a partir da duração e ninguém carrega em nada para fechar, logo não
+   * há um par ABERTA/FECHADA a registar como nas etapas.
+   */
+  | "DESIDRO_APLICADA";
 
 export const ROTULO_EVENTO: Record<TipoEvento, string> = {
   OS_ABERTA: "Abriu OS",
@@ -29,6 +35,7 @@ export const ROTULO_EVENTO: Record<TipoEvento, string> = {
   LOTE_FECHADO: "Fechou lote",
   ETAPA_ABERTA: "Abriu etapa",
   ETAPA_FECHADA: "Fechou etapa",
+  DESIDRO_APLICADA: "Desidrogenizou",
 };
 
 export interface Evento {
@@ -69,6 +76,15 @@ export interface Barra {
   cancelado: boolean;
   vemDeOntem: boolean;
   passaDaMeiaNoite: boolean;
+  /**
+   * A etapa correu na carga de OUTRA OS, com as peças desta junto. Nula
+   * quando o passo é próprio; traz o nº da OS titular quando é de carona.
+   *
+   * Ao contrário de eventosDoDia — que conta o passo uma vez só — o swimlane
+   * desenha a barra no grupo de cada OS envolvida, de propósito: quem olha a
+   * linha do tempo de uma OS quer ver por onde as peças dela passaram.
+   */
+  acopladaA: string | null;
 }
 
 export interface Faixa {
@@ -128,6 +144,23 @@ export function eventosDoDia(f: FonteDia): Evento[] {
   const { ini, fim } = limitesDoDia(f.dia);
   const out: Evento[] = [];
 
+  /**
+   * Eventos de etapa, indexados pelo id do passo. Um passo acoplado aparece no
+   * histórico de 2-3 OS (é o mesmo tanque, as mesmas peças juntas), e varrer
+   * OS a OS o encontraria uma vez por ordem — os KPIs "Etapas iniciadas" e
+   * "Etapas concluídas" contariam 2-3x um evento que aconteceu uma vez.
+   *
+   * O passo fica com a OS TITULAR, a dona da carga. `guardarEtapa` mantém a
+   * carona só enquanto a titular não apareceu: se ela estiver fora do recorte
+   * (outra posição, outro dia), é melhor atribuir o evento a quem está do que
+   * perdê-lo. O swimlane faz o oposto de propósito — ver faixasDoDia.
+   */
+  const etapas = new Map<string, Evento>();
+  const guardarEtapa = (ev: Evento, acoplada: boolean) => {
+    if (acoplada && etapas.has(ev.id)) return;
+    etapas.set(ev.id, ev);
+  };
+
   for (const o of f.ordens) {
     const det = f.detalhes[o.id];
     const base = {
@@ -181,7 +214,31 @@ export function eventosDoDia(f: FonteDia): Evento[] {
       }
     }
 
+    /**
+     * Desidrogenizações aplicadas no dia. Ao contrário das etapas, é um facto da
+     * ORDEM: não tem carga nem processo, por isso `cargaNome` e `etapa` ficam
+     * nulos e a descrição carrega o que a identifica — receita, duração e
+     * temperatura do que efectivamente rodou, não do cadastro de hoje.
+     */
+    for (const d of det?.desidrogenizacoes ?? []) {
+      const t = ms(d.iniciadaEm);
+      if (dentro(t, ini, fim)) {
+        out.push({
+          ...base,
+          id: `DESIDRO:${d.id}`,
+          tipo: "DESIDRO_APLICADA",
+          em: t,
+          autor: d.aplicadaPorNome,
+          processoDescricao: `${d.nome} · ${d.duracaoMin} min · ${d.temperatura} °C`,
+          // A duração é a que foi programada, não uma medição: o forno corre
+          // sozinho até ao horário que o banco carimbou.
+          duracaoMs: d.duracaoMin * 60000,
+        });
+      }
+    }
+
     for (const l of f.logs[o.id] ?? []) {
+      const acoplada = ehAcoplada(l, o.id);
       const comum = {
         ...base,
         cargaNome: l.cargaNome,
@@ -192,26 +249,28 @@ export function eventosDoDia(f: FonteDia): Evento[] {
       const ate = ms(l.finalizadoEm);
 
       if (dentro(de, ini, fim)) {
-        out.push({
+        guardarEtapa({
           ...comum,
           id: `LOG_INI:${l.id}`,
           tipo: "ETAPA_ABERTA",
           em: de,
           autor: l.responsavelNome,
-        });
+        }, acoplada);
       }
       if (dentro(ate, ini, fim)) {
-        out.push({
+        guardarEtapa({
           ...comum,
           id: `LOG_FIM:${l.id}`,
           tipo: "ETAPA_FECHADA",
           em: ate,
           autor: null, // ver o comentário de `Evento.autor`
           duracaoMs: de === null ? null : ate - de,
-        });
+        }, acoplada);
       }
     }
   }
+
+  out.push(...etapas.values());
 
   // Empate resolvido pelo id: dois eventos no mesmo milissegundo (fechar o lote
   // e expedir a OS) não podem trocar de lugar a cada sync de 4s.
@@ -238,6 +297,14 @@ export function faixasDoDia(f: FonteDia): Grupo[] {
     for (const l of f.logs[o.id] ?? []) {
       const de = ms(l.iniciadoEm);
       if (de === null) continue;
+      // O passo de carona traz a titular em `ordemServicoId`; o rótulo sai da
+      // lista de ordens quando ela está no recorte, senão do id cru.
+      const titular = ehAcoplada(l, o.id)
+        ? f.ordens.find((x) => x.id === l.ordemServicoId)
+        : undefined;
+      const acopladaA = ehAcoplada(l, o.id)
+        ? (titular ? osNum(titular) : `#${l.ordemServicoId}`)
+        : null;
       // Uma etapa por fechar corre até agora; num dia passado, até ao fim dele.
       const fimReal = ms(l.finalizadoEm) ?? f.agora;
       // Sobrepõe-se ao dia? Uma etapa inteira de ontem não entra; uma que
@@ -259,6 +326,7 @@ export function faixasDoDia(f: FonteDia): Grupo[] {
         cancelado: l.cancelado,
         vemDeOntem: de < ini,
         passaDaMeiaNoite: fimReal > fim,
+        acopladaA,
       });
       porCarga.set(l.cargaNome, lista);
     }

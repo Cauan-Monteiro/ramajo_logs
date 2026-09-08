@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import * as api from "../api/endpoints";
-import type { LogDTO, OrdemDetalheDTO } from "../api/types";
+import type { LogDTO, OrdemDesidrogenizacaoDTO, OrdemDetalheDTO } from "../api/types";
 import { BarraDia } from "../components/BarraDia";
 import { Corners } from "../components/Blueprint";
 import { Kpi } from "../components/Kpi";
@@ -15,7 +15,8 @@ import {
   SEL_PICK, etapaStyle, etapaDoLog, labelEtapaDoLog, logSub, pillStyle, situacaoOrdem,
 } from "../domain/derive";
 import {
-  diaHora, duracao, etapaLabel, hhmm, hm, horasEntre, iniciais, iso, osNum, posLabel,
+  diaHora, duracao, etapaLabel, hhmm, hm, horasEntre, iniciais, iso, minutos, osNum,
+  posLabel,
 } from "../domain/format";
 import { useAgora } from "../state/useAgora";
 import { useAuditoriaDia } from "../state/useAuditoriaDia";
@@ -67,9 +68,20 @@ export function Relatorios({ data, onErro }: { data: AppData; onErro: (e: unknow
 
 /* ── 1 · histórico completo de uma OS ───────────────────────────────────── */
 
+/**
+ * Uma linha da linha do tempo: ou uma etapa, ou uma desidrogenização. As duas
+ * coisas são factos da OS, mas em eixos diferentes — a etapa é de uma carga, a
+ * desidrogenização é da ordem inteira —, e por isso não há um tipo comum a
+ * montante; a união vive aqui, onde as duas têm de aparecer juntas.
+ */
+type Passo =
+  | { em: number; tipo: "log"; log: LogDTO }
+  | { em: number; tipo: "desidro"; desidro: OrdemDesidrogenizacaoDTO };
+
 function HistoricoOS({ data, onErro }: { data: AppData; onErro: (e: unknown) => void }) {
   const [osId, setOsId] = useState<number | null>(null);
   const [logs, setLogs] = useState<LogDTO[]>([]);
+  const [desidros, setDesidros] = useState<OrdemDesidrogenizacaoDTO[]>([]);
   const [baixando, setBaixando] = useState(false);
   const [busca, setBusca] = useState("");
   const ordem = data.ordens.find((o) => o.id === osId);
@@ -94,7 +106,25 @@ function HistoricoOS({ data, onErro }: { data: AppData; onErro: (e: unknown) => 
   useEffect(() => {
     if (osId === null) return;
     api.historicoOrdem(osId).then(setLogs).catch(onErro);
+    // Mesma busca sob demanda que o DetalheOS já faz: a lista não vem no
+    // histórico de logs porque não é uma etapa.
+    api.desidrogenizacoesDaOrdem(osId).then(setDesidros).catch(onErro);
   }, [osId, onErro]);
+
+  /**
+   * Etapas e desidrogenizações no mesmo eixo, pelo instante em que começaram.
+   * A API já devolve os logs por `iniciadoEm asc`, portanto ordenar pelo início
+   * não reordena nada do que já se via — só encaixa o forno no meio.
+   */
+  const passos = useMemo<Passo[]>(() => {
+    const lista: Passo[] = [
+      ...logs.map<Passo>((log) => ({ em: Date.parse(log.iniciadoEm), tipo: "log", log })),
+      ...desidros.map<Passo>((d) => ({
+        em: Date.parse(d.iniciadaEm), tipo: "desidro", desidro: d,
+      })),
+    ];
+    return lista.sort((a, b) => a.em - b.em);
+  }, [logs, desidros]);
 
   return (
     <>
@@ -147,24 +177,59 @@ function HistoricoOS({ data, onErro }: { data: AppData; onErro: (e: unknown) => 
             Aberta {diaHora(ordem.iniciadaEm)} · {posLabel(ordem.posicao)} ·{" "}
             {ordem.emProcesso ? "em aberto" : "encerrada"}
           </div>
-          {logs.map((l) => (
-            <div key={l.id} className="tline">
-              <span
-                className="etp"
-                style={{ ...etapaStyle(etapaDoLog(l, data.processos)), marginTop: 1, flex: "none" }}
-              >
-                {labelEtapaDoLog(l, data.processos)}
-              </span>
-              <div style={{ flex: 1 }}>
-                <div style={{ font: "600 16px 'Barlow Condensed'" }}>{l.processoDescricao}</div>
-                <div className="os-tv">
-                  {logSub(l, l.finalizadoEm ? duracao(l.iniciadoEm, l.finalizadoEm) : "em andamento")}
+          {passos.map((p) =>
+            p.tipo === "log" ? (
+              <div key={p.log.id} className="tline">
+                <span
+                  className="etp"
+                  style={{
+                    ...etapaStyle(etapaDoLog(p.log, data.processos)), marginTop: 1, flex: "none",
+                  }}
+                >
+                  {labelEtapaDoLog(p.log, data.processos)}
+                </span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ font: "600 16px 'Barlow Condensed'" }}>
+                    {p.log.processoDescricao}
+                  </div>
+                  <div className="os-tv">
+                    {logSub(
+                      p.log,
+                      p.log.finalizadoEm
+                        ? duracao(p.log.iniciadoEm, p.log.finalizadoEm)
+                        : "em andamento",
+                    )}
+                  </div>
                 </div>
+                <span className="time">{hhmm(p.log.finalizadoEm ?? p.log.iniciadoEm)}</span>
               </div>
-              <span className="time">{hhmm(l.finalizadoEm ?? l.iniciadoEm)}</span>
-            </div>
-          ))}
-          {logs.length === 0 && <Vazio>Ainda sem etapas registradas.</Vazio>}
+            ) : (
+              <div key={`d${p.desidro.id}`} className="tline">
+                {/* Chip próprio, e não um `etapaStyle`: aquele é um
+                    `Record<Etapa, …>` das três etapas de tratamento, e o forno
+                    não é uma delas. */}
+                <span
+                  className="etp"
+                  style={{
+                    background: "#f0e0c2", color: "#6b4a10", marginTop: 1, flex: "none",
+                  }}
+                >
+                  FORNO
+                </span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ font: "600 16px 'Barlow Condensed'" }}>
+                    {p.desidro.nome} · {p.desidro.temperatura} °C
+                  </div>
+                  <div className="os-tv">
+                    {p.desidro.aplicadaPorNome ?? "—"} · {minutos(p.desidro.duracaoMin)} ·
+                    termina {hhmm(p.desidro.finalizadaEm)}
+                  </div>
+                </div>
+                <span className="time">{hhmm(p.desidro.iniciadaEm)}</span>
+              </div>
+            ),
+          )}
+          {passos.length === 0 && <Vazio>Ainda sem etapas registradas.</Vazio>}
         </div>
       )}
     </>
@@ -420,8 +485,16 @@ function PlanilhaPeriodo({ onErro }: { onErro: (e: unknown) => void }) {
           <br />
           Aba <b>Dados</b>: a mesma tabela crua, com autofiltro, para filtrar ou pivotar.
           <br />
+          Aba <b>Etapas</b>: uma linha por passo de todas as OSs — é de onde saem os
+          contadores e os tempos por etapa das duas primeiras.
+          <br />
+          Aba <b>Desidrogenizações</b>: uma linha por aplicação de forno, com receita,
+          temperatura, horários e quem aplicou.
+          <br />
           <b>Duração total</b> é o relógio de parede entre abrir e fechar a OS;{" "}
-          <b>tempo trabalhado</b> é a soma das etapas efetivamente concluídas nela.
+          <b>tempo trabalhado</b> é a soma das etapas efetivamente concluídas nela.{" "}
+          <b>Tempo em forno</b> é uma terceira medida, à parte: uma OS pode estar no forno
+          sem nenhuma etapa aberta, por isso ele não entra no tempo trabalhado.
         </div>
       </div>
     </>
@@ -439,7 +512,8 @@ function PlanilhaPeriodo({ onErro }: { onErro: (e: unknown) => void }) {
  */
 
 const TIPOS_OP: TipoEvento[] = [
-  "OS_ABERTA", "ETAPA_ABERTA", "LOTE_FECHADO", "OS_ENCERRADA", "OS_CANCELADA",
+  "OS_ABERTA", "ETAPA_ABERTA", "LOTE_FECHADO", "DESIDRO_APLICADA", "OS_ENCERRADA",
+  "OS_CANCELADA",
 ];
 
 const COLUNAS_OP: ColunaOrd<Evento>[] = [
@@ -552,8 +626,10 @@ function ProducaoOperador({ data, onErro }: { data: AppData; onErro: (e: unknown
         Os números são do dia escolhido e saem do mesmo histórico da Visão Geral.
         A API guarda quem <b>abriu</b> cada etapa, mas não quem a fechou — por isso
         "etapas concluídas" conta as que <b>ele abriu</b> e que já fecharam, seja lá
-        quem tenha carregado no botão. Operadores homónimos aparecem como um só: o
-        histórico regista o nome, não o cadastro.
+        quem tenha carregado no botão. A desidrogenização é assinada na <b>ordem</b>,
+        não numa carga — conta para quem a aplicou e aparece sem carga no feed.
+        Operadores homónimos aparecem como um só: o histórico regista o nome, não o
+        cadastro.
       </div>
     </>
   );
@@ -601,6 +677,7 @@ function PainelOperador({
         <Kpi n={conta("ETAPA_ABERTA")} label="Etapas iniciadas" />
         <Kpi n={etapasConcluidas} label="Etapas concluídas" />
         <Kpi n={conta("LOTE_FECHADO")} label="Lotes fechados" />
+        <Kpi n={conta("DESIDRO_APLICADA")} label="Desidrogenizações" />
         <Kpi n={conta("OS_ENCERRADA")} label="OS expedidas" />
         <Kpi n={emCurso} label={ehHoje ? "Em curso agora" : "Ficaram em curso"} />
       </div>

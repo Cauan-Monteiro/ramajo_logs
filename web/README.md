@@ -136,7 +136,6 @@ com o motivo no `title`. Os textos estão centralizados em
 |---|---|
 | **Expedição parcial** (modal Expedir) | Nada — a operação vive na Inspeção final; ver abaixo |
 | **Reativar** carga (Registrar cargas) | `DELETE /api/cargas/{id}` só desativa; não há rota de reativação |
-| **Desidrogenizar** (Inspeção final) | Etapa não modelada — já vinha desabilitada no próprio design |
 
 ### Liberar cargas vs. virar o lote
 
@@ -172,6 +171,57 @@ transação só.
 
 Finalizar um passo isolado continua no detalhe da OS (Buscar OS ou Processos →
 abrir a OS → "Finalizar" em cada passo em andamento) — isso nunca mexeu no lote.
+
+## Etapas acopladas
+
+Peças de 2-3 OS entram na **mesma carga física** e passam juntas por um
+processo. Três frases resumem o modelo, e toda a interface existe para
+dizê-las no momento certo:
+
+- **Uma etapa, uma carga, várias OS.** O tanque é um só; as peças lá dentro
+  são de mais de uma ordem.
+- **A titular é a dona da carga** (`Carga.ordemAtual`); as demais pegaram
+  carona. Não é hierarquia — é de onde o registro pendura.
+- **Enquanto a etapa está aberta, as peças da carona estão no tanque.**
+
+No banco (migration `V11`) o passo continua sendo **uma linha em `logs`**, com
+a titular em `ordem_servico_id`; as caronas ficam em `log_ordens_acopladas`.
+É isso que faz um evento físico contar **uma vez**: todo agregado do sistema
+deriva de linhas de `logs`, e clonar o passo por OS inflaria a produção.
+
+### Onde se acopla
+
+| Caminho | Quando |
+|---|---|
+| Home → marcar **1 carga** → **Abrir etapa** | rotina do dia a dia. Com 2+ cargas a seção some: não haveria como dizer em qual tanque as peças das outras OS entraram |
+| Buscar OS → OS → **Abrir etapa** | quando se parte de uma OS específica |
+
+Os dois usam o mesmo `modals/AcoplarOs.tsx` — recolhido por omissão, porque a
+esmagadora maioria dos passos não acopla.
+
+### O que muda depois de acoplar
+
+| Onde | Efeito |
+|---|---|
+| **Inspeção final** | a OS carona **não aparece** enquanto o passo estiver aberto (`temAcoplamentoAberto`). A tela lista OS sem carga vinculada, e carga emprestada conta como carga |
+| **Detalhe da OS** | o passo aparece nas duas, marcado com `⇋` na carona. Finalizar encerra para todas, por isso pede **dois toques** |
+| **Linha do tempo** | a barra é desenhada no grupo de cada OS, com `⇋`. Já os KPIs "Etapas iniciadas/concluídas" deduplicam por `log.id` — senão contariam o mesmo evento 2-3 vezes |
+| **Dashboard** | selo `+N` na coluna Vínculo da carga compartilhada |
+| **Planilha da OS** | bloco `ETAPA ACOPLADA — OS #x`, com subtotal próprio marcado como fora do total, e a coluna `Acoplada à OS` na aba Dados. Os indicadores (ETAPAS, CARGAS) seguem medindo só o que a OS executou |
+| **Relatório por período** | coluna `Etapas acopladas` (contagem, sem tempo) e as linhas de carona na aba Etapas. Nelas a **duração fica vazia** de propósito: o tempo já está na linha da titular, e somar a coluna tem de continuar dando o tempo real |
+
+### Corrigir
+
+`DELETE /api/ordens/logs/{logId}/acopladas/{osId}` desfaz um acoplamento —
+o `×` no chip (lado da titular) ou o botão **Desacoplar** (lado da carona).
+Só com o passo **aberto**: fechado, a composição é histórico e a API devolve
+409 `PASSO_JA_FINALIZADO`, a mesma regra que a trigger `trg_loa_protege`
+garante no banco.
+
+As recusas ao acoplar são todas de coerência física: OS de outra posição
+(`ACOPLAMENTO_POSICAO_INCOMPATIVEL`), OS já expedida (409
+`ORDEM_FORA_DE_CIRCULACAO`), a própria OS (`ACOPLAMENTO_A_SI_MESMA`) e o teto
+de 5 por passo (`ACOPLAMENTO_EXCEDE_LIMITE`).
 
 ## Leitores RFID
 

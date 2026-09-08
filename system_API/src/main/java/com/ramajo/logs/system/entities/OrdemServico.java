@@ -105,6 +105,13 @@ public class OrdemServico {
     @BatchSize(size = 100)
     private List<Lote> lotes = new ArrayList<>();
 
+    // Desidrogenizações aplicadas a esta OS, na ordem em que rodaram. Pode ser
+    // vazia: é uma etapa opcional. @BatchSize pelo mesmo motivo dos lotes.
+    @OneToMany(mappedBy = "ordemServico", fetch = FetchType.LAZY)
+    @OrderBy("iniciadaEm ASC, id ASC")
+    @BatchSize(size = 100)
+    private List<OrdemDesidrogenizacao> desidrogenizacoes = new ArrayList<>();
+
     protected OrdemServico() {
     }
 
@@ -199,5 +206,9 @@ public class OrdemServico {
 
     public List<Lote> getLotes() {
         return lotes;
+    }
+
+    public List<OrdemDesidrogenizacao> getDesidrogenizacoes() {
+        return desidrogenizacoes;
     }
 }

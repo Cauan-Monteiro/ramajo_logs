@@ -49,6 +49,58 @@ export interface ProcessoInicialDTO {
   processoDescricao: string;
 }
 
+/**
+ * dtos/DesidrogenizacaoDtos.DesidrogenizacaoDTO — uma receita do catálogo.
+ * Sem temperatura: ela é a mesma para todas (ver ConfigDesidrogenizacaoDTO).
+ */
+export interface DesidrogenizacaoDTO {
+  id: number;
+  nome: string;
+  /** Em minutos inteiros — é o que o formulário digita. */
+  duracaoMin: number;
+  observacao: string | null;
+  /** Arquivada (false) não pode mais ser aplicada; o histórico continua válido. */
+  ativo: boolean;
+}
+
+/** dtos/DesidrogenizacaoDtos.ConfigDesidrogenizacaoDTO — a temperatura do forno. */
+export interface ConfigDesidrogenizacaoDTO {
+  temperatura: number;
+}
+
+/**
+ * dtos/DesidrogenizacaoDtos.OrdemDesidrogenizacaoDTO — uma desidrogenização
+ * APLICADA a uma OS. `duracaoMin` e `temperatura` são o snapshot do que rodou,
+ * não o cadastro de hoje; `finalizadaEm` é início + duração, calculado pelo
+ * banco no momento da aplicação.
+ */
+export interface OrdemDesidrogenizacaoDTO {
+  id: number;
+  desidrogenizacaoId: number;
+  nome: string;
+  duracaoMin: number;
+  temperatura: number;
+  iniciadaEm: string;
+  finalizadaEm: string;
+  aplicadaPorNome: string | null;
+}
+
+/**
+ * dtos/DesidrogenizacaoDtos.DesidroEmAndamentoDTO — o que o indicativo do
+ * Dashboard precisa. Vem das OS em produção, INCLUSIVE as que já passaram do
+ * horário: quem decide o que ainda merece aparecer é a tela
+ * (domain/desidro.ts).
+ */
+export interface DesidroEmAndamentoDTO {
+  id: number;
+  ordemServicoId: number;
+  ordemIdExterno: number | null;
+  posicao: Posicao;
+  nome: string;
+  iniciadaEm: string;
+  finalizadaEm: string;
+}
+
 /** dtos/CargaDtos.CargaDTO */
 export interface CargaDTO {
   id: number;
@@ -92,6 +144,14 @@ export interface LogDTO {
   iniciadoEm: string;
   finalizadoEm: string | null;
   cancelado: boolean;
+  /**
+   * Outras OS cujas peças estavam na MESMA carga neste passo (V11 da API).
+   * `ordemServicoId` acima é sempre a OS TITULAR — a dona da carga. Logo, um
+   * passo que aparece no histórico da OS X com `ordemServicoId !== X` é um
+   * passo de carona: aconteceu de verdade com as peças dela, mas quem o
+   * executou foi a carga de outra ordem.
+   */
+  ordensAcopladas: number[];
 }
 
 /** dtos/OrdemDtos.OrdemDetalheDTO */
@@ -109,6 +169,8 @@ export interface OrdemDetalheDTO {
   finalizadaPorNome: string | null;
   cargasVinculadas: number[];
   lotes: LoteDTO[];
+  /** Etapa opcional de forno: quase sempre vazia. */
+  desidrogenizacoes: OrdemDesidrogenizacaoDTO[];
   /** Preenchido só na criação da OS; null nas demais rotas — de propósito. */
   logsIniciados: LogDTO[] | null;
 }

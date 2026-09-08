@@ -1,5 +1,6 @@
 package com.ramajo.logs.system.dtos;
 
+import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.OrdemDesidrogenizacaoDTO;
 import com.ramajo.logs.system.entities.Carga;
 import com.ramajo.logs.system.entities.Log;
 import com.ramajo.logs.system.entities.Lote;
@@ -51,10 +52,21 @@ public final class OrdemDtos {
             Long operadorId) {
     }
 
+    /**
+     * `ordensAcopladasIds` são outras OS cujas peças estavam na MESMA carga
+     * quando o processo rodou. Opcional: nulo e vazio querem dizer a mesma
+     * coisa — passo de uma OS só, o caso comum — e o campo ser aditivo mantém
+     * os clientes antigos funcionando.
+     */
     public record IniciarLogDTO(
             @NotNull Long cargaId,
             @NotNull Long processoId,
-            @NotNull Long responsavelId) {
+            @NotNull Long responsavelId,
+            List<Long> ordensAcopladasIds) {
+
+        public List<Long> ordensAcopladasIds() {
+            return ordensAcopladasIds == null ? List.of() : ordensAcopladasIds;
+        }
     }
 
     /**
@@ -111,6 +123,7 @@ public final class OrdemDtos {
             boolean cancelada, boolean emProcesso,
             String iniciadaPorNome, String finalizadaPorNome,
             List<Long> cargasVinculadas, List<LoteDTO> lotes,
+            List<OrdemDesidrogenizacaoDTO> desidrogenizacoes,
             List<LogDTO> logsIniciados) {
 
         /**
@@ -133,6 +146,10 @@ public final class OrdemDtos {
                     os.getFinalizadaPor() != null ? os.getFinalizadaPor().getNome() : null,
                     os.getCargas().stream().map(Carga::getId).toList(),
                     os.getLotes().stream().map(LoteDTO::from).toList(),
+                    // Etapa opcional: quase sempre lista vazia. @BatchSize na
+                    // coleção evita o N+1 que isto abriria na listagem.
+                    os.getDesidrogenizacoes().stream()
+                            .map(OrdemDesidrogenizacaoDTO::from).toList(),
                     logsIniciados == null
                             ? null
                             : logsIniciados.stream().map(LogDTO::from).toList());
@@ -151,16 +168,23 @@ public final class OrdemDtos {
         }
     }
 
+    /**
+     * `ordemServicoId` é a OS TITULAR do passo — a dona da carga. Quando o
+     * passo tem `ordensAcopladas`, ele também aparece no histórico dessas
+     * outras OS, e lá `ordemServicoId` aponta para outra ordem: é assim que o
+     * front sabe que aquela etapa foi de carona, não própria.
+     */
     public record LogDTO(
             UUID id, Long ordemServicoId, String cargaNome, String processoDescricao,
             String responsavelNome, Instant iniciadoEm,
-            Instant finalizadoEm, boolean cancelado) {
+            Instant finalizadoEm, boolean cancelado, List<Long> ordensAcopladas) {
 
         public static LogDTO from(Log log) {
             return new LogDTO(
                     log.getId(), log.getOrdemServico().getId(), log.getCarga().getNome(),
                     log.getProcesso().getDescricao(), log.getResponsavel().getNome(),
-                    log.getIniciadoEm(), log.getFinalizadoEm(), log.isCancelado());
+                    log.getIniciadoEm(), log.getFinalizadoEm(), log.isCancelado(),
+                    List.copyOf(log.getOrdensAcopladas()));
         }
     }
 }

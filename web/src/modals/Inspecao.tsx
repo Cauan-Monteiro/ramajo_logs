@@ -4,9 +4,10 @@ import type { OrdemResumoDTO } from "../api/types";
 import { Corners } from "../components/Blueprint";
 import { Modal, Vazio } from "../components/Modal";
 import { OrdenarMenu, useOrdenacao, type ColunaOrd } from "../components/Ordenar";
+import { temAcoplamentoAberto } from "../domain/derive";
 import { diaHora, osNum, posLabel } from "../domain/format";
 import { logsDe } from "../state/useAppData";
-import { SEM_API, type Ctx } from "./tipos";
+import type { Ctx } from "./tipos";
 
 /** Nº da OS como número, não como texto: "#9" antes de "#10", não depois —
     mesma razão da coluna "Vínculo" do painel. */
@@ -45,7 +46,12 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
           (o) =>
             o.emProcesso &&
             o.posicao === ctx.posicao &&
-            !ctx.data.cargas.some((c) => c.ordemAtualId === o.id),
+            !ctx.data.cargas.some((c) => c.ordemAtualId === o.id) &&
+            // Carga emprestada conta como carga: se as peças desta OS estão
+            // agora dentro do tanque junto com as de outra ordem, ela não
+            // está pronta para expedir — voltará à lista quando o passo
+            // acoplado fechar.
+            !temAcoplamentoAberto(logsDe(ctx.data, o.id), o.id),
         ),
         porNumero,
       ),
@@ -130,9 +136,12 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
                 </div>
               </div>
               <div className="insp-acoes">
-                <button className="btn2" disabled title={SEM_API.desidrogenizar}>
+                <button
+                  className="btn2"
+                  title="Registrar uma desidrogenização nesta OS. O término é preenchido a partir da duração cadastrada."
+                  onClick={() => ctx.abrir({ tipo: "desidro", osId: o.id })}
+                >
                   Desidrogenizar
-                  <span className="na">Indisponível</span>
                 </button>
                 <button
                   className="btn2"

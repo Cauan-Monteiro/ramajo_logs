@@ -27,6 +27,9 @@ const SIMBOLO: Record<Evento["tipo"], string> = {
   LOTE_FECHADO: "▣",
   ETAPA_ABERTA: "·",
   ETAPA_FECHADA: "·",
+  // Marco da faixa "Ordem", como os lotes: a desidrogenização é da OS inteira,
+  // não de uma carga, e por isso não tem faixa própria no swimlane.
+  DESIDRO_APLICADA: "▲",
 };
 
 const horaLabel = (t: number) => `${String(new Date(t).getHours()).padStart(2, "0")}h`;
@@ -134,6 +137,7 @@ export function LinhaDoTempo({
                               "aud-b" +
                               (b.aberta ? " on" : "") +
                               (b.cancelado ? " cx" : "") +
+                              (b.acopladaA ? " ac" : "") +
                               (b.logId === sel ? " sel" : "")
                             }
                             style={{
@@ -150,7 +154,11 @@ export function LinhaDoTempo({
                           >
                             {b.vemDeOntem && <i className="aud-chev e">◀</i>}
                             <span className="aud-b-txt">
-                              <b>{b.processoDescricao}</b>
+                              <b>
+                                {/* Elo: as peças correram na carga de outra OS. */}
+                                {b.acopladaA && <i className="aud-ac">⇋</i>}
+                                {b.processoDescricao}
+                              </b>
                               <i>{b.responsavelNome}</i>
                             </span>
                             {b.passaDaMeiaNoite && <i className="aud-chev d">▶</i>}
@@ -174,6 +182,7 @@ export function LinhaDoTempo({
         <span className="etp" style={etapaStyle(null)}>Sem etapa</span>
         <span className="os-tv">◆ abertura · ▣ lote fechado · ● expedição · ✕ cancelamento</span>
         <span className="os-tv">Contorno tracejado = etapa ainda aberta · ◀▶ = atravessa a meia-noite</span>
+        <span className="os-tv">⇋ = etapa acoplada: peças de outra OS na mesma carga</span>
       </div>
     </div>
   );
@@ -186,6 +195,11 @@ function Detalhe({ b }: { b: Barra }) {
         <span className="etp" style={etapaStyle(b.etapa)}>{etapaLabel(b.etapa)}</span>
         <span style={{ font: "600 17px 'Barlow Condensed'" }}>{b.processoDescricao}</span>
         <span className="os-tv">Carga {b.cargaNome}</span>
+        {b.acopladaA && (
+          <span className="lote-pill" style={pillStyle(false)}>
+            Acoplada à OS {b.acopladaA}
+          </span>
+        )}
         {b.cancelado && <span className="lote-pill" style={pillStyle(true)}>Cancelada</span>}
       </div>
       <div className="aud-det-g os-tv">
@@ -202,6 +216,12 @@ function Detalhe({ b }: { b: Barra }) {
           </span>
         )}
       </div>
+      {b.acopladaA && (
+        <div className="os-tv">
+          Etapa da OS {b.acopladaA}: as peças desta ordem estavam na mesma carga.
+          Conta uma vez só na produção, atribuída à OS {b.acopladaA}.
+        </div>
+      )}
       {/* A API não regista quem fecha um passo: só o responsável da abertura. */}
       {b.finalizadoEm && <div className="os-tv">Quem fechou não é registado pela API.</div>}
     </div>
@@ -217,6 +237,7 @@ function textoBarra(b: Barra): string {
   return (
     `${b.processoDescricao} · carga ${b.cargaNome} · abriu ${b.responsavelNome}` +
     ` · ${hhmm(b.iniciadoEm)}–${b.finalizadoEm ? hhmm(b.finalizadoEm) : "em aberto"}` +
-    ` · ${duracao(b.iniciadoEm, b.finalizadoEm)}`
+    ` · ${duracao(b.iniciadoEm, b.finalizadoEm)}` +
+    (b.acopladaA ? ` · acoplada à OS ${b.acopladaA}` : "")
   );
 }

@@ -1,5 +1,7 @@
 package com.ramajo.logs.system.controllers;
 
+import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.AplicarDesidrogenizacaoDTO;
+import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.OrdemDesidrogenizacaoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.CancelarOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.CriarOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.FinalizarLoteDTO;
@@ -14,7 +16,9 @@ import com.ramajo.logs.system.dtos.OrdemDtos.OrdemResumoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.VincularCargaDTO;
 import com.ramajo.logs.system.entities.Log;
 import com.ramajo.logs.system.entities.Lote;
+import com.ramajo.logs.system.entities.OrdemDesidrogenizacao;
 import com.ramajo.logs.system.entities.OrdemServico;
+import com.ramajo.logs.system.services.DesidrogenizacaoService;
 import com.ramajo.logs.system.services.OrdemServicoService;
 import com.ramajo.logs.system.services.PlanilhaOrdemServicoService;
 import jakarta.validation.Valid;
@@ -51,11 +55,14 @@ public class OrdemServicoController {
 
     private final OrdemServicoService service;
     private final PlanilhaOrdemServicoService planilhaService;
+    private final DesidrogenizacaoService desidrogenizacaoService;
 
     public OrdemServicoController(OrdemServicoService service,
-                                  PlanilhaOrdemServicoService planilhaService) {
+                                  PlanilhaOrdemServicoService planilhaService,
+                                  DesidrogenizacaoService desidrogenizacaoService) {
         this.service = service;
         this.planilhaService = planilhaService;
+        this.desidrogenizacaoService = desidrogenizacaoService;
     }
 
     @PostMapping
@@ -121,7 +128,8 @@ public class OrdemServicoController {
     public ResponseEntity<LogDTO> iniciarLog(
             @PathVariable Long id, @Valid @RequestBody IniciarLogDTO dto) {
         Log log = service.iniciarLog(
-                id, dto.cargaId(), dto.processoId(), dto.responsavelId());
+                id, dto.cargaId(), dto.processoId(), dto.responsavelId(),
+                dto.ordensAcopladasIds());
         return ResponseEntity
                 .created(URI.create("/api/ordens/" + id + "/logs/" + log.getId()))
                 .body(LogDTO.from(log));
@@ -158,6 +166,15 @@ public class OrdemServicoController {
         return LogDTO.from(service.finalizarLog(logId));
     }
 
+    // Correção de acoplamento: as peças daquela OS não estavam nesta carga.
+    // Só vale com o passo ABERTO — depois de fechado a composição é histórico,
+    // e o service devolve 409 (a mesma regra que a trigger garante no banco).
+    @DeleteMapping("/logs/{logId}/acopladas/{osId}")
+    public ResponseEntity<Void> desacoplar(@PathVariable UUID logId, @PathVariable Long osId) {
+        service.desacoplar(logId, osId);
+        return ResponseEntity.noContent().build();
+    }
+
     // passo 2c: fim do trabalho de algumas cargas. Fecha o passo aberto de cada
     // uma e as devolve ao pool de livres; a OS segue aberta e o LOTE NÃO MUDA.
     // É a rotina "encerrar etapas" da home — virar o lote é decisão de
@@ -183,6 +200,28 @@ public class OrdemServicoController {
     @GetMapping("/{id}/lotes")
     public List<LoteDTO> lotes(@PathVariable Long id) {
         return service.lotes(id).stream().map(LoteDTO::from).toList();
+    }
+
+    // DESIDROGENIZAÇÃO  ======================================================
+    // Etapa opcional de forno, aplicada da Inspeção Final. Sub-recurso da OS
+    // como lotes e cargas; o CADASTRO das receitas fica em
+    // /api/desidrogenizacoes.
+
+    @PostMapping("/{id}/desidrogenizacoes")
+    public ResponseEntity<OrdemDesidrogenizacaoDTO> aplicarDesidrogenizacao(
+            @PathVariable Long id, @Valid @RequestBody AplicarDesidrogenizacaoDTO dto) {
+        OrdemDesidrogenizacao aplicada =
+                desidrogenizacaoService.aplicar(id, dto.desidrogenizacaoId(), dto.operadorId());
+        return ResponseEntity
+                .created(URI.create("/api/ordens/" + id + "/desidrogenizacoes"))
+                .body(OrdemDesidrogenizacaoDTO.from(aplicada));
+    }
+
+    @GetMapping("/{id}/desidrogenizacoes")
+    public List<OrdemDesidrogenizacaoDTO> desidrogenizacoes(@PathVariable Long id) {
+        return desidrogenizacaoService.daOrdem(id).stream()
+                .map(OrdemDesidrogenizacaoDTO::from)
+                .toList();
     }
 
     // passo 3: expedição total (fecha a OS e o lote corrente junto)

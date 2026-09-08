@@ -4,6 +4,7 @@ import { Corners } from "../components/Blueprint";
 import { Modal } from "../components/Modal";
 import { SEL_PICK, dotStyle } from "../domain/derive";
 import { ETAPAS, iniciais, osNum, posLabel } from "../domain/format";
+import { AcoplarOs } from "./AcoplarOs";
 import type { Ctx } from "./tipos";
 
 /**
@@ -14,6 +15,7 @@ import type { Ctx } from "./tipos";
  */
 export function PassoLoteModal({ ctx, selecao }: { ctx: Ctx; selecao: string[] }) {
   const [processoId, setProcessoId] = useState<number | null>(null);
+  const [acopladas, setAcopladas] = useState<number[]>([]);
   const label = posLabel(ctx.posicao);
 
   const cargas = selecao
@@ -29,16 +31,29 @@ export function PassoLoteModal({ ctx, selecao }: { ctx: Ctx; selecao: string[] }
     itens: permitidos.filter((p) => p.etapa === g.key),
   })).filter((g) => g.itens.length > 0);
 
+  /**
+   * Acoplar exige UMA carga: com duas ou mais não há como dizer em qual tanque
+   * as peças das outras OS entraram. Com uma só, a titular é a OS dessa carga.
+   */
+  const cargaUnica = cargas.length === 1 ? cargas[0] : undefined;
+  const acopladasEfetivas = cargaUnica ? acopladas : [];
+
   function confirmar() {
     if (processoId === null) return;
     ctx.agir({
       fazer: () =>
         Promise.all(
           cargas.map((c) =>
-            api.iniciarLog(c.ordemAtualId as number, c.id, processoId, ctx.operador.id),
+            api.iniciarLog(
+              c.ordemAtualId as number, c.id, processoId, ctx.operador.id,
+              // Só a carga única leva acopladas; no lote a lista é sempre vazia.
+              c.id === cargaUnica?.id ? acopladasEfetivas : [],
+            ),
           ),
         ),
-      ok: `Etapa aberta em ${cargas.length} carga(s).`,
+      ok: acopladasEfetivas.length > 0
+        ? `Etapa aberta na carga ${cargaUnica?.nome} para ${acopladasEfetivas.length + 1} OS.`
+        : `Etapa aberta em ${cargas.length} carga(s).`,
       depois: ctx.fechar,
     });
   }
@@ -135,6 +150,23 @@ export function PassoLoteModal({ ctx, selecao }: { ctx: Ctx; selecao: string[] }
           <span className="os-tv">Nenhum processo habilitado para {label}.</span>
         )}
       </div>
+
+      {cargaUnica ? (
+        <AcoplarOs
+          ctx={ctx}
+          posicao={ctx.posicao}
+          osIdTitular={cargaUnica.ordemAtualId ?? undefined}
+          valor={acopladas}
+          onChange={setAcopladas}
+        />
+      ) : (
+        // Com 2+ cargas a seção some — mas a dica fica, porque é ela que ensina
+        // o recurso a existir para quem só usa este caminho.
+        <div className="os-tv" style={{ marginTop: 20 }}>
+          Peças de outra OS neste mesmo tanque? Selecione <b>apenas 1 carga</b> para
+          poder acoplar as demais OS a ela.
+        </div>
+      )}
 
       <div className="os-tv" style={{ marginTop: 16 }}>
         Uma etapa é aberta para cada carga, na sua própria OS · a etapa anterior de cada uma é

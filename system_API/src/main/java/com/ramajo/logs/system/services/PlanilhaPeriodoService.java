@@ -18,10 +18,12 @@ import static com.ramajo.logs.system.services.EscritorPlanilha.valorData;
 import static com.ramajo.logs.system.services.EscritorPlanilha.valorTexto;
 
 import com.ramajo.logs.system.entities.Log;
+import com.ramajo.logs.system.entities.OrdemDesidrogenizacao;
 import com.ramajo.logs.system.entities.OrdemServico;
 import com.ramajo.logs.system.enums.Etapa;
 import com.ramajo.logs.system.exceptions.PeriodoInvalidoException;
 import com.ramajo.logs.system.repositories.LogRepository;
+import com.ramajo.logs.system.repositories.OrdemDesidrogenizacaoRepository;
 import com.ramajo.logs.system.repositories.OrdemServicoRepository;
 import com.ramajo.logs.system.util.DataHoraBr;
 import java.io.ByteArrayOutputStream;
@@ -35,6 +37,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -64,6 +67,9 @@ import org.springframework.transaction.annotation.Transactional;
  *   Dados     - a mesma tabela crua, com autofiltro, para filtrar ou pivotar.
  *   Etapas    - uma linha por passo de todas as OSs do período, de onde saem os
  *               números resumidos nas outras duas.
+ *   Desidrogenizações - uma linha por aplicação de forno. Aba própria porque o
+ *               forno não é uma etapa: corre no nível da OS, sem carga e sem
+ *               processo, e por isso não entra no "tempo trabalhado".
  *
  * A OS é identificada pelo "N° da OS", que é o id externo — o número do sistema
  * principal. O id interno não aparece em aba nenhuma.
@@ -73,16 +79,36 @@ import org.springframework.transaction.annotation.Transactional;
  *                      espera, turno da noite).
  *   Tempo trabalhado - a soma das etapas efetivamente concluídas nela.
  *   Pré/Tratamento/Pós - esse mesmo tempo, quebrado por etapa do fluxo.
+ *
+ * E uma quarta, paralela às três: "tempo em forno", a soma das
+ * desidrogenizações. Fica de fora do "tempo trabalhado" de propósito — uma OS
+ * pode estar no forno sem nenhuma etapa aberta, e somar as duas contaria o mesmo
+ * relógio duas vezes.
  */
 @Service
 @RequiredArgsConstructor
 public class PlanilhaPeriodoService {
 
-    private static final int COLUNAS = 19;
+    private static final int COLUNAS = 22;
     private static final int COL_DURACAO_TOTAL = 8;    // I
     private static final int COL_TRABALHADO = 9;       // J
+    /**
+     * As duas colunas do forno vão no FIM, e não junto dos tempos por etapa a
+     * que se parecem: mexer no meio deslocaria todas as colunas seguintes e
+     * quebraria as fórmulas SUM(I)/SUM(J) e os índices dos testes.
+     */
+    private static final int COL_DESIDROS = 19;        // T
+    private static final int COL_TEMPO_FORNO = 20;     // U
+    /**
+     * Quantos passos a OS pegou carona na carga de OUTRA ordem. Vai no fim pelo
+     * mesmo motivo das do forno. É CONTAGEM e não tempo, deliberadamente: uma
+     * coluna de duração aqui seria somada linha a linha, e somar tempo de
+     * carona contaria o mesmo tanque duas vezes — a inflação que este relatório
+     * existe para não ter.
+     */
+    private static final int COL_ACOPLADAS = 21;       // V
     private static final int[] LARGURAS = {
-            14, 32, 14, 14, 21, 20, 21, 20, 14, 17, 9, 11, 9, 12, 11, 12, 16, 14, 16};
+            14, 32, 14, 14, 21, 20, 21, 20, 14, 17, 9, 11, 9, 12, 11, 12, 16, 14, 16, 16, 16, 16};
     private static final double ALTURA_TITULO = 48;
     /** Mesma largura de logo nos dois relatórios, independente da coluna A. */
     private static final int LARGURA_LOGO = 224;
@@ -97,15 +123,23 @@ public class PlanilhaPeriodoService {
             "N° da OS", "Cliente", "Posição", "Situação", "Iniciada em", "Iniciada por",
             "Finalizada em", "Finalizada por", "Duração total", "Tempo trabalhado",
             "Cargas", "Processos", "Etapas", "Concluídas", "Em aberto", "Canceladas",
-            "Pré-tratamento", "Tratamento", "Pós-tratamento"};
+            "Pré-tratamento", "Tratamento", "Pós-tratamento",
+            "Desidrogenizações", "Tempo em forno", "Etapas acopladas"};
 
-    private static final int COLUNAS_ETAPAS = 15;
+    private static final int COLUNAS_ETAPAS = 16;
     private static final String[] CABECALHO_ETAPAS = {
             "N° da OS", "Cliente",
             "OS iniciada em (data)", "OS iniciada em (hora)",
             "OS finalizada em (data)", "OS finalizada em (hora)",
             "Carga", "Tipo da carga", "Processo", "Etapa", "Responsável",
-            "Iniciado em", "Finalizado em", "Duração", "Situação"};
+            "Iniciado em", "Finalizado em", "Duração", "Situação", "Acoplada à OS"};
+    private static final int ET_COL_DURACAO = 13;
+    private static final int ET_COL_ACOPLADA = 15;
+
+    private static final int COLUNAS_DESIDRO = 8;
+    private static final String[] CABECALHO_DESIDRO = {
+            "N° da OS", "Cliente", "Nome", "Duração", "Temperatura (°C)",
+            "Iniciada em", "Finalizada em", "Aplicada por"};
 
     private static final DateTimeFormatter BR = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
@@ -117,6 +151,7 @@ public class PlanilhaPeriodoService {
 
     private final OrdemServicoRepository osRepo;
     private final LogRepository logRepo;
+    private final OrdemDesidrogenizacaoRepository desidroRepo;
 
     @Transactional(readOnly = true)
     public byte[] gerar(LocalDate dataInicio, LocalDate dataFim) {
@@ -128,7 +163,16 @@ public class PlanilhaPeriodoService {
                 DataHoraBr.inicioDoDia(dataInicio), DataHoraBr.inicioDoDiaSeguinte(dataFim));
         List<Log> etapas = etapasDas(ordens);
         Map<Long, List<Log>> porOrdem = agruparPorOrdem(etapas);
-        Map<Long, ResumoDeEtapas> resumos = resumirPorOrdem(ordens, porOrdem);
+        // Os passos de carona ficam FORA de `porOrdem`: é `porOrdem` que
+        // alimenta todo contador e todo tempo, e um passo acoplado já foi
+        // contado na OS titular. Aqui eles servem para listar e para contar
+        // quantos foram — nada mais.
+        List<LinhaDeEtapa> linhasAcopladas = acopladasDas(ordens);
+        Map<Long, Long> acopladasPorOrdem = contarAcopladas(linhasAcopladas);
+        List<OrdemDesidrogenizacao> desidros = desidrosDas(ordens);
+        Map<Long, List<OrdemDesidrogenizacao>> desidrosPorOrdem = agruparDesidros(desidros);
+        Map<Long, ResumoDeEtapas> resumos =
+                resumirPorOrdem(ordens, porOrdem, desidrosPorOrdem, acopladasPorOrdem);
 
         try (XSSFWorkbook wb = new XSSFWorkbook();
              ByteArrayOutputStream saida = new ByteArrayOutputStream()) {
@@ -136,7 +180,8 @@ public class PlanilhaPeriodoService {
             EstilosPlanilha estilos = new EstilosPlanilha(wb);
             abaRelatorio(wb, estilos, dataInicio, dataFim, ordens, resumos, etapas);
             abaDados(wb, estilos, ordens, resumos);
-            abaEtapas(wb, estilos, etapas);
+            abaEtapas(wb, estilos, linhasDeEtapa(etapas, linhasAcopladas));
+            abaDesidrogenizacoes(wb, estilos, desidros);
 
             // As somas do resumo são fórmulas sem valor em cache; sem isto o
             // LibreOffice abre mostrando célula vazia até alguém editar.
@@ -167,6 +212,94 @@ public class PlanilhaPeriodoService {
         return etapas;
     }
 
+    /**
+     * Uma linha da aba Etapas. `os` é a dona da LINHA — a OS a que o passo
+     * pertence nesta leitura — e `acopladaA` diz de quem era a carga: nulo no
+     * passo próprio, a OS titular no de carona.
+     */
+    private record LinhaDeEtapa(OrdemServico os, Log log, OrdemServico acopladaA) {
+    }
+
+    /**
+     * Os passos em que as OS do recorte pegaram carona. Um mesmo passo pode
+     * render várias linhas — se duas OS do período dividiram a carga, cada uma
+     * ganha a sua —, e por isso a coleção do log é cruzada com o recorte.
+     */
+    private List<LinhaDeEtapa> acopladasDas(List<OrdemServico> ordens) {
+        if (ordens.isEmpty()) {
+            return List.of();   // `in ()` é SQL inválido — nem chega a consultar
+        }
+        Map<Long, OrdemServico> porId = new LinkedHashMap<>();
+        for (OrdemServico os : ordens) {
+            porId.put(os.getId(), os);
+        }
+        List<Long> ids = List.copyOf(porId.keySet());
+
+        List<LinhaDeEtapa> linhas = new ArrayList<>();
+        for (int i = 0; i < ids.size(); i += LOTE_DE_IDS) {
+            List<Long> bloco = ids.subList(i, Math.min(i + LOTE_DE_IDS, ids.size()));
+            Set<Long> doBloco = new HashSet<>(bloco);
+            for (Log log : logRepo.buscarAcopladasDeOrdens(bloco)) {
+                for (Long osId : log.getOrdensAcopladas()) {
+                    OrdemServico carona = doBloco.contains(osId) ? porId.get(osId) : null;
+                    if (carona != null) {
+                        linhas.add(new LinhaDeEtapa(carona, log, log.getOrdemServico()));
+                    }
+                }
+            }
+        }
+        return linhas;
+    }
+
+    private Map<Long, Long> contarAcopladas(List<LinhaDeEtapa> linhas) {
+        Map<Long, Long> porOrdem = new HashMap<>();
+        for (LinhaDeEtapa l : linhas) {
+            porOrdem.merge(l.os().getId(), 1L, Long::sum);
+        }
+        return porOrdem;
+    }
+
+    /**
+     * A aba Etapas na ordem de sempre — por OS, e dentro dela cronológica —,
+     * agora com os passos de carona intercalados nos seus devidos lugares.
+     */
+    private List<LinhaDeEtapa> linhasDeEtapa(List<Log> proprias, List<LinhaDeEtapa> acopladas) {
+        List<LinhaDeEtapa> todas = new ArrayList<>(proprias.size() + acopladas.size());
+        for (Log log : proprias) {
+            todas.add(new LinhaDeEtapa(log.getOrdemServico(), log, null));
+        }
+        todas.addAll(acopladas);
+        todas.sort(Comparator
+                .comparing((LinhaDeEtapa l) -> l.os().getId())
+                .thenComparing(l -> l.log().getIniciadoEm())
+                .thenComparing(l -> l.log().getId()));
+        return todas;
+    }
+
+    /** Mesma partição em blocos das etapas, pelo mesmo limite do `in` do Postgres. */
+    private List<OrdemDesidrogenizacao> desidrosDas(List<OrdemServico> ordens) {
+        if (ordens.isEmpty()) {
+            return List.of();   // `in ()` é SQL inválido — nem chega a consultar
+        }
+        List<Long> ids = ordens.stream().map(OrdemServico::getId).toList();
+        List<OrdemDesidrogenizacao> desidros = new ArrayList<>();
+        for (int i = 0; i < ids.size(); i += LOTE_DE_IDS) {
+            desidros.addAll(desidroRepo.buscarDeOrdens(
+                    ids.subList(i, Math.min(i + LOTE_DE_IDS, ids.size()))));
+        }
+        return desidros;
+    }
+
+    private Map<Long, List<OrdemDesidrogenizacao>> agruparDesidros(
+            List<OrdemDesidrogenizacao> desidros) {
+        Map<Long, List<OrdemDesidrogenizacao>> porOrdem = new LinkedHashMap<>();
+        for (OrdemDesidrogenizacao d : desidros) {
+            porOrdem.computeIfAbsent(d.getOrdemServico().getId(), id -> new ArrayList<>())
+                    .add(d);
+        }
+        return porOrdem;
+    }
+
     private Map<Long, List<Log>> agruparPorOrdem(List<Log> etapas) {
         Map<Long, List<Log>> porOrdem = new LinkedHashMap<>();
         for (Log log : etapas) {
@@ -184,11 +317,15 @@ public class PlanilhaPeriodoService {
      * apurado", enquanto um zero afirmaria que se trabalhou zero segundo ali —
      * e entraria nas somas e médias como se fosse medição.
      */
-    private Map<Long, ResumoDeEtapas> resumirPorOrdem(List<OrdemServico> ordens,
-                                                      Map<Long, List<Log>> porOrdem) {
+    private Map<Long, ResumoDeEtapas> resumirPorOrdem(
+            List<OrdemServico> ordens, Map<Long, List<Log>> porOrdem,
+            Map<Long, List<OrdemDesidrogenizacao>> desidrosPorOrdem,
+            Map<Long, Long> acopladasPorOrdem) {
         Map<Long, ResumoDeEtapas> resumos = new HashMap<>();
         for (OrdemServico os : ordens) {
             List<Log> daOrdem = porOrdem.getOrDefault(os.getId(), List.of());
+            List<OrdemDesidrogenizacao> fornoDaOrdem =
+                    desidrosPorOrdem.getOrDefault(os.getId(), List.of());
             resumos.put(os.getId(), new ResumoDeEtapas(
                     distintos(daOrdem, l -> l.getCarga().getId()),
                     distintos(daOrdem, l -> l.getProcesso().getId()),
@@ -200,9 +337,31 @@ public class PlanilhaPeriodoService {
                     somaDe(daOrdem, l -> true),
                     somaDe(daOrdem, etapaEh(Etapa.PRE_TRATAMENTO)),
                     somaDe(daOrdem, etapaEh(Etapa.TRATAMENTO)),
-                    somaDe(daOrdem, etapaEh(Etapa.POS_TRATAMENTO))));
+                    somaDe(daOrdem, etapaEh(Etapa.POS_TRATAMENTO)),
+                    fornoDaOrdem.size(),
+                    somaEmForno(fornoDaOrdem),
+                    // Único campo apurado fora de `daOrdem`: os passos de
+                    // carona não estão lá, e é por isso que nenhum dos números
+                    // acima muda quando uma etapa é acoplada.
+                    acopladasPorOrdem.getOrDefault(os.getId(), 0L)));
         }
         return resumos;
+    }
+
+    /**
+     * A soma das desidrogenizações da OS, em fração de dia. Sem nenhuma devolve
+     * null e não zero, pela mesma regra dos tempos de etapa: célula vazia diz
+     * "não houve", um zero afirmaria que o forno rodou por zero segundo.
+     */
+    private Double somaEmForno(List<OrdemDesidrogenizacao> desidros) {
+        Double total = null;
+        for (OrdemDesidrogenizacao d : desidros) {
+            Double parcela = DataHoraBr.duracaoNumerica(d.getIniciadaEm(), d.getFinalizadaEm());
+            if (parcela != null) {
+                total = total == null ? parcela : total + parcela;
+            }
+        }
+        return total;
     }
 
     private static boolean concluida(Log log) {
@@ -239,7 +398,8 @@ public class PlanilhaPeriodoService {
     /** Os números de etapa de uma OS, do jeito que a linha dela precisa. */
     private record ResumoDeEtapas(long cargas, long processos, long total, long concluidas,
                                   long emAberto, long canceladas, Double trabalhado,
-                                  Double pre, Double tratamento, Double pos) {
+                                  Double pre, Double tratamento, Double pos,
+                                  long desidros, Double tempoEmForno, long acopladas) {
     }
 
     // ------------------------------------------------------------- relatório
@@ -357,9 +517,9 @@ public class PlanilhaPeriodoService {
                 String.valueOf(emProcesso),
                 String.valueOf(canceladas)
         };
-        // Quatro indicadores em dezenove colunas: três de cinco colunas e o
-        // último na sobra de quatro.
-        int[][] faixas = {{0, 4}, {5, 9}, {10, 14}, {15, 18}};
+        // Quatro indicadores na largura da tabela: três de cinco colunas e o
+        // último na sobra até à última coluna.
+        int[][] faixas = {{0, 4}, {5, 9}, {10, 14}, {15, COLUNAS - 1}};
 
         Row rLegenda = aba.createRow(linha[0]);
         Row rValor = aba.createRow(linha[0] + 1);
@@ -409,6 +569,13 @@ public class PlanilhaPeriodoService {
         duracao(r, e, 16, cancelada ? null : resumo.pre(), zebra, cancelada);
         duracao(r, e, 17, cancelada ? null : resumo.tratamento(), zebra, cancelada);
         duracao(r, e, 18, cancelada ? null : resumo.pos(), zebra, cancelada);
+        // A CONTAGEM do forno é escrita mesmo em OS cancelada — o forno rodou —,
+        // mas o tempo não, pela mesma regra das outras durações.
+        numero(r, e, COL_DESIDROS, resumo.desidros(), zebra, cancelada);
+        duracao(r, e, COL_TEMPO_FORNO, cancelada ? null : resumo.tempoEmForno(), zebra, cancelada);
+        // Contagem, como a do forno: escrita mesmo em OS cancelada, porque o
+        // tanque rodou com as peças dentro.
+        numero(r, e, COL_ACOPLADAS, resumo.acopladas(), zebra, cancelada);
     }
 
     private void rodape(Sheet aba, EstilosPlanilha e, int[] linha,
@@ -462,17 +629,27 @@ public class PlanilhaPeriodoService {
      * Uma linha por passo, de todas as OSs do período — é daqui que saem os
      * contadores e os tempos por etapa das outras abas, e é aqui que se confere
      * um número que não bateu.
+     *
+     * Um passo acoplado rende mais de uma linha: uma da OS titular e uma de cada
+     * OS que pegou carona, identificada pela última coluna. Para que a promessa
+     * do parágrafo acima continue de pé, a linha de carona NÃO escreve duração —
+     * senão somar a coluna passaria a contar o mesmo tanque duas vezes. Os
+     * carimbos de início e fim ficam, então nada se perde: o tempo é derivável,
+     * e a planilha individual da OS o mostra por extenso. É a mesma regra que a
+     * etapa cancelada já segue, e pelo mesmo motivo.
      */
-    private void abaEtapas(XSSFWorkbook wb, EstilosPlanilha e, List<Log> etapas) {
+    private void abaEtapas(XSSFWorkbook wb, EstilosPlanilha e, List<LinhaDeEtapa> etapas) {
         Sheet aba = wb.createSheet("Etapas");
         int[] linha = {0};
         cabecalhoTabela(aba, e, linha, CABECALHO_ETAPAS);
         aba.createFreezePane(2, 1);
 
         boolean zebra = false;
-        for (Log log : etapas) {
+        for (LinhaDeEtapa entrada : etapas) {
+            Log log = entrada.log();
+            OrdemServico os = entrada.os();
+            OrdemServico titular = entrada.acopladaA();
             boolean cancelada = log.isCancelado();
-            OrdemServico os = log.getOrdemServico();
             Row r = aba.createRow(linha[0]++);
             texto(r, e, 0, os.getIdExterno() == null ? null : String.valueOf(os.getIdExterno()),
                     zebra, cancelada);
@@ -490,14 +667,58 @@ public class PlanilhaPeriodoService {
             texto(r, e, 10, log.getResponsavel().getNome(), zebra, cancelada);
             data(r, e, 11, log.getIniciadoEm(), zebra, cancelada);
             data(r, e, 12, log.getFinalizadoEm(), zebra, cancelada);
-            // Etapa cancelada não escreve duração, pelo mesmo motivo da OS.
-            duracao(r, e, 13,
-                    cancelada ? null : DataHoraBr.duracaoNumerica(log.getIniciadoEm(), log.getFinalizadoEm()),
+            // Sem duração quando cancelada (não houve trabalho medível) e quando
+            // acoplada (o tempo já está na linha da OS titular) — ver o cabeçalho.
+            duracao(r, e, ET_COL_DURACAO,
+                    cancelada || titular != null
+                            ? null
+                            : DataHoraBr.duracaoNumerica(log.getIniciadoEm(), log.getFinalizadoEm()),
                     zebra, cancelada);
             texto(r, e, 14, situacaoDaEtapa(log), zebra, cancelada);
+            // Vazia no passo próprio: é o valor que separa os dois no filtro.
+            texto(r, e, ET_COL_ACOPLADA,
+                    titular == null || titular.getIdExterno() == null
+                            ? null
+                            : String.valueOf(titular.getIdExterno()),
+                    zebra, cancelada);
             zebra = !zebra;
         }
         aba.setAutoFilter(new CellRangeAddress(0, Math.max(linha[0] - 1, 0), 0, COLUNAS_ETAPAS - 1));
         ajustar(aba, COLUNAS_ETAPAS);
+    }
+
+    /**
+     * Uma linha por aplicação de forno no período — a aba onde se confere a
+     * coluna "Tempo em forno" das outras duas, como a "Etapas" faz para o tempo
+     * trabalhado. Duração e temperatura são o que rodou, não o cadastro de hoje:
+     * editar a receita amanhã não reescreve o histórico.
+     */
+    private void abaDesidrogenizacoes(XSSFWorkbook wb, EstilosPlanilha e,
+                                      List<OrdemDesidrogenizacao> desidros) {
+        Sheet aba = wb.createSheet("Desidrogenizações");
+        int[] linha = {0};
+        cabecalhoTabela(aba, e, linha, CABECALHO_DESIDRO);
+        aba.createFreezePane(2, 1);
+
+        boolean zebra = false;
+        for (OrdemDesidrogenizacao d : desidros) {
+            OrdemServico os = d.getOrdemServico();
+            boolean cancelada = os.isCancelada();
+            Row r = aba.createRow(linha[0]++);
+            texto(r, e, 0, os.getIdExterno() == null ? null : String.valueOf(os.getIdExterno()),
+                    zebra, cancelada);
+            texto(r, e, 1, os.getCliente().getNome(), zebra, cancelada);
+            texto(r, e, 2, d.getDesidrogenizacao().getNome(), zebra, cancelada);
+            duracao(r, e, 3,
+                    DataHoraBr.duracaoNumerica(d.getIniciadaEm(), d.getFinalizadaEm()),
+                    zebra, cancelada);
+            texto(r, e, 4, d.getTemperatura().toPlainString(), zebra, cancelada);
+            data(r, e, 5, d.getIniciadaEm(), zebra, cancelada);
+            data(r, e, 6, d.getFinalizadaEm(), zebra, cancelada);
+            texto(r, e, 7, nome(d.getAplicadaPor()), zebra, cancelada);
+            zebra = !zebra;
+        }
+        aba.setAutoFilter(new CellRangeAddress(0, Math.max(linha[0] - 1, 0), 0, COLUNAS_DESIDRO - 1));
+        ajustar(aba, COLUNAS_DESIDRO);
     }
 }

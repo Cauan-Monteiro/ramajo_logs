@@ -11,11 +11,17 @@ import {
 import {
   emSegundoLote, etapaDoLog, etapaStyle, labelEtapaDoLog, logAbertoDaCarga,
 } from "../domain/derive";
+import {
+  COR_INATIVO, COR_NIVEL, ROTULO_NIVEL, detalhe as detalheDesidro, emCurso, piorNivel,
+} from "../domain/desidro";
 import { ETAPAS, duracao, hhmm, osNum, posLabel } from "../domain/format";
+import { useAgora } from "../state/useAgora";
 import { cargasLivres, logsDe, type AppData } from "../state/useAppData";
 import { BuscarOSModal } from "../modals/BuscarOS";
 import { CargasLivresModal } from "../modals/CargasLivres";
 import { CriarOSModal } from "../modals/CriarOS";
+import { DesidroPainelModal } from "../modals/DesidroPainel";
+import { DesidrogenizarModal } from "../modals/Desidrogenizacao";
 import {
   CancelarModal, DetalheOSModal, ExpedirModal, PassoModal, VincularModal,
 } from "../modals/DetalheOS";
@@ -120,6 +126,23 @@ export function Dashboard({
     colunas, { chave: "desde", asc: false }, () => setPagina(0),
   );
 
+  // O único valor da tela que muda sozinho com o tempo é o progresso das
+  // desidrogenizações; o resto chega pelo useSync. Meio minuto é fino de mais
+  // para se notar o salto numa janela medida em horas.
+  const agora = useAgora(30000);
+
+  /**
+   * Desidrogenizações que ainda importam. Deliberadamente SEM filtro por
+   * posição, ao contrário dos vizinhos: o forno é um só para a fábrica, então
+   * uma desidro prestes a estourar precisa aparecer em qualquer aba.
+   */
+  const desidros = emCurso(data.desidrosEmAndamento, agora);
+  const nivelDesidro = piorNivel(desidros, agora);
+  // Forno livre não é "tranquilo", é ausência de estado: sai da escala de cores
+  // para o verde não competir com os avisos verdadeiros.
+  const temDesidro = desidros.length > 0;
+  const corDesidro = temDesidro ? COR_NIVEL[nivelDesidro] : COR_INATIVO;
+
   const label = posLabel(posicao);
   const naPos = data.ordens.filter((o) => o.emProcesso && o.posicao === posicao);
   const emProducao = naPos.filter((o) => !emSegundoLote(o));
@@ -181,11 +204,57 @@ export function Dashboard({
   return (
     <div className="dash-root">
       <div className="posbar">
-        <IconLogo size={40} width={1.4} />
-        <div style={{ lineHeight: 1 }}>
-          <div className="plbl">Posição em operação</div>
-          <div className="pname">{label}</div>
+        <div className="posbar-id">
+          <IconLogo size={40} width={1.4} />
+          <div style={{ lineHeight: 1 }}>
+            <div className="plbl">Posição em operação</div>
+            <div className="pname">{label}</div>
+          </div>
         </div>
+
+        {/* Ao centro e sempre presente, ao contrário dos stats à direita, que são
+            desta posição: o forno é um só para a fábrica, e um lugar fixo é o que
+            se aprende de uma vez. Clicar abre o painel com o detalhe que antes só
+            existia no `title` — que some ao mover o rato e não existe em toque. */}
+        <button
+          type="button"
+          className="posmini desidro-ind"
+          title={
+            temDesidro
+              ? detalheDesidro(desidros, agora)
+              : "Nenhuma desidrogenização em curso."
+          }
+          onClick={() => setModal({ tipo: "desidroPainel" })}
+        >
+          <span className="n" style={{ color: corDesidro }}>
+            {/* .turn-dot é o dot cru do app — a cor sempre vem inline. */}
+            <i
+              className="turn-dot"
+              style={{
+                background: corDesidro,
+                display: "inline-block",
+                // Sem isto o dot assenta na linha de base e fica baixo
+                // demais ao lado de um número de 30px.
+                verticalAlign: "middle",
+                marginRight: 8,
+                // Pulsa só no crítico, reaproveitando o @keyframes do
+                // .live-dot: piscar quando está tudo calmo é ruído.
+                animation:
+                  nivelDesidro === "critico" && temDesidro
+                    ? "pulse 1.4s infinite"
+                    : undefined,
+              }}
+            />
+            {desidros.length}
+          </span>
+          {/* O nível vai escrito, não só na cor: a barra é estreita nos
+              breakpoints menores, mas quem não distingue verde de vermelho
+              também precisa ler o estado. */}
+          <span className="t" style={{ whiteSpace: "nowrap" }}>
+            Desidro · {temDesidro ? ROTULO_NIVEL[nivelDesidro] : "forno livre"}
+          </span>
+        </button>
+
         <div className="pos-stats">
           <div className="posmini">
             <span className="n">{emProducao.length}</span>
@@ -308,7 +377,19 @@ export function Dashboard({
                       <IconCheck />
                     </span>
                     <span className="cnome">{c.nome}</span>
-                    <span className="cvinc">{ordem ? `OS ${osNum(ordem)}` : "—"}</span>
+                    <span className="cvinc">
+                      {ordem ? `OS ${osNum(ordem)}` : "—"}
+                      {/* A carga leva peças de outras OS neste passo: o
+                          vínculo mostra só a titular, o selo conta o resto. */}
+                      {aberto && aberto.ordensAcopladas.length > 0 && (
+                        <span
+                          className="tp"
+                          title={`Etapa acoplada: mais ${aberto.ordensAcopladas.length} OS nesta carga`}
+                        >
+                          +{aberto.ordensAcopladas.length}
+                        </span>
+                      )}
+                    </span>
                     <span
                       className="passocell"
                       style={
@@ -396,6 +477,8 @@ export function Dashboard({
       {modal?.tipo === "passo" && <PassoModal ctx={ctx} osId={modal.osId} />}
       {modal?.tipo === "exp" && <ExpedirModal ctx={ctx} osId={modal.osId} />}
       {modal?.tipo === "expParcial" && <ExpedirParcialModal ctx={ctx} osId={modal.osId} />}
+      {modal?.tipo === "desidro" && <DesidrogenizarModal ctx={ctx} osId={modal.osId} />}
+      {modal?.tipo === "desidroPainel" && <DesidroPainelModal ctx={ctx} />}
       {modal?.tipo === "cancel" && <CancelarModal ctx={ctx} osId={modal.osId} />}
     </div>
   );
