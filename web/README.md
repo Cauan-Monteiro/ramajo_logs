@@ -195,9 +195,27 @@ deriva de linhas de `logs`, e clonar o passo por OS inflaria a produção.
 |---|---|
 | Home → marcar **1 carga** → **Abrir etapa** | rotina do dia a dia. Com 2+ cargas a seção some: não haveria como dizer em qual tanque as peças das outras OS entraram |
 | Buscar OS → OS → **Abrir etapa** | quando se parte de uma OS específica |
+| Detalhe da OS → etapa em andamento → **+ acoplar** | **acoplamento tardio**: as peças entraram no tanque depois de o passo já ter começado |
 
-Os dois usam o mesmo `modals/AcoplarOs.tsx` — recolhido por omissão, porque a
-esmagadora maioria dos passos não acopla.
+Os dois primeiros usam o mesmo `modals/AcoplarOs.tsx` — recolhido por omissão,
+porque a esmagadora maioria dos passos não acopla.
+
+### Acoplar depois de a etapa começar
+
+`POST /api/ordens/logs/{logId}/acopladas/{osId}`, pelo `AcoplarAgora` do mesmo
+arquivo. **Só a carona se move**: o passo da titular não é reaberto nem
+substituído — abrir uma etapa nova só para reescrever a composição cortaria a
+duração real em duas e inventaria na linha do tempo um passo que ninguém
+executou.
+
+No mesmo instante, os passos abertos da **própria carona** são encerrados: as
+peças saíram da carga dela. A carga continua vinculada à OS, vazia e aguardando
+etapa — devolvê-la ao pool é decisão do operador, em "Encerrar etapas".
+
+Isso **não tem volta simétrica**: `logs` é append-only, então desacoplar depois
+não reabre o passo fechado aqui. Daí o segundo toque para confirmar, como no
+encerramento de passo acoplado. Repetir a chamada é inócuo (idempotente): a
+segunda só afirma o que já é verdade, sem fechar passo nenhum.
 
 ### O que muda depois de acoplar
 
@@ -221,7 +239,11 @@ garante no banco.
 As recusas ao acoplar são todas de coerência física: OS de outra posição
 (`ACOPLAMENTO_POSICAO_INCOMPATIVEL`), OS já expedida (409
 `ORDEM_FORA_DE_CIRCULACAO`), a própria OS (`ACOPLAMENTO_A_SI_MESMA`) e o teto
-de 5 por passo (`ACOPLAMENTO_EXCEDE_LIMITE`).
+de 5 por passo (`ACOPLAMENTO_EXCEDE_LIMITE`). O acoplamento tardio acrescenta
+duas: OS que já pega carona noutro passo aberto (`ACOPLAMENTO_EM_OUTRO_PASSO`
+— peças estão num tanque só) e passo cancelado (`ACOPLAMENTO_PASSO_CANCELADO`,
+que afirma que o processo não aconteceu). Todas são verificadas **antes** de
+qualquer passo ser fechado.
 
 ## Leitores RFID
 

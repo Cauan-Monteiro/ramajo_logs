@@ -391,6 +391,30 @@ body {
    cursor: default
 }
 
+/* Irmão do chip-row, em tracejado: fica na mesma fila das OS já acopladas,
+   mas o contorno aberto diz que é um lugar por preencher, não uma marcação. */
+.chip-add {
+   display: inline-flex;
+   align-items: center;
+   font: 600 14px "Barlow Condensed", system-ui, sans-serif;
+   letter-spacing: .04em;
+   color: rgba(65, 97, 128, .8);
+   border: 1px dashed rgba(89, 128, 166, .55);
+   background: transparent;
+   padding: 5px 10px;
+   cursor: pointer
+}
+
+.chip-add:hover:not(:disabled) {
+   color: #416180;
+   background: #eef6ff
+}
+
+.chip-add:disabled {
+   opacity: .4;
+   cursor: default
+}
+
 .cg-chip .tp {
    font: 600 9px "Barlow Condensed";
    letter-spacing: .12em;

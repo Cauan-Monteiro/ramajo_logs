@@ -421,22 +421,31 @@ public class OrdemServicoService {
         }
 
         for (Long id : unicos){
-            if (id.equals(titular.getId())){
-                throw AcoplamentoInvalidoException.aSiMesma(id);
-            }
-
-            // carregarAberta traz as recusas de sempre: 404 se não existe,
-            // 409 se já foi expedida ou cancelada.
-            OrdemServico acoplada = carregarAberta(id);
-
-            if (acoplada.getPosicao() != titular.getPosicao()){
-                throw AcoplamentoInvalidoException.posicaoDiferente(
-                        acoplada.getId(), acoplada.getPosicao(),
-                        titular.getId(), titular.getPosicao());
-            }
+            validarAcoplada(titular, id);
         }
 
         return unicos;
+    }
+
+    /**
+     * As recusas de coerência física de UMA carona, isoladas porque o
+     * acoplamento em passo já aberto valida uma OS de cada vez — lá não há
+     * lista, há a OS que acabou de entrar no tanque.
+     */
+    private void validarAcoplada(OrdemServico titular, Long id){
+        if (id.equals(titular.getId())){
+            throw AcoplamentoInvalidoException.aSiMesma(id);
+        }
+
+        // carregarAberta traz as recusas de sempre: 404 se não existe,
+        // 409 se já foi expedida ou cancelada.
+        OrdemServico acoplada = carregarAberta(id);
+
+        if (acoplada.getPosicao() != titular.getPosicao()){
+            throw AcoplamentoInvalidoException.posicaoDiferente(
+                    acoplada.getId(), acoplada.getPosicao(),
+                    titular.getId(), titular.getPosicao());
+        }
     }
 
     /**
@@ -520,6 +529,68 @@ public class OrdemServicoService {
         }
 
         log.setFinalizadoEm(at);
+        return log;
+    }
+
+    /**
+     * Acopla uma OS a um passo JÁ ABERTO: as peças dela acabaram de entrar no
+     * tanque onde a titular já estava.
+     *
+     * É o movimento físico como ele acontece — só a carona se move. O caminho
+     * antigo (única escrita da composição era em abrirLog) obrigava a abrir uma
+     * etapa NOVA na carga titular só para reescrever a lista, o que corta a
+     * duração real em duas e inventa na linha do tempo um passo que ninguém
+     * executou. Aqui o passo da titular não é tocado: nem `iniciadoEm`, nem
+     * processo, nem responsável.
+     *
+     * Encerra, no mesmo instante, os passos abertos da PRÓPRIA carona: as peças
+     * saíram da carga dela. A carga continua vinculada à OS, vazia e aguardando
+     * etapa — devolvê-la ao pool é decisão do operador, em "Encerrar etapas".
+     *
+     * Sem volta simétrica: `logs` é append-only, então desacoplar depois não
+     * reabre o passo que foi fechado aqui.
+     */
+    @Transactional
+    public Log acoplar(UUID logId, Long osId){
+        Log log = logRepo.findById(logId)
+                .orElseThrow(()-> new RecursoNaoEncontradoException("Log", logId));
+
+        if (log.getFinalizadoEm() != null){
+            throw new PassoJaFinalizadoException(logId);
+        }
+        if (log.isCancelado()){
+            throw AcoplamentoInvalidoException.passoCancelado(logId);
+        }
+
+        // Idempotente: dois terminais no mesmo tanque tocam o botão ao mesmo
+        // tempo, e a segunda chamada só afirma o que já é verdade. Antes das
+        // validações de propósito — repetir não pode fechar passo nenhum.
+        if (log.getOrdensAcopladas().contains(osId)){
+            return log;
+        }
+
+        OrdemServico titular = log.getOrdemServico();
+        validarAcoplada(titular, osId);
+
+        int total = log.getOrdensAcopladas().size() + 1;
+        if (total > MAX_OS_ACOPLADAS){
+            throw AcoplamentoInvalidoException.demais(total, MAX_OS_ACOPLADAS);
+        }
+
+        // Peças num tanque só: se ela já pega carona noutro passo aberto, o
+        // pedido descreve duas coisas incompatíveis.
+        logRepo.buscarAcoplamentosAbertos(osId).stream().findFirst().ifPresent(outro -> {
+            throw AcoplamentoInvalidoException.jaEmOutroPasso(osId, outro.getId());
+        });
+
+        // Só DEPOIS de todas as recusas — mesma disciplina de abrirLog: um
+        // acoplamento que vai ser rejeitado não pode custar à carona o passo
+        // que ela tem em curso.
+        Instant at = Instant.now();
+        logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(osId)
+                .forEach(aberto -> fecharPasso(aberto, at));
+
+        log.getOrdensAcopladas().add(osId);
         return log;
     }
 

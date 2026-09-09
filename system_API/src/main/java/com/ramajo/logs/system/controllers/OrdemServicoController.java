@@ -166,6 +166,14 @@ public class OrdemServicoController {
         return LogDTO.from(service.finalizarLog(logId));
     }
 
+    // Acoplamento tardio: as peças desta OS entraram no tanque DEPOIS de o
+    // passo já ter começado. Só a carona se move — o passo da titular não é
+    // reaberto nem substituído. Os passos abertos da carona fecham junto.
+    @PostMapping("/logs/{logId}/acopladas/{osId}")
+    public LogDTO acoplar(@PathVariable UUID logId, @PathVariable Long osId) {
+        return LogDTO.from(service.acoplar(logId, osId));
+    }
+
     // Correção de acoplamento: as peças daquela OS não estavam nesta carga.
     // Só vale com o passo ABERTO — depois de fechado a composição é histórico,
     // e o service devolve 409 (a mesma regra que a trigger garante no banco).

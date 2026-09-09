@@ -12,7 +12,7 @@ import {
   ETAPAS, duracao, hhmm, iniciais, minutos, osNum, posLabel,
 } from "../domain/format";
 import { cargasDe, cargasLivres, logsDe } from "../state/useAppData";
-import { AcoplarOs } from "./AcoplarOs";
+import { AcoplarAgora, AcoplarOs } from "./AcoplarOs";
 import { SEM_API, type Ctx } from "./tipos";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -321,8 +321,11 @@ function PassoAberto({ ctx, log, osId }: { ctx: Ctx; log: LogDTO; osId: number }
             : `Carga ${log.cargaNome} · ${log.responsavelNome}`}
         </div>
         {/* Do lado da titular, quem mais está no tanque — com o × para corrigir
-            uma marcação errada enquanto o passo está aberto. */}
-        {!acoplada && log.ordensAcopladas.length > 0 && (
+            uma marcação errada e o "+ acoplar" para a OS que entrou depois de
+            o passo já ter começado. Aparece mesmo sem carona alguma: acoplar
+            tarde é o caso comum, e não se descobre um botão escondido atrás de
+            uma condição que só quem já acoplou satisfaz. */}
+        {!acoplada && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
             {log.ordensAcopladas.map((id) => (
               <span key={id} className="cg-chip chip-row">
@@ -342,6 +345,7 @@ function PassoAberto({ ctx, log, osId }: { ctx: Ctx; log: LogDTO; osId: number }
                 </button>
               </span>
             ))}
+            <AcoplarAgora ctx={ctx} log={log} />
           </div>
         )}
       </div>

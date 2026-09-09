@@ -40,6 +40,27 @@ public class AcoplamentoInvalidoException extends DominioException {
                 "São " + enviadas + " OS acopladas; o limite por passo é " + limite + ".");
     }
 
+    /**
+     * Acoplar uma OS que já pega carona noutro passo aberto. As peças dela
+     * estão dentro de um tanque; entrar num segundo sem sair do primeiro não
+     * descreve nada que possa ter acontecido.
+     */
+    public static AcoplamentoInvalidoException jaEmOutroPasso(Long osId, java.util.UUID logId) {
+        return new AcoplamentoInvalidoException("ACOPLAMENTO_EM_OUTRO_PASSO",
+                "OS " + osId + " já está acoplada ao passo aberto " + logId
+                        + "; desacople de lá antes.");
+    }
+
+    /**
+     * Passo cancelado não recebe composição nova: ele afirma que o processo
+     * NÃO aconteceu, então pendurar OS nele seria registrar carona num
+     * evento inexistente.
+     */
+    public static AcoplamentoInvalidoException passoCancelado(java.util.UUID logId) {
+        return new AcoplamentoInvalidoException("ACOPLAMENTO_PASSO_CANCELADO",
+                "O passo " + logId + " está cancelado; não recebe OS acopladas.");
+    }
+
     /** Desacoplar algo que não estava acoplado: o passo existe, o vínculo não. */
     public static AcoplamentoInvalidoException naoAcoplada(java.util.UUID logId, Long osId) {
         return new AcoplamentoInvalidoException("ACOPLAMENTO_INEXISTENTE",

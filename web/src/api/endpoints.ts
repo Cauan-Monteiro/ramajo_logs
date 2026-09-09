@@ -185,6 +185,19 @@ export const finalizarLog = (logId: string) =>
   http.patch<LogDTO>(`/api/ordens/logs/${logId}/finalizar`);
 
 /**
+ * Acopla uma OS a um passo JÁ ABERTO: as peças dela acabaram de entrar no
+ * tanque onde a titular já estava. Só a carona se move — o passo da titular
+ * não é reaberto nem substituído, e por isso a duração real não é cortada em
+ * duas.
+ *
+ * Fecha, no mesmo instante, os passos abertos da própria carona: as peças
+ * saíram da carga dela. Isso NÃO se desfaz — `logs` é append-only, então
+ * desacoplar depois não reabre o passo fechado aqui.
+ */
+export const acoplar = (logId: string, osId: number) =>
+  http.post<LogDTO>(`/api/ordens/logs/${logId}/acopladas/${osId}`);
+
+/**
  * Desfaz um acoplamento: as peças daquela OS não estavam nesta carga.
  * Só vale com o passo ABERTO — depois de fechado a composição é histórico e a
  * API devolve 409 PASSO_JA_FINALIZADO.
