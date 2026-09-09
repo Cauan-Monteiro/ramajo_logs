@@ -1,7 +1,9 @@
 package com.ramajo.logs.system.controllers;
 
+import com.ramajo.logs.system.dtos.CargaDtos.CargaDTO;
 import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.AplicarDesidrogenizacaoDTO;
 import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.OrdemDesidrogenizacaoDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.AcoplamentoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.CancelarOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.CriarOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.FinalizarLoteDTO;
@@ -13,6 +15,7 @@ import com.ramajo.logs.system.dtos.OrdemDtos.LogDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.LoteDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.OrdemDetalheDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.OrdemResumoDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.ReabrirOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.VincularCargaDTO;
 import com.ramajo.logs.system.entities.Log;
 import com.ramajo.logs.system.entities.Lote;
@@ -24,7 +27,9 @@ import com.ramajo.logs.system.services.PlanilhaOrdemServicoService;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ContentDisposition;
@@ -69,10 +74,25 @@ public class OrdemServicoController {
     public ResponseEntity<OrdemDetalheDTO> criar(@Valid @RequestBody CriarOrdemDTO dto) {
         OrdemServicoService.OrdemCriada criada = service.criar(
                 dto.clienteId(), dto.operadorId(), dto.idExterno(), dto.posicao(),
-                dto.cargaIds());
+                dto.cargaIds(), acopladasPorCarga(dto.acoplamentos()));
         return ResponseEntity
                 .created(URI.create("/api/ordens/" + criada.ordem().getId()))
                 .body(OrdemDetalheDTO.from(criada.ordem(), criada.logsIniciados()));
+    }
+
+    /**
+     * Os pares (carga, OS) que chegam na criação, agrupados pela carga — que é
+     * como o service os aplica. LinkedHashMap/ArrayList preservam a ordem do
+     * pedido, então a mensagem de erro de um par inválido cita a mesma carga
+     * que o operador viu na tela.
+     */
+    private static Map<Long, List<Long>> acopladasPorCarga(List<AcoplamentoDTO> acoplamentos) {
+        Map<Long, List<Long>> porCarga = new LinkedHashMap<>();
+        for (AcoplamentoDTO a : acoplamentos) {
+            porCarga.computeIfAbsent(a.cargaId(), k -> new java.util.ArrayList<>())
+                    .add(a.ordemServicoId());
+        }
+        return porCarga;
     }
 
     @GetMapping
@@ -117,7 +137,8 @@ public class OrdemServicoController {
     @PostMapping("/{id}/cargas")
     public ResponseEntity<LogDTO> vincularCarga(
             @PathVariable Long id, @Valid @RequestBody VincularCargaDTO dto) {
-        Log log = service.vincularCarga(id, dto.cargaId(), dto.operadorId());
+        Log log = service.vincularCarga(
+                id, dto.cargaId(), dto.operadorId(), dto.ordensAcopladasIds());
         return ResponseEntity
                 .created(URI.create("/api/ordens/" + id + "/logs/" + log.getId()))
                 .body(LogDTO.from(log));
@@ -128,8 +149,7 @@ public class OrdemServicoController {
     public ResponseEntity<LogDTO> iniciarLog(
             @PathVariable Long id, @Valid @RequestBody IniciarLogDTO dto) {
         Log log = service.iniciarLog(
-                id, dto.cargaId(), dto.processoId(), dto.responsavelId(),
-                dto.ordensAcopladasIds());
+                id, dto.cargaId(), dto.processoId(), dto.responsavelId());
         return ResponseEntity
                 .created(URI.create("/api/ordens/" + id + "/logs/" + log.getId()))
                 .body(LogDTO.from(log));
@@ -166,20 +186,25 @@ public class OrdemServicoController {
         return LogDTO.from(service.finalizarLog(logId));
     }
 
-    // Acoplamento tardio: as peças desta OS entraram no tanque DEPOIS de o
-    // passo já ter começado. Só a carona se move — o passo da titular não é
-    // reaberto nem substituído. Os passos abertos da carona fecham junto.
-    @PostMapping("/logs/{logId}/acopladas/{osId}")
-    public LogDTO acoplar(@PathVariable UUID logId, @PathVariable Long osId) {
-        return LogDTO.from(service.acoplar(logId, osId));
+    // As peças desta OS entraram no tanque de outra. O vínculo é com a CARGA,
+    // não com o passo: vale para a etapa em curso e para todas as seguintes,
+    // até a carga ser liberada. Os passos abertos da carona fecham junto — as
+    // peças dela saíram da carga própria.
+    //
+    // Sob /api/ordens e não /api/cargas por ser a mesma decisão de produção
+    // que as rotas vizinhas, servida pelo mesmo service. O padrão já estava
+    // posto por /api/ordens/logs/{logId}/finalizar.
+    @PostMapping("/cargas/{cargaId}/acopladas/{osId}")
+    public CargaDTO acoplar(@PathVariable Long cargaId, @PathVariable Long osId) {
+        return CargaDTO.from(service.acoplarNaCarga(cargaId, osId));
     }
 
-    // Correção de acoplamento: as peças daquela OS não estavam nesta carga.
-    // Só vale com o passo ABERTO — depois de fechado a composição é histórico,
-    // e o service devolve 409 (a mesma regra que a trigger garante no banco).
-    @DeleteMapping("/logs/{logId}/acopladas/{osId}")
-    public ResponseEntity<Void> desacoplar(@PathVariable UUID logId, @PathVariable Long osId) {
-        service.desacoplar(logId, osId);
+    // Correção: as peças daquela OS não estão nesta carga. Sai da carga e do
+    // passo em curso; os passos já fechados guardam a composição que tiveram,
+    // porque `logs` é o registro do que aconteceu.
+    @DeleteMapping("/cargas/{cargaId}/acopladas/{osId}")
+    public ResponseEntity<Void> desacoplar(@PathVariable Long cargaId, @PathVariable Long osId) {
+        service.desacoplarDaCarga(cargaId, osId);
         return ResponseEntity.noContent().build();
     }
 
@@ -238,6 +263,13 @@ public class OrdemServicoController {
             @PathVariable Long id, @Valid @RequestBody FinalizarOrdemDTO dto) {
         service.finalizar(id, dto.operadorId());
         return ResponseEntity.noContent().build();
+    }
+
+    // desfaz o passo 3: a OS expedida volta a produzir num lote NOVO, sem tocar
+    // nos anteriores. Retorna o lote recém-aberto, como finalizarLote.
+    @PostMapping("/{id}/reabrir")
+    public LoteDTO reabrir(@PathVariable Long id, @Valid @RequestBody ReabrirOrdemDTO dto) {
+        return LoteDTO.from(service.reabrir(id, dto.operadorId()));
     }
 
     @PostMapping("/{id}/cancelar")

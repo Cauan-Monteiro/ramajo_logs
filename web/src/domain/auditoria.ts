@@ -16,7 +16,7 @@ import { ETAPAS, osNum } from "./format";
 
 export type TipoEvento =
   | "OS_ABERTA"
-  | "OS_ENCERRADA"
+  | "OS_EXPEDIDA"
   | "OS_CANCELADA"
   | "LOTE_FECHADO"
   | "ETAPA_ABERTA"
@@ -30,7 +30,7 @@ export type TipoEvento =
 
 export const ROTULO_EVENTO: Record<TipoEvento, string> = {
   OS_ABERTA: "Abriu OS",
-  OS_ENCERRADA: "Expediu OS",
+  OS_EXPEDIDA: "Expediu OS",
   OS_CANCELADA: "Cancelou OS",
   LOTE_FECHADO: "Fechou lote",
   ETAPA_ABERTA: "Abriu etapa",
@@ -190,7 +190,7 @@ export function eventosDoDia(f: FonteDia): Evento[] {
       out.push({
         ...base,
         id: `OS_FIM:${o.id}`,
-        tipo: det?.cancelada ? "OS_CANCELADA" : "OS_ENCERRADA",
+        tipo: det?.cancelada ? "OS_CANCELADA" : "OS_EXPEDIDA",
         em: fechadaEm,
         autor: det?.finalizadaPorNome ?? null,
         duracaoMs: abertaEm === null ? null : fechadaEm - abertaEm,
@@ -422,7 +422,7 @@ export function porOperador(eventos: Evento[]): ResumoOperador[] {
     };
     if (e.tipo === "ETAPA_ABERTA") r.etapasAbertas++;
     else if (e.tipo === "OS_ABERTA") r.osAbertas++;
-    else if (e.tipo === "OS_ENCERRADA" || e.tipo === "OS_CANCELADA") r.osEncerradas++;
+    else if (e.tipo === "OS_EXPEDIDA" || e.tipo === "OS_CANCELADA") r.osEncerradas++;
     else if (e.tipo === "LOTE_FECHADO") r.lotes++;
     r.total++;
     mapa.set(e.autor, r);
@@ -523,7 +523,7 @@ export function porOrdem(
 
 /** Tipos de evento que representam um fecho — a pílula deles é a "encerrada". */
 export const FECHA: TipoEvento[] = [
-  "ETAPA_FECHADA", "LOTE_FECHADO", "OS_ENCERRADA", "OS_CANCELADA",
+  "ETAPA_FECHADA", "LOTE_FECHADO", "OS_EXPEDIDA", "OS_CANCELADA",
 ];
 
 /**

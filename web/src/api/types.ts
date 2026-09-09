@@ -111,6 +111,13 @@ export interface CargaDTO {
   emUso: boolean;
   ordemAtualId: number | null;
   tagId: string | null;
+  /**
+   * OS que pegaram carona NESTA carga: as peças delas estão no mesmo tanque
+   * que as da titular (`ordemAtualId`). Vale enquanto a carga estiver
+   * vinculada — não morre quando a etapa fecha, que é a diferença em relação
+   * ao `ordensAcopladas` de um passo.
+   */
+  ordensAcopladas: number[];
 }
 
 /** dtos/OrdemDtos.OrdemResumoDTO */
@@ -138,6 +145,7 @@ export interface LoteDTO {
 export interface LogDTO {
   id: string;
   ordemServicoId: number;
+  cargaId: number;
   cargaNome: string;
   processoDescricao: string;
   responsavelNome: string;
@@ -145,11 +153,14 @@ export interface LogDTO {
   finalizadoEm: string | null;
   cancelado: boolean;
   /**
-   * Outras OS cujas peças estavam na MESMA carga neste passo (V11 da API).
+   * Outras OS cujas peças estavam na MESMA carga neste passo.
    * `ordemServicoId` acima é sempre a OS TITULAR — a dona da carga. Logo, um
    * passo que aparece no histórico da OS X com `ordemServicoId !== X` é um
    * passo de carona: aconteceu de verdade com as peças dela, mas quem o
    * executou foi a carga de outra ordem.
+   *
+   * Só leitura: a composição é declarada na CARGA e copiada para cá quando o
+   * passo abre. Um passo fechado guarda a que teve — é o histórico.
    */
   ordensAcopladas: number[];
 }

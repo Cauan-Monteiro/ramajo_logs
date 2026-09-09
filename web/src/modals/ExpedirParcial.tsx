@@ -72,8 +72,7 @@ export function ExpedirParcialModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
           {/* Sem `disabled` por seleção vazia: vincular depois é um caminho
               legítimo, e é o que acontece quando nada é escolhido. */}
           <button
-            className="btn2 btn2-p"
-            style={{ marginLeft: "auto" }}
+            className="btn2 btn2-p btn2-end"
             disabled={ctx.ocupado}
             onClick={confirmar}
           >

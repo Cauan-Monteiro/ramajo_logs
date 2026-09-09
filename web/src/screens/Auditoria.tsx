@@ -26,7 +26,7 @@ import type { AppData } from "../state/useAppData";
 
 const TIPOS: TipoEvento[] = [
   "OS_ABERTA", "ETAPA_ABERTA", "ETAPA_FECHADA", "LOTE_FECHADO", "DESIDRO_APLICADA",
-  "OS_ENCERRADA", "OS_CANCELADA",
+  "OS_EXPEDIDA", "OS_CANCELADA",
 ];
 
 export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown) => void }) {
@@ -92,7 +92,7 @@ export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown
 
       <div className="aud-kpis">
         <Kpi n={conta("OS_ABERTA")} label="OS abertas" />
-        <Kpi n={conta("OS_ENCERRADA")} label="OS expedidas" />
+        <Kpi n={conta("OS_EXPEDIDA")} label="OS expedidas" />
         <Kpi n={conta("LOTE_FECHADO")} label="Lotes fechados" />
         <Kpi n={conta("ETAPA_ABERTA")} label="Etapas iniciadas" />
         <Kpi n={conta("ETAPA_FECHADA")} label="Etapas concluídas" />
@@ -132,7 +132,7 @@ export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown
 function OrdensDoDia({ eventos }: { eventos: Evento[] }) {
   const abertas = eventos.filter((e) => e.tipo === "OS_ABERTA");
   const fechadas = eventos.filter(
-    (e) => e.tipo === "OS_ENCERRADA" || e.tipo === "OS_CANCELADA" || e.tipo === "LOTE_FECHADO",
+    (e) => e.tipo === "OS_EXPEDIDA" || e.tipo === "OS_CANCELADA" || e.tipo === "LOTE_FECHADO",
   );
 
   return (
@@ -195,7 +195,7 @@ function QuemFez({ operadores }: { operadores: ReturnType<typeof porOperador> })
             <div style={{ font: "600 16px 'Barlow Condensed'" }}>{o.nome}</div>
             <div className="os-tv">
               {o.etapasAbertas} etapas · {o.osAbertas} OS abertas · {o.lotes} lotes ·{" "}
-              {o.osEncerradas} encerramentos
+              {o.osEncerradas} expedições
             </div>
             <div className="aud-op-bar">
               <i style={{ width: `${(o.total / topo) * 100}%` }} />

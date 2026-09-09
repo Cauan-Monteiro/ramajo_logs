@@ -94,7 +94,6 @@ fidelidade.
 | Precisa de | Vem de |
 |---|---|
 | `Etapa` de um passo (chip colorido) | `LogDTO.processoDescricao` cruzado com `GET /api/processos` — o LogDTO não traz etapa nem processoId. É por isso que a rota devolve também os processos arquivados (`ativo: false`): sem eles, todo passo de um processo arquivado perderia a cor da etapa. Quem *oferece* processo ao utilizador é que filtra por `ativo` |
-| id da carga de um passo | `LogDTO.cargaNome` cruzado com `GET /api/cargas` |
 | cliente de uma OS na listagem | `OrdemResumoDTO` só tem `clienteNome`, não `clienteId` |
 | `finalizadaEm` de uma OS | só no `OrdemDetalheDTO` — o relatório de tempo médio busca cada OS encerrada |
 | busca por `idExterno` | não existe rota; o filtro roda sobre a lista já carregada |
@@ -145,9 +144,10 @@ rotas separadas:
 
 | Rota | Efeito | Quem chama |
 |---|---|---|
-| `POST /api/ordens/{id}/cargas/liberar` | fecha o passo aberto de cada carga da lista e a devolve ao pool (`ordemAtual = null`). **Não toca no lote.** | hub **Encerrar etapas** da home (`modals/EncerrarLote.tsx`) |
+| `POST /api/ordens/{id}/cargas/liberar` | fecha o passo aberto de cada carga da lista e a devolve ao pool (`ordemAtual = null`). **Não toca no lote nem no acoplamento.** | hub **Encerrar etapas** da home (`modals/EncerrarLote.tsx`) |
 | `POST /api/ordens/{id}/lotes/finalizar` | fecha o lote corrente e abre o seguinte; a OS segue aberta. **Único caminho para o 2º lote.** | diálogo de confirmação `modals/ExpedirParcial.tsx`, aberto pelo botão **Expedir parcial** da Inspeção final |
 | `POST /api/ordens/{id}/finalizar` | expedição total: libera as cargas restantes, fecha o lote corrente e encerra a OS. | **Expedir** (Inspeção final) e **Expedição total** (modal Expedir) |
+| `POST /api/ordens/{id}/reabrir` | desfaz a expedição total: a OS volta a `emProcesso` e ganha um lote NOVO, vazio. 409 se a OS estiver em produção ou cancelada. | **Reabrir OS** no detalhe de uma OS expedida |
 
 A Inspeção final só lista OS que já não têm carga vinculada, por isso o
 "Expedir parcial" manda `cargaIds` vazio — não há carga a escolher. É por isso
@@ -164,6 +164,17 @@ ordem, senão as cargas novas cairiam no lote que está sendo expedido. Não
 escolher nenhuma é um caminho válido: o lote vira e as cargas entram depois,
 pelo detalhe da OS.
 
+A expedição total é a única coisa aqui que se desfaz, e só de um jeito: a
+reabertura **não** reabre lote nenhum — ela abre o número seguinte da sequência,
+vazio, e deixa os lotes históricos como estão. O que se perde é o registro da
+expedição desfeita: `finalizada_em`/`finalizada_por_id` são o que marca a OS
+como concluída, então limpá-los apaga o evento `OS_EXPEDIDA` da auditoria e dos
+relatórios; sobra o fecho daquele lote como vestígio. Foi uma escolha
+deliberada, para não pagar uma tabela de reaberturas por um caso raro. Daí os
+dois toques no botão, e daí o lote novo nascer sem cargas — `finalizar` já as
+liberou, e adivinhar quais voltam seria inventar história: confirmando, o
+detalhe emenda direto no `VincularModal`.
+
 `liberarCargas` e `finalizarLote` compartilham o mesmo laço no service
 (`OrdemServicoService.liberar`), então as validações não divergem: carga que
 não esteja vinculada àquela OS → 422 `CARGA_NAO_VINCULADA`, e tudo numa
@@ -172,78 +183,127 @@ transação só.
 Finalizar um passo isolado continua no detalhe da OS (Buscar OS ou Processos →
 abrir a OS → "Finalizar" em cada passo em andamento) — isso nunca mexeu no lote.
 
-## Etapas acopladas
+## Cargas acopladas
 
-Peças de 2-3 OS entram na **mesma carga física** e passam juntas por um
-processo. Três frases resumem o modelo, e toda a interface existe para
+Peças de 2-3 OS entram na **mesma carga física** e passam juntas pelos
+processos. Três frases resumem o modelo, e toda a interface existe para
 dizê-las no momento certo:
 
-- **Uma etapa, uma carga, várias OS.** O tanque é um só; as peças lá dentro
-  são de mais de uma ordem.
+- **Uma carga, várias OS.** O tanque é um só; as peças lá dentro são de mais
+  de uma ordem.
 - **A titular é a dona da carga** (`Carga.ordemAtual`); as demais pegaram
   carona. Não é hierarquia — é de onde o registro pendura.
-- **Enquanto a etapa está aberta, as peças da carona estão no tanque.**
+- **Enquanto a carga estiver vinculada, as peças da carona estão nela.** Não é
+  só durante uma etapa: fechada a etapa, as peças continuam no tanque, e a
+  seguinte é dos mesmos donos.
 
-No banco (migration `V11`) o passo continua sendo **uma linha em `logs`**, com
-a titular em `ordem_servico_id`; as caronas ficam em `log_ordens_acopladas`.
-É isso que faz um evento físico contar **uma vez**: todo agregado do sistema
-deriva de linhas de `logs`, e clonar o passo por OS inflaria a produção.
+No banco são duas tabelas com papéis diferentes, e confundi-las é o erro fácil:
+
+| Tabela | O que é | Vida |
+|---|---|---|
+| `carga_ordens_acopladas` (`V12`) | **estado**: quem está dentro da carga agora | dura o vínculo da carga com a OS |
+| `log_ordens_acopladas` (`V11`) | **histórico**: quem estava dentro quando aquele passo rodou | congela quando o passo fecha |
+
+Abrir um passo copia a primeira para a segunda. O passo continua sendo **uma
+linha em `logs`**, com a titular em `ordem_servico_id` — é isso que faz um
+evento físico contar **uma vez**: todo agregado do sistema deriva de linhas de
+`logs`, e clonar o passo por OS inflaria a produção.
 
 ### Onde se acopla
 
+No **vínculo da carga**, que é onde o operador tem o tanque na mão, e no
+**cabeçalho do detalhe da OS**, que é onde se corrige depois:
+
 | Caminho | Quando |
 |---|---|
-| Home → marcar **1 carga** → **Abrir etapa** | rotina do dia a dia. Com 2+ cargas a seção some: não haveria como dizer em qual tanque as peças das outras OS entraram |
-| Buscar OS → OS → **Abrir etapa** | quando se parte de uma OS específica |
-| Detalhe da OS → etapa em andamento → **+ acoplar** | **acoplamento tardio**: as peças entraram no tanque depois de o passo já ter começado |
+| Criar OS → passo 2, **+ Acoplar outra OS a uma carga** | a OS nova é a titular e leva peças de outras |
+| Criar OS → Nº já existente → mesmo bloco | cargas novas para uma OS já aberta |
+| Detalhe da OS → **Vincular cargas** → mesmo bloco | idem, a partir da OS |
+| Detalhe da OS → cabeçalho → **+ Acoplar OS** (por carga) | acoplamento tardio: a carga já está na OS e já pode ter etapa a correr |
+| Detalhe da OS → cabeçalho → **Acoplar a uma carga** | a OS **não tem carga própria** — nasceu sem nenhuma e vai inteira de carona |
 
-Os dois primeiros usam o mesmo `modals/AcoplarOs.tsx` — recolhido por omissão,
-porque a esmagadora maioria dos passos não acopla.
+Os dois últimos existem por causa da OS sem carga: `cargaIds` é opcional na
+criação, então uma OS pode nascer só com o lote 1 e nenhum tanque. Enquanto
+estiver assim ela não aparece na tabela do painel (que lista cargas) nem na
+inspeção final (não há o que expedir) — aparece no aviso **"N OS sem carga"**
+acima da tabela, que é por onde se chega ao detalhe dela. O predicado é
+`emEspera` (`domain/derive.ts`): aberta, sem carga, não carona e **sem passo
+nenhum**.
 
-### Acoplar depois de a etapa começar
+O componente é `modals/AcoplarCargas.tsx`, recolhido por omissão porque a
+esmagadora maioria das cargas não acopla. Ele pede as duas coisas na ordem em
+que existem: primeiro a **carga** (uma linha por carga já selecionada), depois
+as **OS** que vão dentro dela.
 
-`POST /api/ordens/logs/{logId}/acopladas/{osId}`, pelo `AcoplarAgora` do mesmo
-arquivo. **Só a carona se move**: o passo da titular não é reaberto nem
-substituído — abrir uma etapa nova só para reescrever a composição cortaria a
-duração real em duas e inventaria na linha do tempo um passo que ninguém
-executou.
+Abrir etapa **não** pergunta nada: `POST /api/ordens/{id}/logs` já não aceita
+lista de acopladas, e o service lê a composição da carga. É o ponto da mudança
+— antes a lista morria com o passo e alguém tinha de a remarcar a cada tanque.
 
-No mesmo instante, os passos abertos da **própria carona** são encerrados: as
-peças saíram da carga dela. A carga continua vinculada à OS, vazia e aguardando
-etapa — devolvê-la ao pool é decisão do operador, em "Encerrar etapas".
+### O que acontece ao acoplar
 
-Isso **não tem volta simétrica**: `logs` é append-only, então desacoplar depois
-não reabre o passo fechado aqui. Daí o segundo toque para confirmar, como no
-encerramento de passo acoplado. Repetir a chamada é inócuo (idempotente): a
+`POST /api/ordens/cargas/{cargaId}/acopladas/{osId}`. Além de gravar o vínculo:
+
+- **encerra os passos abertos da própria carona** — as peças saíram da carga
+  dela. A carga dela continua vinculada à sua OS, vazia e aguardando etapa;
+  devolvê-la ao pool é decisão do operador, em "Encerrar etapas";
+- **injeta a carona no passo em curso** da carga de destino, se houver. Só a
+  carona se move: o passo da titular não é reaberto nem substituído — abrir uma
+  etapa nova só para reescrever a composição cortaria a duração real em duas e
+  inventaria na linha do tempo um passo que ninguém executou.
+
+O encerramento dos passos da carona **não tem volta simétrica**: `logs` é
+append-only, então desacoplar depois não os reabre. Daí o segundo toque para
+confirmar cada OS no seletor. Repetir a chamada é inócuo (idempotente): a
 segunda só afirma o que já é verdade, sem fechar passo nenhum.
 
 ### O que muda depois de acoplar
 
 | Onde | Efeito |
 |---|---|
-| **Inspeção final** | a OS carona **não aparece** enquanto o passo estiver aberto (`temAcoplamentoAberto`). A tela lista OS sem carga vinculada, e carga emprestada conta como carga |
+| **Inspeção final** | a OS carona **não aparece** enquanto estiver acoplada (`cargaCarona`). A tela lista OS sem carga vinculada, e carga emprestada conta como carga — mesmo depois de a carga voltar ao pool. Também não aparece a OS `emEspera`, que nunca produziu |
 | **Detalhe da OS** | o passo aparece nas duas, marcado com `⇋` na carona. Finalizar encerra para todas, por isso pede **dois toques** |
 | **Linha do tempo** | a barra é desenhada no grupo de cada OS, com `⇋`. Já os KPIs "Etapas iniciadas/concluídas" deduplicam por `log.id` — senão contariam o mesmo evento 2-3 vezes |
 | **Dashboard** | selo `+N` na coluna Vínculo da carga compartilhada |
+| **Abrir etapa** (detalhe e lote) | o modal nomeia quem mais vai no tanque antes de abrir — finalizar vai encerrar para todos |
+| **Encerrar etapas** | cada linha diz quais OS caronas saem junto. São OS que o operador não selecionou; encerrá-las em silêncio seria o pior caso desta tela |
 | **Planilha da OS** | bloco `ETAPA ACOPLADA — OS #x`, com subtotal próprio marcado como fora do total, e a coluna `Acoplada à OS` na aba Dados. Os indicadores (ETAPAS, CARGAS) seguem medindo só o que a OS executou |
 | **Relatório por período** | coluna `Etapas acopladas` (contagem, sem tempo) e as linhas de carona na aba Etapas. Nelas a **duração fica vazia** de propósito: o tempo já está na linha da titular, e somar a coluna tem de continuar dando o tempo real |
 
-### Corrigir
+### Como termina
 
-`DELETE /api/ordens/logs/{logId}/acopladas/{osId}` desfaz um acoplamento —
-o `×` no chip (lado da titular) ou o botão **Desacoplar** (lado da carona).
-Só com o passo **aberto**: fechado, a composição é histórico e a API devolve
-409 `PASSO_JA_FINALIZADO`, a mesma regra que a trigger `trg_loa_protege`
-garante no banco.
+Um caminho manual, e mais nada que o operador não tenha pedido — nem "a etapa
+fechou", nem "a carga foi liberada":
+
+| Caminho | O que faz |
+|---|---|
+| `DELETE /api/ordens/cargas/{cargaId}/acopladas/{osId}` | o `×` no chip (lado da titular) ou **Desacoplar** (lado da carona), ambos no **cabeçalho** do detalhe da OS. É a saída normal |
+| carona expedida ou cancelada | sai da carga na hora, em `finalizar`/`cancelar`; e `acopladasVigentes` ainda varre as caducas na abertura da etapa seguinte |
+
+**Encerrar etapas não desacopla.** Fechar a etapa não tira as peças da carona de
+dentro do tanque: a carga volta ao pool **ainda a levá-las**, e quem a vincular
+a seguir herda a composição (`vincularCarga` + `acopladasVigentes`) — que é o
+que a física do tanque diz. Se a OS que vincula era ela própria uma das caronas,
+o vínculo **promove-a a titular**: as peças são as mesmas, muda quem responde
+pela carga.
+
+Enquanto a carga está livre com caronas, `trg_coa_protege` não se opõe: ela é
+`BEFORE INSERT OR UPDATE`, e a liberação não escreve nada. A recusa de "carga
+sem titular" continua a valer onde importa — em `acoplarNaCarga`, que é um
+INSERT e exige alguém a dar boleia.
+
+O desacoplamento manual vive no cabeçalho, e não junto das etapas, justamente
+porque o vínculo existe **entre** uma etapa e a seguinte — pendurá-lo no passo
+aberto o faria desaparecer da tela metade do tempo. Ele sai da carga e do passo
+em curso; os passos já fechados guardam a composição que tiveram, que é o que a
+trigger `trg_loa_protege` garante no banco.
 
 As recusas ao acoplar são todas de coerência física: OS de outra posição
 (`ACOPLAMENTO_POSICAO_INCOMPATIVEL`), OS já expedida (409
-`ORDEM_FORA_DE_CIRCULACAO`), a própria OS (`ACOPLAMENTO_A_SI_MESMA`) e o teto
-de 5 por passo (`ACOPLAMENTO_EXCEDE_LIMITE`). O acoplamento tardio acrescenta
-duas: OS que já pega carona noutro passo aberto (`ACOPLAMENTO_EM_OUTRO_PASSO`
-— peças estão num tanque só) e passo cancelado (`ACOPLAMENTO_PASSO_CANCELADO`,
-que afirma que o processo não aconteceu). Todas são verificadas **antes** de
-qualquer passo ser fechado.
+`ORDEM_FORA_DE_CIRCULACAO`), a própria titular (`ACOPLAMENTO_A_SI_MESMA`), OS
+que já pega carona noutra carga (`ACOPLAMENTO_EM_OUTRA_CARGA` — peças estão num
+tanque só), carga sem OS (`CARGA_NAO_VINCULADA`) e o teto de 5 por carga
+(`ACOPLAMENTO_EXCEDE_LIMITE`). Todas são verificadas **antes** de qualquer passo
+ser fechado.
 
 ## Leitores RFID
 

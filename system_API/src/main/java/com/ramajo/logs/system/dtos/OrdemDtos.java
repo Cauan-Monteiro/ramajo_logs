@@ -6,6 +6,7 @@ import com.ramajo.logs.system.entities.Log;
 import com.ramajo.logs.system.entities.Lote;
 import com.ramajo.logs.system.entities.OrdemServico;
 import com.ramajo.logs.system.enums.Posicao;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -29,44 +30,65 @@ public final class OrdemDtos {
 
     // ---------------------------------------------------------------- entrada
     /**
+     * Uma OS que pega carona numa carga desta ordem: as peças dela entram no
+     * mesmo tanque. Par, e não lista solta de OS, porque a pergunta é sempre
+     * "em QUAL carga" — a OS pode estar a levar várias.
+     */
+    public record AcoplamentoDTO(
+            @NotNull Long cargaId,
+            @NotNull Long ordemServicoId) {
+    }
+
+    /**
      * `cargaIds` é opcional. Quando vem preenchido, a OS já nasce com essas
      * cargas vinculadas e com um passo aberto no processo inicial para cada
      * uma — tudo na mesma transação. Omitido (ou vazio), o comportamento é o
      * de sempre: só a OS e o lote 1.
+     *
+     * `acoplamentos` declara as OS que pegam carona nessas cargas. Vale
+     * enquanto a carga estiver vinculada, não só para o passo inicial: cada
+     * etapa que a carga abrir nasce com esta composição.
      */
     public record CriarOrdemDTO(
             @NotNull Long clienteId,
             @NotNull Long operadorId,
             Long idExterno,                 // opcional: conciliação com o ERP
             @NotNull Posicao posicao,
-            List<@NotNull Long> cargaIds) {
+            List<@NotNull Long> cargaIds,
+            List<@Valid AcoplamentoDTO> acoplamentos) {
+
+        public List<AcoplamentoDTO> acoplamentos() {
+            return acoplamentos == null ? List.of() : acoplamentos;
+        }
     }
 
     /**
      * O vínculo já abre o passo inicial da carga, e todo passo tem um
      * responsável. `operadorId` é opcional: informe quem está de fato
      * executando; omitido, o passo fica no nome de quem abriu a OS.
+     *
+     * `ordensAcopladasIds` são as OS que pegam carona NESTA carga. Como não há
+     * dúvida sobre qual carga é, aqui basta a lista — o par de AcoplamentoDTO
+     * só faz falta na criação, onde há várias.
      */
     public record VincularCargaDTO(
             @NotNull Long cargaId,
-            Long operadorId) {
-    }
-
-    /**
-     * `ordensAcopladasIds` são outras OS cujas peças estavam na MESMA carga
-     * quando o processo rodou. Opcional: nulo e vazio querem dizer a mesma
-     * coisa — passo de uma OS só, o caso comum — e o campo ser aditivo mantém
-     * os clientes antigos funcionando.
-     */
-    public record IniciarLogDTO(
-            @NotNull Long cargaId,
-            @NotNull Long processoId,
-            @NotNull Long responsavelId,
-            List<Long> ordensAcopladasIds) {
+            Long operadorId,
+            List<@NotNull Long> ordensAcopladasIds) {
 
         public List<Long> ordensAcopladasIds() {
             return ordensAcopladasIds == null ? List.of() : ordensAcopladasIds;
         }
+    }
+
+    /**
+     * Sem lista de acopladas: a composição do passo vem da CARGA, declarada
+     * quando ela foi vinculada à OS. Quem abre a etapa não a redigita.
+     */
+    public record IniciarLogDTO(
+            @NotNull Long cargaId,
+            @NotNull Long processoId,
+            @NotNull Long responsavelId) {
     }
 
     /**
@@ -85,6 +107,14 @@ public final class OrdemDtos {
     }
 
     public record CancelarOrdemDTO(@NotNull Long operadorId) {
+    }
+
+    /**
+     * Reabertura da OS expedida. Mesmo corpo do FinalizarOrdemDTO — a operação
+     * é o inverso dele — e sem `cargaIds`: o lote novo nasce vazio e as cargas
+     * entram pela rota de vínculo.
+     */
+    public record ReabrirOrdemDTO(@NotNull Long operadorId) {
     }
 
     /**
@@ -174,14 +204,20 @@ public final class OrdemDtos {
      * outras OS, e lá `ordemServicoId` aponta para outra ordem: é assim que o
      * front sabe que aquela etapa foi de carona, não própria.
      */
+    /**
+     * `cargaId` além do nome: o acoplamento é da carga, então a tela que mostra
+     * um passo precisa de saber em qual tanque ele corre para poder desacoplar.
+     * O nome sozinho obrigava o cliente a cruzar com GET /api/cargas.
+     */
     public record LogDTO(
-            UUID id, Long ordemServicoId, String cargaNome, String processoDescricao,
-            String responsavelNome, Instant iniciadoEm,
+            UUID id, Long ordemServicoId, Long cargaId, String cargaNome,
+            String processoDescricao, String responsavelNome, Instant iniciadoEm,
             Instant finalizadoEm, boolean cancelado, List<Long> ordensAcopladas) {
 
         public static LogDTO from(Log log) {
             return new LogDTO(
-                    log.getId(), log.getOrdemServico().getId(), log.getCarga().getNome(),
+                    log.getId(), log.getOrdemServico().getId(),
+                    log.getCarga().getId(), log.getCarga().getNome(),
                     log.getProcesso().getDescricao(), log.getResponsavel().getNome(),
                     log.getIniciadoEm(), log.getFinalizadoEm(), log.isCancelado(),
                     List.copyOf(log.getOrdensAcopladas()));

@@ -68,7 +68,7 @@ export function logAbertoDaCarga(nome: string, logs: LogDTO[]): LogDTO | undefin
   return logs.find((l) => l.cargaNome === nome && isAberto(l));
 }
 
-/* ── acoplamento de OS num passo ────────────────────────────────────────── */
+/* ── acoplamento de OS numa carga ───────────────────────────────────────── */
 
 /**
  * Este passo é de carona para a OS pedida? Peças dela estavam na carga, mas
@@ -80,12 +80,38 @@ export function logAbertoDaCarga(nome: string, logs: LogDTO[]): LogDTO | undefin
 export const ehAcoplada = (l: LogDTO, osId: number) => l.ordemServicoId !== osId;
 
 /**
- * A OS tem peças numa carga alheia AGORA. Vale como "tem carga vinculada":
- * enquanto o passo estiver aberto, as peças estão dentro de um tanque e a OS
- * não pode ser tratada como pronta para inspeção.
+ * A carga em que esta OS pega carona, se houver. Vale como "tem carga
+ * vinculada": as peças dela estão dentro de um tanque alheio, e a OS não pode
+ * ser tratada como pronta para inspeção.
+ *
+ * Deriva da CARGA e não dos passos de propósito — o vínculo sobrevive ao
+ * fecho de uma etapa, e entre uma etapa e a seguinte a OS continua a ter peças
+ * lá dentro.
  */
-export const temAcoplamentoAberto = (logs: LogDTO[], osId: number) =>
-  logs.some((l) => isAberto(l) && ehAcoplada(l, osId));
+export const cargaCarona = (cargas: CargaDTO[], osId: number) =>
+  cargas.find((c) => c.ordensAcopladas.includes(osId));
+
+/** As OS que pegam carona nesta carga, resolvidas para os resumos. */
+export const caronasDa = (carga: CargaDTO, ordens: OrdemResumoDTO[]) =>
+  carga.ordensAcopladas
+    .map((id) => ordens.find((o) => o.id === id))
+    .filter((o): o is OrdemResumoDTO => !!o);
+
+/**
+ * OS aberta que ainda não tem tanque nenhum e nunca produziu: nasceu sem carga
+ * própria e aguarda vínculo ou acoplamento.
+ *
+ * Não é caso de inspeção final — sem passo algum não há o que expedir, e
+ * oferecer "expedir parcial" aqui seria oferecer o encerramento de uma produção
+ * que não começou. O teste é o histórico e não o lote: `lotes` nasce sempre com
+ * o nº 1, então só os passos distinguem "nunca produziu" de "já rodou e voltou
+ * a ficar sem carga".
+ */
+export const emEspera = (o: OrdemResumoDTO, cargas: CargaDTO[], logs: LogDTO[]) =>
+  o.emProcesso &&
+  !cargas.some((c) => c.ordemAtualId === o.id) &&
+  !cargaCarona(cargas, o.id) &&
+  logs.length === 0;
 
 /* ── agregados de OS ────────────────────────────────────────────────────── */
 
@@ -93,7 +119,7 @@ export const temAcoplamentoAberto = (logs: LogDTO[], osId: number) =>
 export const emSegundoLote = (o: OrdemResumoDTO) => o.lotesFinalizados > 0;
 
 export function situacaoOrdem(o: OrdemResumoDTO): string {
-  if (!o.emProcesso) return "Concluída";
+  if (!o.emProcesso) return "Expedida";
   return emSegundoLote(o) ? "2º lote" : "Em produção";
 }
 

@@ -175,7 +175,7 @@ function HistoricoOS({ data, onErro }: { data: AppData; onErro: (e: unknown) => 
           </div>
           <div className="os-tv" style={{ marginBottom: 16 }}>
             Aberta {diaHora(ordem.iniciadaEm)} · {posLabel(ordem.posicao)} ·{" "}
-            {ordem.emProcesso ? "em aberto" : "encerrada"}
+            {ordem.emProcesso ? "em aberto" : "expedida"}
           </div>
           {passos.map((p) =>
             p.tipo === "log" ? (
@@ -351,7 +351,7 @@ function TempoMedio({ data, onErro }: { data: AppData; onErro: (e: unknown) => v
         Tempo médio de conclusão
       </div>
       {carregando ? (
-        <div className="os-tv">Carregando ordens encerradas...</div>
+        <div className="os-tv">Carregando ordens expedidas...</div>
       ) : (
         <>
           <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
@@ -512,7 +512,7 @@ function PlanilhaPeriodo({ onErro }: { onErro: (e: unknown) => void }) {
  */
 
 const TIPOS_OP: TipoEvento[] = [
-  "OS_ABERTA", "ETAPA_ABERTA", "LOTE_FECHADO", "DESIDRO_APLICADA", "OS_ENCERRADA",
+  "OS_ABERTA", "ETAPA_ABERTA", "LOTE_FECHADO", "DESIDRO_APLICADA", "OS_EXPEDIDA",
   "OS_CANCELADA",
 ];
 
@@ -678,7 +678,7 @@ function PainelOperador({
         <Kpi n={etapasConcluidas} label="Etapas concluídas" />
         <Kpi n={conta("LOTE_FECHADO")} label="Lotes fechados" />
         <Kpi n={conta("DESIDRO_APLICADA")} label="Desidrogenizações" />
-        <Kpi n={conta("OS_ENCERRADA")} label="OS expedidas" />
+        <Kpi n={conta("OS_EXPEDIDA")} label="OS expedidas" />
         <Kpi n={emCurso} label={ehHoje ? "Em curso agora" : "Ficaram em curso"} />
       </div>
 

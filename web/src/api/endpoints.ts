@@ -159,51 +159,59 @@ export const planilhaOrdem = (id: number) =>
 
 export const lotesOrdem = (id: number) => http.get<LoteDTO[]>(`/api/ordens/${id}/lotes`);
 
+/**
+ * `acoplamentos` são pares (carga, OS carona): as peças daquela OS entram
+ * nesta carga. Declarado uma vez, vale para toda etapa que a carga abrir
+ * enquanto estiver vinculada.
+ */
 export const criarOrdem = (dto: {
   clienteId: number; operadorId: number; idExterno: number | null;
   posicao: Posicao; cargaIds: number[];
+  acoplamentos?: { cargaId: number; ordemServicoId: number }[];
 }) => http.post<OrdemDetalheDTO>("/api/ordens", dto);
 
 /** O vínculo já abre o passo inicial da carga — por isso devolve um LogDTO. */
-export const vincularCarga = (osId: number, cargaId: number, operadorId: number) =>
-  http.post<LogDTO>(`/api/ordens/${osId}/cargas`, { cargaId, operadorId });
+export const vincularCarga = (
+  osId: number, cargaId: number, operadorId: number,
+  ordensAcopladasIds: number[] = [],
+) => http.post<LogDTO>(`/api/ordens/${osId}/cargas`,
+  { cargaId, operadorId, ordensAcopladasIds });
 
 /**
  * Abre o passo; o service fecha sozinho o passo anterior da mesma carga.
  *
- * `ordensAcopladasIds` são outras OS cujas peças foram na MESMA carga. O passo
- * continua sendo UM registro (osId é a titular) e aparece no histórico de
- * todas — é o que impede um evento físico de contar 2-3 vezes na produção.
+ * Sem lista de acopladas: a composição vem da CARGA, declarada quando ela foi
+ * vinculada à OS. O passo continua sendo UM registro (osId é a titular) e
+ * aparece no histórico de todas — é o que impede um evento físico de contar
+ * 2-3 vezes na produção.
  */
 export const iniciarLog = (
   osId: number, cargaId: number, processoId: number, responsavelId: number,
-  ordensAcopladasIds: number[] = [],
 ) => http.post<LogDTO>(`/api/ordens/${osId}/logs`,
-  { cargaId, processoId, responsavelId, ordensAcopladasIds });
+  { cargaId, processoId, responsavelId });
 
 export const finalizarLog = (logId: string) =>
   http.patch<LogDTO>(`/api/ordens/logs/${logId}/finalizar`);
 
 /**
- * Acopla uma OS a um passo JÁ ABERTO: as peças dela acabaram de entrar no
- * tanque onde a titular já estava. Só a carona se move — o passo da titular
- * não é reaberto nem substituído, e por isso a duração real não é cortada em
- * duas.
+ * Acopla uma OS à CARGA: as peças dela entram no tanque onde as da titular já
+ * estão. O vínculo é da carga, então vale para a etapa em curso e para todas
+ * as seguintes, até a carga ser liberada.
  *
  * Fecha, no mesmo instante, os passos abertos da própria carona: as peças
  * saíram da carga dela. Isso NÃO se desfaz — `logs` é append-only, então
  * desacoplar depois não reabre o passo fechado aqui.
  */
-export const acoplar = (logId: string, osId: number) =>
-  http.post<LogDTO>(`/api/ordens/logs/${logId}/acopladas/${osId}`);
+export const acoplarNaCarga = (cargaId: number, osId: number) =>
+  http.post<CargaDTO>(`/api/ordens/cargas/${cargaId}/acopladas/${osId}`);
 
 /**
- * Desfaz um acoplamento: as peças daquela OS não estavam nesta carga.
- * Só vale com o passo ABERTO — depois de fechado a composição é histórico e a
- * API devolve 409 PASSO_JA_FINALIZADO.
+ * Desfaz um acoplamento: as peças daquela OS não estão nesta carga. Sai da
+ * carga e do passo em curso; os passos já fechados guardam a composição que
+ * tiveram, porque `logs` é o registro do que aconteceu.
  */
-export const desacoplar = (logId: string, osId: number) =>
-  http.del(`/api/ordens/logs/${logId}/acopladas/${osId}`);
+export const desacoplarDaCarga = (cargaId: number, osId: number) =>
+  http.del(`/api/ordens/cargas/${cargaId}/acopladas/${osId}`);
 
 /**
  * Fecha o passo aberto de cada carga indicada e a devolve ao pool de livres.
@@ -239,6 +247,16 @@ export const desidrogenizacoesDaOrdem = (osId: number) =>
 /** Expedição total: libera as cargas restantes e encerra a OS. */
 export const finalizarOrdem = (osId: number, operadorId: number) =>
   http.post<void>(`/api/ordens/${osId}/finalizar`, { operadorId });
+
+/**
+ * Desfaz a expedição total: a OS volta a produzir num LOTE NOVO, vazio — os
+ * lotes anteriores ficam intactos e as cargas entram depois por vincularCarga.
+ * Devolve o lote recém-aberto. Recusa com 409 uma OS em produção ou cancelada.
+ *
+ * Não devolve a data da expedição desfeita a lugar nenhum: ela é apagada da OS.
+ */
+export const reabrirOrdem = (osId: number, operadorId: number) =>
+  http.post<LoteDTO>(`/api/ordens/${osId}/reabrir`, { operadorId });
 
 export const cancelarOrdem = (osId: number, operadorId: number) =>
   http.post<void>(`/api/ordens/${osId}/cancelar`, { operadorId });

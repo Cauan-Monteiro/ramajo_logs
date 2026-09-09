@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import * as api from "../api/endpoints";
 import type { CargaDTO, Posicao } from "../api/types";
 import { Corners } from "../components/Blueprint";
+import type { Acoplamentos } from "./AcoplarCargas";
+import { AcoplarCargas, paresDe } from "./AcoplarCargas";
 import { Modal } from "../components/Modal";
 import { ScanField } from "../components/ScanField";
 import { SEL_CHIP, SEL_PICK, SEL_SEG } from "../domain/derive";
@@ -24,6 +26,7 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
   const [clienteId, setClienteId] = useState<number | null>(null);
   const [buscaCliente, setBuscaCliente] = useState("");
   const [sel, setSel] = useState<string[]>([]);
+  const [acopladas, setAcopladas] = useState<Acoplamentos>({});
 
   // Debounce da verificação do Nº — o design mostrava um spinner de 4 s.
   useEffect(() => {
@@ -54,13 +57,24 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
   const posAlvo: Posicao = existente ? existente.posicao : posicao;
   const livres = cargasLivres(ctx.data, posAlvo);
 
-  // Trocar de posição invalida as cargas escolhidas (são da posição anterior).
+  // Trocar de posição invalida as cargas escolhidas (são da posição anterior)
+  // e, com elas, os acoplamentos que penduravam nessas cargas.
   useEffect(() => {
     setSel([]);
+    setAcopladas({});
   }, [posAlvo]);
 
-  const alternar = (nome: string) =>
-    setSel((s) => (s.includes(nome) ? s.filter((n) => n !== nome) : [...s, nome]));
+  /** As cargas marcadas, resolvidas — é sobre elas que o acoplamento se declara. */
+  const cargasSel = livres.filter((c) => sel.includes(c.nome));
+
+  /** Desmarcar uma carga leva junto quem ia dentro dela: o tanque saiu da OS. */
+  function alternar(carga: CargaDTO) {
+    const sai = sel.includes(carga.nome);
+    setSel((s) => (sai ? s.filter((n) => n !== carga.nome) : [...s, carga.nome]));
+    if (sai) {
+      setAcopladas(({ [carga.id]: _, ...resto }) => resto);
+    }
+  }
 
   function lerCarga(tag: string) {
     ctx.agir({
@@ -87,9 +101,11 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
     const ids = idsSelecionados(livres);
     ctx.agir({
       // Uma chamada por carga: a API vincula uma de cada vez, e cada vínculo
-      // já abre o passo inicial daquela carga.
+      // já abre o passo inicial daquela carga — com as caronas dela, que
+      // valem para todas as etapas seguintes e não só para essa.
       fazer: () =>
-        Promise.all(ids.map((id) => api.vincularCarga(existente.id, id, ctx.operador.id))),
+        Promise.all(ids.map((id) =>
+          api.vincularCarga(existente.id, id, ctx.operador.id, acopladas[id] ?? []))),
       ok: `${ids.length} carga(s) vinculada(s) à OS #${existente.idExterno ?? existente.id}.`,
       depois: ctx.fechar,
     });
@@ -106,8 +122,11 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
           idExterno: verificado ? Number(verificado) : null,
           posicao,
           cargaIds: ids,
+          acoplamentos: paresDe(acopladas),
         }),
-      ok: `OS criada com ${ids.length} carga(s).`,
+      ok: ids.length === 0
+        ? "OS criada sem cargas · acople-a a uma carga no detalhe da OS."
+        : `OS criada com ${ids.length} carga(s).`,
       depois: ctx.fechar,
     });
   }
@@ -138,7 +157,7 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
           key={c.id}
           className="cgtog"
           style={sel.includes(c.nome) ? SEL_CHIP : undefined}
-          onClick={() => alternar(c.nome)}
+          onClick={() => alternar(c)}
         >
           {c.nome}
           <span className="tp">{c.tipo}</span>
@@ -146,7 +165,8 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
       ))}
       {livres.length === 0 && (
         <span className="os-tv">
-          Sem cargas livres em {posLabel(posAlvo)}. Cadastre em “Ajustes › Registrar cargas”.
+          Sem cargas livres em {posLabel(posAlvo)}. Pode abrir a OS assim mesmo e acoplá-la
+          depois, ou cadastrar cargas em “Ajustes › Registrar cargas”.
         </span>
       )}
     </div>
@@ -165,9 +185,8 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
               ← Voltar
             </button>
             <button
-              className="btn2 btn2-p"
-              style={{ marginLeft: "auto" }}
-              disabled={sel.length === 0 || ctx.ocupado}
+              className="btn2 btn2-p btn2-end"
+              disabled={ctx.ocupado}
               onClick={criar}
             >
               Abrir OS
@@ -177,7 +196,10 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
       >
         <div
           className="bp"
-          style={{ padding: "14px 16px", marginBottom: 18, display: "flex", gap: 22 }}
+          style={{
+            padding: "14px 16px", marginBottom: 18,
+            display: "flex", gap: 22, flexWrap: "wrap",
+          }}
         >
           <Corners />
           <div>
@@ -204,8 +226,17 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
         </div>
         {chips}
         <div className="os-tv" style={{ marginTop: 14 }}>
-          {sel.length} carga(s) selecionada(s) · é obrigatório vincular ao menos uma
+          {sel.length} carga(s) selecionada(s) · opcional: a OS pode nascer sem carga
+          própria e ir de carona numa carga de outra OS
         </div>
+        <AcoplarCargas
+          ctx={ctx}
+          posicao={posAlvo}
+          cargas={cargasSel}
+          osIdTitular={undefined}
+          valor={acopladas}
+          onChange={setAcopladas}
+        />
       </Modal>
     );
   }
@@ -223,8 +254,7 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
           </button>
           {existente ? (
             <button
-              className="btn2 btn2-p"
-              style={{ marginLeft: "auto" }}
+              className="btn2 btn2-p btn2-end"
               disabled={sel.length === 0 || ctx.ocupado}
               onClick={vincularAExistente}
             >
@@ -232,8 +262,7 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
             </button>
           ) : (
             <button
-              className="btn2 btn2-p"
-              style={{ marginLeft: "auto" }}
+              className="btn2 btn2-p btn2-end"
               disabled={!(nova && clienteId !== null)}
               onClick={() => setPasso(2)}
             >
@@ -324,6 +353,14 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
             {sel.length} carga(s) selecionada(s) · serão vinculadas à #
             {existente.idExterno ?? existente.id}
           </div>
+          <AcoplarCargas
+            ctx={ctx}
+            posicao={posAlvo}
+            cargas={cargasSel}
+            osIdTitular={existente.id}
+            valor={acopladas}
+            onChange={setAcopladas}
+          />
         </>
       )}
 
@@ -347,7 +384,7 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
           </div>
 
           <span className="lbl">2 · Posição / setor da OS</span>
-          <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
             {POSICOES.map((p) => (
               <button
                 key={p.key}

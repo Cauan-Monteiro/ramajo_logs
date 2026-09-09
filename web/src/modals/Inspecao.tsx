@@ -4,7 +4,7 @@ import type { OrdemResumoDTO } from "../api/types";
 import { Corners } from "../components/Blueprint";
 import { Modal, Vazio } from "../components/Modal";
 import { OrdenarMenu, useOrdenacao, type ColunaOrd } from "../components/Ordenar";
-import { temAcoplamentoAberto } from "../domain/derive";
+import { cargaCarona, emEspera } from "../domain/derive";
 import { diaHora, osNum, posLabel } from "../domain/format";
 import { logsDe } from "../state/useAppData";
 import type { Ctx } from "./tipos";
@@ -48,10 +48,14 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
             o.posicao === ctx.posicao &&
             !ctx.data.cargas.some((c) => c.ordemAtualId === o.id) &&
             // Carga emprestada conta como carga: se as peças desta OS estão
-            // agora dentro do tanque junto com as de outra ordem, ela não
-            // está pronta para expedir — voltará à lista quando o passo
-            // acoplado fechar.
-            !temAcoplamentoAberto(logsDe(ctx.data, o.id), o.id),
+            // dentro do tanque junto com as de outra ordem, ela não está
+            // pronta para expedir — voltará à lista quando for desacoplada,
+            // ou quando a carga que a leva for liberada.
+            !cargaCarona(ctx.data.cargas, o.id) &&
+            // A OS que nasceu sem carga e ainda não produziu nada não está
+            // pronta para expedir — está à espera de tanque. Ela aparece no
+            // painel, no aviso "sem carga", e é de lá que se acopla.
+            !emEspera(o, ctx.data.cargas, logsDe(ctx.data, o.id)),
         ),
         porNumero,
       ),
@@ -71,7 +75,7 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
     >
       {/* Cartões, não tabela: não há cabeçalho onde clicar, por isso a
           ordenação vive no menu — em qualquer largura de ecrã. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         {/* O `.lbl` traz margem inferior própria — aqui quem espaça é o wrapper,
             senão o rótulo fica desalinhado do botão. */}
         <span className="lbl" style={{ margin: 0 }}>

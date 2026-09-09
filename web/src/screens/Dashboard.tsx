@@ -9,7 +9,8 @@ import {
   IconPasso, IconPlus, IconProcessos,
 } from "../components/Icons";
 import {
-  emSegundoLote, etapaDoLog, etapaStyle, labelEtapaDoLog, logAbertoDaCarga,
+  cargaCarona, emEspera, emSegundoLote, etapaDoLog, etapaStyle, labelEtapaDoLog,
+  logAbertoDaCarga,
 } from "../domain/derive";
 import {
   COR_INATIVO, COR_NIVEL, ROTULO_NIVEL, detalhe as detalheDesidro, emCurso, piorNivel,
@@ -178,9 +179,23 @@ export function Dashboard({
   const todasSelecionadas =
     linhasNaPos.length > 0 && linhasNaPos.every((l) => selSet.has(l.carga.nome));
 
+  /**
+   * OS desta posição que nasceram sem carga e ainda não produziram: não estão
+   * na tabela (que lista cargas, e elas não têm nenhuma) nem na inspeção final
+   * (não há o que expedir). Sem este aviso ficariam invisíveis no painel — foi
+   * criada uma OS e o operador não a vê em lado nenhum.
+   */
+  const emEsperaNaPos = useMemo(
+    () => naPos.filter((o) => emEspera(o, data.cargas, logsDe(data, o.id))),
+    [naPos, data],
+  );
+
   /** Mesma conta do modal de inspeção final — e, como lá, só desta posição. */
   const semCargasCount = naPos.filter(
-    (o) => !data.cargas.some((c) => c.ordemAtualId === o.id),
+    (o) =>
+      !data.cargas.some((c) => c.ordemAtualId === o.id) &&
+      !cargaCarona(data.cargas, o.id) &&
+      !emEspera(o, data.cargas, logsDe(data, o.id)),
   ).length;
 
   const ctx: Ctx = {
@@ -332,6 +347,28 @@ export function Dashboard({
             </button>
           </div>
 
+          {emEsperaNaPos.length > 0 && (
+            <div className="bp os-espera">
+              <Corners />
+              <span className="os-tv">
+                {emEsperaNaPos.length} OS sem carga · aguardando vínculo ou acoplamento
+              </span>
+              <div className="os-espera-chips">
+                {emEsperaNaPos.map((o) => (
+                  <button
+                    key={o.id}
+                    className="cgtog"
+                    title={`Abrir o detalhe da OS ${osNum(o)} para vincular carga ou acoplar`}
+                    onClick={() => setModal({ tipo: "det", osId: o.id })}
+                  >
+                    {osNum(o)}
+                    <span className="tp">{o.clienteNome}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="grp-h" style={{ marginTop: 2 }}>
             <span>Cargas na posição</span>
             <i />
@@ -379,14 +416,16 @@ export function Dashboard({
                     <span className="cnome">{c.nome}</span>
                     <span className="cvinc">
                       {ordem ? `OS ${osNum(ordem)}` : "—"}
-                      {/* A carga leva peças de outras OS neste passo: o
-                          vínculo mostra só a titular, o selo conta o resto. */}
-                      {aberto && aberto.ordensAcopladas.length > 0 && (
+                      {/* A carga leva peças de outras OS: o vínculo mostra só
+                          a titular, o selo conta o resto. Vem da carga e não
+                          do passo — o acoplamento não some entre uma etapa e a
+                          seguinte, e o selo também não pode sumir. */}
+                      {c.ordensAcopladas.length > 0 && (
                         <span
                           className="tp"
-                          title={`Etapa acoplada: mais ${aberto.ordensAcopladas.length} OS nesta carga`}
+                          title={`Carga acoplada: mais ${c.ordensAcopladas.length} OS dentro dela`}
                         >
-                          +{aberto.ordensAcopladas.length}
+                          +{c.ordensAcopladas.length}
                         </span>
                       )}
                     </span>

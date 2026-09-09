@@ -13,6 +13,7 @@ import com.ramajo.logs.system.exceptions.PeriodoInvalidoException;
 import com.ramajo.logs.system.exceptions.PosicaoIncompativelException;
 import com.ramajo.logs.system.exceptions.ProcessoEmUsoException;
 import com.ramajo.logs.system.exceptions.ProcessoInativoException;
+import com.ramajo.logs.system.exceptions.ReaberturaInvalidaException;
 import com.ramajo.logs.system.exceptions.RecursoNaoEncontradoException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -55,6 +56,7 @@ public class RestExceptionHandler {
 
     @ExceptionHandler({
             OrdemForaDeCirculacaoException.class,
+            ReaberturaInvalidaException.class,
             CargaIndisponivelException.class,
             PassoJaFinalizadoException.class,
             ProcessoEmUsoException.class,

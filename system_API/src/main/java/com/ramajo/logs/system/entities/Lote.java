@@ -28,6 +28,10 @@ import org.hibernate.generator.EventType;
  * seguinte; finalizar a OS fecha o lote corrente sem abrir outro. Por isso
  * existe sempre exatamente um lote aberto enquanto a OS está em processo
  * (garantido no banco pelo índice parcial `ux_lotes_os_aberto`).
+ *
+ * Reabrir uma OS expedida (OrdemServicoService.reabrir) entra no mesmo molde:
+ * abre o número SEGUINTE. Nenhum lote fechado volta atrás — o carimbo dele
+ * descreve produção que terminou de facto.
  */
 @Entity
 @Table(name = "lotes")

@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,9 +36,9 @@ public class OrdemServicoService {
     @Value("${app.processo-inicial-id:0}")
     private Long processoInicialId;
 
-    // Teto de OS acopladas a um mesmo passo. Não há limite físico exato — é
+    // Teto de OS acopladas a uma mesma carga. Não há limite físico exato — é
     // guarda contra requisição absurda numa API sem autenticação. Ver
-    // resolverAcopladas.
+    // acoplarNaCarga.
     private static final int MAX_OS_ACOPLADAS = 5;
 
     /**
@@ -56,10 +57,15 @@ public class OrdemServicoService {
      * derruba a operação inteira, em vez de deixar uma OS meio-montada que
      * ninguém consegue desfazer (não existe endpoint de desvincular carga nem
      * de apagar OS).
+     *
+     * `acopladasPorCarga` diz, por carga, quais OS JÁ ABERTAS pegam carona
+     * nela: as peças delas entram no mesmo tanque. Aplicado no fim, quando
+     * todo vínculo existe — e dentro da mesma transação, então um par inválido
+     * derruba a OS inteira, como já acontece com uma carga inválida.
      */
     @Transactional
     public OrdemCriada criar(Long clienteId, Long operadorId, Long idExterno, Posicao posicao,
-                             List<Long> cargaIds){
+                             List<Long> cargaIds, Map<Long, List<Long>> acopladasPorCarga){
 
         Cliente cliente = clienteRepo.findById(clienteId)
             .orElseThrow(() -> new RecursoNaoEncontradoException("Cliente", clienteId));
@@ -128,8 +134,29 @@ public class OrdemServicoService {
             logs.add(abrirLog(salva, carga, inicial, operador));
         }
 
+        // Depois do laço, não dentro dele: acoplarNaCarga exige a carga já
+        // vinculada, e o passo inicial já aberto é onde a carona entra. Uma
+        // carga que não está nesta OS é recusada lá com CARGA_NAO_VINCULADA.
+        aplicarAcoplamentos(acopladasPorCarga);
+
         return new OrdemCriada(salva, logs);
 
+    }
+
+    /**
+     * Aplica um mapa carga -> OS caronas, ignorando entradas vazias. Serve à
+     * criação da OS e ao vínculo de carga: nos dois casos a composição chega
+     * junto com o vínculo, e é uma chamada a acoplarNaCarga por par.
+     */
+    private void aplicarAcoplamentos(Map<Long, List<Long>> acopladasPorCarga){
+        if (acopladasPorCarga == null) return;
+
+        acopladasPorCarga.forEach((cargaId, osIds) -> {
+            if (osIds == null) return;
+            for (Long osId : new LinkedHashSet<>(osIds)){
+                acoplarNaCarga(cargaId, osId);
+            }
+        });
     }
 
     // CARGAS: LIBERAÇÃO  =====================================================
@@ -177,6 +204,15 @@ public class OrdemServicoService {
             logRepo.findByCargaIdAndFinalizadoEmIsNull(cargaId)
                     .ifPresent(aberto -> fecharPasso(aberto, at));
 
+            // A composição NÃO se desfaz aqui. Encerrar a etapa não tira as
+            // peças da carona de dentro do tanque: elas continuam lá, e a
+            // carga volta ao pool ainda a levá-las. Quem desfaz é o operador,
+            // no × do detalhe da OS — é a única saída do acoplamento.
+            //
+            // A linha fica sem titular até o próximo vínculo, e trg_coa_protege
+            // não se opõe: ela é BEFORE INSERT OR UPDATE, e ninguém escreve
+            // aqui. Quem pega a carga a seguir herda as caronas (vincularCarga
+            // + acopladasVigentes), que é o que a física do tanque diz.
             carga.setOrdemAtual(null);
         }
     }
@@ -239,9 +275,14 @@ public class OrdemServicoService {
      *
      * `operadorId` é opcional; ausente, o responsável do passo é quem abriu a
      * OS.
+     *
+     * `ordensAcopladasIds` são outras OS abertas cujas peças entram nesta
+     * mesma carga. Declaradas aqui, valem para todos os passos que a carga
+     * abrir enquanto estiver vinculada — não só para o inicial.
      */
     @Transactional
-    public Log vincularCarga(Long osId, Long cargaId, Long operadorId){
+    public Log vincularCarga(Long osId, Long cargaId, Long operadorId,
+                             List<Long> ordensAcopladasIds){
         OrdemServico os = carregarAberta(osId);
 
         Operador operador = responsavelDoVinculo(os, operadorId);
@@ -257,32 +298,38 @@ public class OrdemServicoService {
         }
         exigirMesmaPosicao(carga, os);
 
+        // A carga pode voltar do pool ainda com caronas — liberar() já não as
+        // apaga. Se ESTA OS era uma delas, o vínculo promove-a a titular: as
+        // peças são as mesmas, muda quem responde pelo tanque. Sem isto,
+        // abrirLog acoplá-la-ia a si mesma e trg_coa_protege recusaria o
+        // próximo acoplamento nesta carga.
+        carga.getOrdensAcopladas().remove(os.getId());
+
         carga.setOrdemAtual(os);
 
         // abrirLog revalida vínculo/carga ativa/operador ativo e enxerga o
         // setOrdemAtual acima porque é a mesma sessão. Sem add() em
         // os.getCargas(): aqui a coleção é LAZY e a resposta é o passo, não a
         // OS — tocá-la só provocaria um SELECT inútil.
-        return abrirLog(os, carga, processoInicial(os.getPosicao()), operador);
-    }
+        Log passo = abrirLog(os, carga, processoInicial(os.getPosicao()), operador);
 
-    @Transactional
-    public Log iniciarLog(Long osId, Long cargaId, Long processoId, Long responsavelId){
-        return iniciarLog(osId, cargaId, processoId, responsavelId, List.of());
+        // Depois do passo estar aberto: acoplarNaCarga injeta a carona nele
+        // além de a gravar na carga, e assim a etapa inicial já vale para
+        // todas as OS envolvidas.
+        aplicarAcoplamentos(Map.of(cargaId, ordensAcopladasIds == null
+                ? List.<Long>of() : ordensAcopladasIds));
+
+        return passo;
     }
 
     /**
-     * Abre o passo e, opcionalmente, acopla outras OS a ele: peças delas
-     * estavam na MESMA carga física quando o processo rodou.
-     *
-     * O passo continua sendo UM registro — `osId` é a titular (dona da carga)
-     * e as demais penduram-se nele. É o que mantém as contagens honestas: um
-     * evento físico conta uma vez, em vez de virar 2-3 passos irmãos que
-     * inflariam cargas processadas e tempo por etapa.
+     * Abre o passo. As OS acopladas NÃO vêm do chamador: são as da carga
+     * (`Carga.ordensAcopladas`), declaradas quando a carga foi vinculada e
+     * válidas enquanto ela lá estiver. É isto que faz o acoplamento sobreviver
+     * à etapa — as peças da carona não saem do tanque quando o passo fecha.
      */
     @Transactional
-    public Log iniciarLog(Long osId, Long cargaId, Long processoId, Long responsavelId,
-                          List<Long> osAcopladasIds){
+    public Log iniciarLog(Long osId, Long cargaId, Long processoId, Long responsavelId){
         OrdemServico os = carregarAberta(osId);
 
         Carga carga = cargaRepo.findById(cargaId)
@@ -294,7 +341,7 @@ public class OrdemServicoService {
         Operador op = operadorRepo.findById(responsavelId)
                 .orElseThrow(()-> new RecursoNaoEncontradoException("Operador", responsavelId));
 
-        return abrirLog(os, carga, processo, op, osAcopladasIds);
+        return abrirLog(os, carga, processo, op);
     }
 
     /**
@@ -333,12 +380,6 @@ public class OrdemServicoService {
 
     /** Regras do passo, independentes de como carga/processo/operador chegaram. */
     private Log abrirLog(OrdemServico os, Carga carga, Processo processo, Operador op){
-        return abrirLog(os, carga, processo, op, List.of());
-    }
-
-    /** A mesma coisa, podendo acoplar outras OS ao passo. */
-    private Log abrirLog(OrdemServico os, Carga carga, Processo processo, Operador op,
-                         List<Long> osAcopladasIds){
         if (carga.getOrdemAtual() == null || !carga.getOrdemAtual().getId().equals(os.getId())){
             throw new CargaNaoVinculadaException(carga.getId(), os.getId());
         }
@@ -366,10 +407,10 @@ public class OrdemServicoService {
                     processo.getId(), processo.getDescricao(), os.getPosicao());
         }
 
-        // Resolvido ANTES do auto-fechamento abaixo, junto das demais recusas:
-        // uma lista de acopladas inválida não pode custar o passo anterior da
-        // carga.
-        Set<Long> acopladas = resolverAcopladas(os, osAcopladasIds);
+        // Resolvido ANTES do auto-fechamento abaixo, junto das demais
+        // verificações — e por simetria com elas, ainda que aqui nada possa
+        // recusar: caronas caducas são limpas, não rejeitadas.
+        Set<Long> acopladas = acopladasVigentes(carga);
 
         // A carga está num lugar por vez: iniciar o próximo passo é o que
         // encerra o anterior. Ninguém precisa fechá-lo à mão — e como isto
@@ -400,37 +441,46 @@ public class OrdemServicoService {
     }
 
     /**
-     * Valida e normaliza as OS que pegam carona no passo.
+     * As caronas da carga que ainda fazem sentido, limpando as que não fazem.
      *
-     * Nulo/vazio é o caso comum (passo de uma OS só). Duplicatas colapsam em
-     * vez de virar erro: pedir a mesma OS duas vezes quer dizer a mesma coisa
-     * que pedir uma. As recusas são de coerência física — a mesma carga não
-     * está em dois setores, nem numa OS que já saiu de circulação.
+     * A composição é declarada uma vez e lida a cada passo, então entre uma
+     * coisa e outra uma carona pode ter sido expedida ou cancelada. Isso é
+     * caducidade, não erro do operador: recusar a abertura do passo pararia o
+     * chão de fábrica por causa de uma OS que outro terminal fechou. A linha
+     * caduca sai da carga e ninguém precisa de saber.
+     *
+     * Só a posição e a circulação são revistas — o teto e a coerência "peças
+     * num tanque só" foram verificados quando a carona foi declarada, em
+     * acoplarNaCarga, e nada os pode ter invalidado desde então.
      */
-    private Set<Long> resolverAcopladas(OrdemServico titular, List<Long> ids){
-        if (ids == null || ids.isEmpty()){
+    private Set<Long> acopladasVigentes(Carga carga){
+        Set<Long> ids = carga.getOrdensAcopladas();
+        if (ids.isEmpty()){
             return Set.of();
         }
 
-        Set<Long> unicos = new LinkedHashSet<>(ids);
+        Set<Long> vigentes = new LinkedHashSet<>();
 
-        // Teto defensivo: a API não tem autenticação, então um POST cru
-        // anexaria a fábrica inteira a um passo. O uso real é 2-3.
-        if (unicos.size() > MAX_OS_ACOPLADAS){
-            throw AcoplamentoInvalidoException.demais(unicos.size(), MAX_OS_ACOPLADAS);
+        for (Long id : new LinkedHashSet<>(ids)){
+            OrdemServico acoplada = osRepo.findById(id).orElse(null);
+
+            if (acoplada == null
+                    || acoplada.isFinalizada()
+                    || acoplada.isCancelada()
+                    || acoplada.getPosicao() != carga.getPosicao()){
+                ids.remove(id);
+                continue;
+            }
+            vigentes.add(id);
         }
 
-        for (Long id : unicos){
-            validarAcoplada(titular, id);
-        }
-
-        return unicos;
+        return vigentes;
     }
 
     /**
-     * As recusas de coerência física de UMA carona, isoladas porque o
-     * acoplamento em passo já aberto valida uma OS de cada vez — lá não há
-     * lista, há a OS que acabou de entrar no tanque.
+     * As recusas de coerência física de UMA carona, no momento em que ela é
+     * declarada. Uma de cada vez: acoplar é sempre uma OS que acabou de entrar
+     * no tanque, nunca uma lista.
      */
     private void validarAcoplada(OrdemServico titular, Long id){
         if (id.equals(titular.getId())){
@@ -533,54 +583,56 @@ public class OrdemServicoService {
     }
 
     /**
-     * Acopla uma OS a um passo JÁ ABERTO: as peças dela acabaram de entrar no
-     * tanque onde a titular já estava.
+     * Acopla uma OS à CARGA: as peças dela estão no mesmo tanque que as da
+     * titular (`carga.ordemAtual`).
      *
-     * É o movimento físico como ele acontece — só a carona se move. O caminho
-     * antigo (única escrita da composição era em abrirLog) obrigava a abrir uma
-     * etapa NOVA na carga titular só para reescrever a lista, o que corta a
-     * duração real em duas e inventa na linha do tempo um passo que ninguém
-     * executou. Aqui o passo da titular não é tocado: nem `iniciadoEm`, nem
-     * processo, nem responsável.
+     * O vínculo dura o que a carga durar na OS, e não o que um passo durar. É
+     * a diferença que motiva este modelo: quando a etapa fecha, as peças da
+     * carona não saem do tanque — a etapa seguinte é dos mesmos donos, e
+     * abrirLog lê a composição daqui em vez de a pedir de novo ao operador.
      *
-     * Encerra, no mesmo instante, os passos abertos da PRÓPRIA carona: as peças
-     * saíram da carga dela. A carga continua vinculada à OS, vazia e aguardando
-     * etapa — devolvê-la ao pool é decisão do operador, em "Encerrar etapas".
+     * Encerra, no mesmo instante, os passos abertos da PRÓPRIA carona: as
+     * peças saíram da carga dela. A carga dela continua vinculada à sua OS,
+     * vazia e aguardando etapa — devolvê-la ao pool é decisão do operador, em
+     * "Encerrar etapas".
      *
      * Sem volta simétrica: `logs` é append-only, então desacoplar depois não
      * reabre o passo que foi fechado aqui.
      */
     @Transactional
-    public Log acoplar(UUID logId, Long osId){
-        Log log = logRepo.findById(logId)
-                .orElseThrow(()-> new RecursoNaoEncontradoException("Log", logId));
-
-        if (log.getFinalizadoEm() != null){
-            throw new PassoJaFinalizadoException(logId);
-        }
-        if (log.isCancelado()){
-            throw AcoplamentoInvalidoException.passoCancelado(logId);
-        }
+    public Carga acoplarNaCarga(Long cargaId, Long osId){
+        Carga carga = cargaRepo.findById(cargaId)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Carga", cargaId));
 
         // Idempotente: dois terminais no mesmo tanque tocam o botão ao mesmo
         // tempo, e a segunda chamada só afirma o que já é verdade. Antes das
         // validações de propósito — repetir não pode fechar passo nenhum.
-        if (log.getOrdensAcopladas().contains(osId)){
-            return log;
+        if (carga.getOrdensAcopladas().contains(osId)){
+            return carga;
         }
 
-        OrdemServico titular = log.getOrdemServico();
+        if (!carga.isAtivo()){
+            throw new CargaInativaException(cargaId);
+        }
+
+        // Carona pressupõe alguém a dar boleia. Sem titular não há tanque de
+        // ninguém, e a linha ficaria órfã à espera do próximo vínculo.
+        if (carga.getOrdemAtual() == null){
+            throw new CargaNaoVinculadaException(cargaId);
+        }
+
+        OrdemServico titular = carga.getOrdemAtual();
         validarAcoplada(titular, osId);
 
-        int total = log.getOrdensAcopladas().size() + 1;
+        int total = carga.getOrdensAcopladas().size() + 1;
         if (total > MAX_OS_ACOPLADAS){
             throw AcoplamentoInvalidoException.demais(total, MAX_OS_ACOPLADAS);
         }
 
-        // Peças num tanque só: se ela já pega carona noutro passo aberto, o
-        // pedido descreve duas coisas incompatíveis.
-        logRepo.buscarAcoplamentosAbertos(osId).stream().findFirst().ifPresent(outro -> {
-            throw AcoplamentoInvalidoException.jaEmOutroPasso(osId, outro.getId());
+        // Peças num tanque só: se ela já pega carona noutra carga, o pedido
+        // descreve duas coisas incompatíveis.
+        cargaRepo.buscarAcoplamentosDe(osId).stream().findFirst().ifPresent(outra -> {
+            throw AcoplamentoInvalidoException.jaEmOutraCarga(osId, outra.getId());
         });
 
         // Só DEPOIS de todas as recusas — mesma disciplina de abrirLog: um
@@ -590,33 +642,41 @@ public class OrdemServicoService {
         logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(osId)
                 .forEach(aberto -> fecharPasso(aberto, at));
 
-        log.getOrdensAcopladas().add(osId);
-        return log;
+        carga.getOrdensAcopladas().add(osId);
+
+        // A etapa que já está a correr nesta carga passa a valer para a
+        // carona, sem ser reaberta nem substituída: abrir um passo novo só
+        // para reescrever a composição cortaria a duração real em duas e
+        // inventaria na linha do tempo um passo que ninguém executou.
+        logRepo.findByCargaIdAndFinalizadoEmIsNull(cargaId)
+                .filter(passo -> !passo.isCancelado())
+                .ifPresent(passo -> passo.getOrdensAcopladas().add(osId));
+
+        return carga;
     }
 
     /**
-     * Desfaz um acoplamento: as peças daquela OS não estavam nesta carga.
+     * Desfaz um acoplamento: as peças daquela OS não estão nesta carga.
      *
-     * Só enquanto o passo está ABERTO. Depois de fechado a composição é
-     * histórico — e `logs` é append-only justamente para que o registro do que
-     * aconteceu não seja reescrito depois. A mesma regra é garantida pela
-     * trigger trg_loa_protege (V11); aqui ela só chega antes, com mensagem
-     * legível.
+     * Sai da carga e também do passo em curso — a composição de um passo
+     * ABERTO ainda é corrigível, é a mesma regra que a trigger trg_loa_protege
+     * (V11) garante no banco. Os passos já fechados ficam como estão: `logs` é
+     * append-only justamente para que o registro do que aconteceu não seja
+     * reescrito depois.
      */
     @Transactional
-    public void desacoplar(UUID logId, Long osId){
-        Log log = logRepo.findById(logId)
-                .orElseThrow(()-> new RecursoNaoEncontradoException("Log", logId));
+    public void desacoplarDaCarga(Long cargaId, Long osId){
+        Carga carga = cargaRepo.findById(cargaId)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Carga", cargaId));
 
-        if (log.getFinalizadoEm() != null){
-            throw new PassoJaFinalizadoException(logId);
+        // Não é 404: a carga existe e a OS também — o que não existe é o
+        // vínculo entre as duas, e isso é pedido inválido, não recurso ausente.
+        if (!carga.getOrdensAcopladas().remove(osId)){
+            throw AcoplamentoInvalidoException.naoAcoplada(cargaId, osId);
         }
 
-        // Não é 404: o passo existe e a OS também — o que não existe é o
-        // vínculo entre os dois, e isso é pedido inválido, não recurso ausente.
-        if (!log.getOrdensAcopladas().remove(osId)){
-            throw AcoplamentoInvalidoException.naoAcoplada(logId, osId);
-        }
+        logRepo.findByCargaIdAndFinalizadoEmIsNull(cargaId)
+                .ifPresent(passo -> passo.getOrdensAcopladas().remove(osId));
     }
 
     /**
@@ -648,6 +708,13 @@ public class OrdemServicoService {
             c.setOrdemAtual(null);
         }
 
+        // O outro lado do acoplamento: a OS sai de cena também como carona, e
+        // as peças dela não estão mais em tanque nenhum. acopladasVigentes()
+        // já a ignoraria no próximo passo, mas até lá a linha órfã apareceria
+        // no detalhe da carga como se ela continuasse lá dentro.
+        cargaRepo.buscarAcoplamentosDe(osId)
+                .forEach(c -> c.getOrdensAcopladas().remove(osId));
+
         // O lote em produção fecha junto, no mesmo instante da OS, e nenhum
         // outro é aberto. É o que faz a contagem bater com a intuição: fechar
         // 2 lotes e depois a OS resulta em 3 lotes, todos com data.
@@ -659,6 +726,52 @@ public class OrdemServicoService {
         os.setFinalizadaEm(at);
         os.setFinalizadaPor(op);
         os.setEmProcesso(false);
+    }
+
+    /**
+     * Desfaz a expedição total: a OS volta a produzir num LOTE NOVO.
+     *
+     * O lote antigo não é reaberto — ele descreve uma produção que de facto
+     * terminou, e `finalizado_em` dele é o que a auditoria e os relatórios
+     * contam. Reabrir é abrir o número seguinte da sequência, exatamente como
+     * a expedição parcial faz, com a diferença de que aqui não há lote corrente
+     * a fechar antes.
+     *
+     * O lote nasce VAZIO: `finalizar` já liberou as cargas e limpou os
+     * acoplamentos, e adivinhar quais peças voltam seria inventar história —
+     * quem reabre revincula pela rota de vínculo, como numa OS qualquer.
+     *
+     * O que não volta: `finalizada_em`/`finalizada_por_id` são limpos (é o que
+     * marca a OS como concluída), então a data da expedição desfeita se perde.
+     * O fecho do último lote fica como o vestígio dela.
+     */
+    @Transactional
+    public Lote reabrir(Long osId, Long operadorId){
+        // Sem carregarAberta(): é justamente o gate que recusa OS finalizada.
+        OrdemServico os = buscar(osId);
+
+        if (os.isCancelada()) throw ReaberturaInvalidaException.cancelada(osId);
+        if (!os.isFinalizada()) throw ReaberturaInvalidaException.naoFinalizada(osId);
+        // ux_lotes_os_aberto admite um lote aberto por OS; uma OS finalizada
+        // não deveria ter nenhum, mas o INSERT abaixo falharia feio se tivesse.
+        if (os.getLoteAberto() != null) throw ReaberturaInvalidaException.loteAberto(osId);
+
+        // Nada é gravado com ele — o lote novo ainda não tem quem o feche —,
+        // mas a rota não aceita operador inexistente ou inativo, como as outras.
+        exigirOperadorAtivo(operadorId);
+
+        os.setFinalizadaEm(null);
+        os.setFinalizadaPor(null);
+        os.setEmProcesso(true);
+
+        // A partir do ÚLTIMO lote, e não da contagem: numeração que tenha um
+        // buraco continua a crescer em vez de colidir com ux_lotes_os_numero.
+        List<Lote> anteriores = loteRepo.findByOrdemServicoIdOrderByNumeroAsc(osId);
+        short proximo = anteriores.isEmpty()
+                ? 1
+                : (short)(anteriores.get(anteriores.size() - 1).getNumero() + 1);
+
+        return loteRepo.save(new Lote(os, proximo));
     }
 
     @Transactional
@@ -681,6 +794,13 @@ public class OrdemServicoService {
         for(Carga c : os.getCargas()){
             c.setOrdemAtual(null);
         }
+
+        // O outro lado do acoplamento: a OS sai de cena também como carona, e
+        // as peças dela não estão mais em tanque nenhum. acopladasVigentes()
+        // já a ignoraria no próximo passo, mas até lá a linha órfã apareceria
+        // no detalhe da carga como se ela continuasse lá dentro.
+        cargaRepo.buscarAcoplamentosDe(osId)
+                .forEach(c -> c.getOrdensAcopladas().remove(osId));
 
         os.setCancelada(true);
         os.setEmProcesso(false);

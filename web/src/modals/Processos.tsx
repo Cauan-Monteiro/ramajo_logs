@@ -37,11 +37,16 @@ export function ProcessosModal({ ctx }: { ctx: Ctx }) {
             <div key={proc} className="bp" style={{ padding: "16px 18px" }}>
               <i className="corner tl" /><i className="corner tr" />
               <i className="corner bl" /><i className="corner br" />
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <div style={{
+                display: "flex", alignItems: "center", gap: 10, marginBottom: 12,
+                flexWrap: "wrap",
+              }}>
                 <span className="etp" style={etapaStyle(etapa)}>
                   {labelEtapaDoLog(itens[0].log, ctx.data.processos)}
                 </span>
-                <span style={{ font: "600 20px 'Barlow Condensed'" }}>{proc}</span>
+                <span style={{ font: "600 20px 'Barlow Condensed'", flex: 1, minWidth: 0 }}>
+                  {proc}
+                </span>
                 <span style={{
                   marginLeft: "auto", font: "400 13px 'Barlow'", color: "rgba(29,31,32,.45)",
                 }}>

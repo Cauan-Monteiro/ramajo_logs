@@ -41,20 +41,6 @@ public interface LogRepository extends JpaRepository<Log, UUID> {
     // Passos ainda abertos de uma OS — usados para fechá-los junto com ela.
     List<Log> findByOrdemServicoIdAndFinalizadoEmIsNull(Long osId);
 
-    // O passo aberto em que esta OS pega carona, se houver. As peças dela
-    // estão num tanque só: acoplá-la a um segundo passo sem desacoplar do
-    // primeiro é incoerência física, e é aqui que se descobre.
-    //
-    // Lista (e não Optional) porque nada no banco garante unicidade — o
-    // ux_logs_carga_aberto protege a CARGA, não a carona. O service recusa
-    // no primeiro que encontrar.
-    @Query("""
-            select l from Log l
-             where l.finalizadoEm is null
-               and :osId member of l.ordensAcopladas
-            """)
-    List<Log> buscarAcoplamentosAbertos(@Param("osId") Long osId);
-
     // Mesma ordem do histórico, mas com as relações LAZY já resolvidas: a
     // planilha lê carga/processo/responsável de TODOS os passos, o que daria
     // 3N queries no lazy loading. Aqui é uma só.

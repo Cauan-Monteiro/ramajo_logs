@@ -48,8 +48,7 @@ export function DesidrogenizarModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
             ← Voltar
           </button>
           <button
-            className="btn2 btn2-p"
-            style={{ marginLeft: "auto" }}
+            className="btn2 btn2-p btn2-end"
             disabled={receita === null || ctx.ocupado}
             onClick={confirmar}
           >
@@ -66,6 +65,7 @@ export function DesidrogenizarModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
           display: "flex",
           alignItems: "center",
           gap: 10,
+          flexWrap: "wrap",
         }}
       >
         <Corners />

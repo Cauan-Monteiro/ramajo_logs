@@ -391,28 +391,46 @@ body {
    cursor: default
 }
 
-/* Irmão do chip-row, em tracejado: fica na mesma fila das OS já acopladas,
-   mas o contorno aberto diz que é um lugar por preencher, não uma marcação. */
-.chip-add {
-   display: inline-flex;
-   align-items: center;
-   font: 600 14px "Barlow Condensed", system-ui, sans-serif;
-   letter-spacing: .04em;
-   color: rgba(65, 97, 128, .8);
-   border: 1px dashed rgba(89, 128, 166, .55);
-   background: transparent;
-   padding: 5px 10px;
-   cursor: pointer
+/* Uma linha por carga no seletor de acoplamento: o nome do tanque à esquerda,
+   as OS candidatas à direita. A pergunta é sempre "quem mais vai NESTA carga",
+   e a linha existe para que o nome dela não fique implícito. */
+.ac-linha {
+   display: flex;
+   align-items: flex-start;
+   gap: 12px;
+   padding: 10px 0;
+   border-bottom: 1px solid rgba(89, 128, 166, .22)
 }
 
-.chip-add:hover:not(:disabled) {
-   color: #416180;
-   background: #eef6ff
+.ac-linha:last-child {
+   border-bottom: 0
 }
 
-.chip-add:disabled {
-   opacity: .4;
-   cursor: default
+.ac-carga {
+   flex: 0 0 92px;
+   padding-top: 7px;
+   font: 600 15px "Barlow Condensed", system-ui, sans-serif;
+   letter-spacing: .06em;
+   color: #416180
+}
+
+.ac-chips {
+   display: flex;
+   flex: 1;
+   flex-wrap: wrap;
+   gap: 8px
+}
+
+/* No telemóvel a faixa fixa da carga come metade da largura útil: o nome sobe
+   para cima dos chips e eles ficam com a linha inteira. */
+body.is-mobile .ac-linha {
+   flex-direction: column;
+   gap: 6px
+}
+
+body.is-mobile .ac-carga {
+   flex: none;
+   padding-top: 0
 }
 
 .cg-chip .tp {
@@ -491,10 +509,18 @@ body {
 .osrow {
    display: flex;
    align-items: center;
+   flex-wrap: wrap;
    gap: 18px;
    padding: 18px 20px;
    cursor: pointer;
    transition: background .1s
+}
+
+/* O nome do cliente é a coluna elástica; o nº e as pills não cedem. */
+.osrow>.os-num,
+.osrow>.lote-pill,
+.osrow>.live-pill {
+   flex: none
 }
 
 @media (hover:hover) {
@@ -516,6 +542,10 @@ body {
 
 .dlg {
    width: min(740px, 100%);
+   /* Item flex do overlay: sem isto o `min-width:auto` deixa o diálogo CRESCER
+      além dos 740px quando o conteúdo tem min-content largo, e o
+      `.tab{overflow:hidden}` corta o excesso sem aviso. */
+   min-width: 0;
    max-height: 100%;
    background: #f2f2f3;
    border: 1px solid rgba(0, 0, 0, .2);
@@ -540,13 +570,29 @@ body {
    letter-spacing: .02em
 }
 
+/* O título é um nome de cliente: é ele que encolhe, não o botão de fechar. */
+.dlg-ttl {
+   min-width: 0;
+   line-height: 1.15
+}
+
+.dlg-x {
+   flex: none
+}
+
+/* `flex:1` + `min-height:0`: o corpo toma a folga e é ele quem rola. Sem isto,
+   num diálogo alto o rodapé era empurrado para fora do `max-height:100%`. */
 .dlg-bdy {
+   flex: 1;
+   min-height: 0;
    padding: 24px;
    overflow: auto
 }
 
 .dlg-ft {
    display: flex;
+   /* Botões com sub-rótulo `.na` têm duas linhas; sem isto esticavam os vizinhos. */
+   align-items: center;
    gap: 12px;
    padding: 18px 24px;
    border-top: 1px solid rgba(0, 0, 0, .14);
@@ -569,6 +615,13 @@ body {
    .btn2:hover {
       background: color-mix(in srgb, #1d1f20 7%, transparent)
    }
+}
+
+/* O botão que se descola dos outros no rodapé. Era `style={{marginLeft:"auto"}}`
+   inline, que vence o CSS: os overrides de tablet e telemóvel abaixo nunca
+   chegavam a aplicar-se. Mesmo valor, agora numa classe. */
+.btn2-end {
+   margin-left: auto
 }
 
 .btn2:disabled {
@@ -713,6 +766,9 @@ body {
 
 .tline {
    display: flex;
+   /* O chip da etapa acompanha a PRIMEIRA linha do texto, não o meio do bloco:
+      a descrição pode ter duas linhas e o `stretch` do flex desalinhava tudo. */
+   align-items: flex-start;
    gap: 14px;
    padding: 12px 0;
    border-bottom: 1px solid rgba(0, 0, 0, .08)
@@ -726,6 +782,36 @@ body {
    border: 1px solid rgba(58, 143, 77, .4);
    background: #f1f8f2;
    margin-bottom: 10px
+}
+
+/* O miolo destas duas linhas é `flex:1` e leva texto livre (a descrição do
+   processo). Sem `min-width:0` o item flex nunca encolhe abaixo do min-content:
+   ele empurra o horário para fora e alarga o diálogo além dos 740px, que o
+   `.tab{overflow:hidden}` recorta em silêncio. */
+.tline>*,
+.openrow>* {
+   min-width: 0
+}
+
+.tline>.etp,
+.openrow>.live-dot {
+   flex: none
+}
+
+/* `text-align:right` é inerte num item flex dimensionado pelo conteúdo — quem
+   encosta o horário à direita é o `margin-left:auto`. */
+.tline .time,
+.openrow .time {
+   flex: none;
+   margin-left: auto;
+   white-space: nowrap
+}
+
+/* Histórico de etapas do detalhe: janela própria no quadro de mesa. */
+.os-hist {
+   max-height: 240px;
+   overflow: auto;
+   margin-top: 6px
 }
 
 .repcard {
@@ -875,6 +961,21 @@ body {
 
 .hub.hub-x .hsub {
    color: rgba(255, 255, 255, .75)
+}
+
+.os-espera {
+   position: relative;
+   display: flex;
+   flex-direction: column;
+   gap: 10px;
+   padding: 12px 16px;
+   margin: 2px 0 14px
+}
+
+.os-espera-chips {
+   display: flex;
+   flex-wrap: wrap;
+   gap: 10px
 }
 
 .grp-h {
@@ -2367,10 +2468,6 @@ body.is-mobile .dlg {
    max-height: 100%
 }
 
-body.is-mobile .dlg-bdy {
-   flex: 1
-}
-
 body.is-mobile .dlg-hd {
    padding: 14px 16px
 }
@@ -2411,6 +2508,30 @@ body.is-mobile .dlg-ft .btn2 {
 
 body.is-mobile .os-resumo {
    gap: 14px
+}
+
+/* — lista de etapas do detalhe — */
+/* Na folha de ecrã inteiro quem rola é o `.dlg-bdy`: uma janela de 240px aqui
+   dentro seria uma rolagem dentro da outra, com metade da altura disponível. */
+body.is-mobile .os-hist {
+   max-height: none;
+   overflow: visible
+}
+
+/* Quatro filhos em 360px não cabem numa linha: o botão desce e ocupa a faixa
+   toda, que é também o alvo de toque certo para o dedo. */
+body.is-mobile .openrow {
+   flex-wrap: wrap
+}
+
+body.is-mobile .openrow>.btn2 {
+   flex: 1 1 100%;
+   margin-left: 0
+}
+
+body.is-mobile .tline .time,
+body.is-mobile .openrow .time {
+   font-size: 14px
 }
 
 body.is-mobile .scanhd .scan-b {
@@ -2691,6 +2812,29 @@ body.is-mobile .toast {
 
    body:not(.is-mobile) .pos-stats {
       gap: 22px
+   }
+
+   /* — diálogos —
+      Os blocos 4 e 5 tratavam telemóvel e moldura; o CONTEÚDO do diálogo
+      continuava o de mesa. Num tablet de 768px os recuos somavam 76px de cada
+      lado (overlay 28 + corpo 24 + cabeçalho 24) — quase um quinto da largura. */
+   body:not(.is-mobile) .dlg-bd {
+      padding: 16px
+   }
+
+   body:not(.is-mobile) .dlg-hd {
+      padding: 16px 18px
+   }
+
+   body:not(.is-mobile) .dlg-bdy {
+      padding: 18px
+   }
+
+   /* O rodapé do Detalhe tem cinco botões e já quebra linha aqui (`.dlg-ft` é
+      `flex-wrap:wrap` na base). O `margin-left:auto` do último desalinhava a
+      quebra — o mesmo defeito que o bloco 4 corrige abaixo de 640px. */
+   body:not(.is-mobile) .dlg-ft .btn2 {
+      margin-left: 0
    }
 }
 

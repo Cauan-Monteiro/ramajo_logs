@@ -22,7 +22,7 @@ const COL_NOME = 104;
 
 const SIMBOLO: Record<Evento["tipo"], string> = {
   OS_ABERTA: "◆",
-  OS_ENCERRADA: "●",
+  OS_EXPEDIDA: "●",
   OS_CANCELADA: "✕",
   LOTE_FECHADO: "▣",
   ETAPA_ABERTA: "·",

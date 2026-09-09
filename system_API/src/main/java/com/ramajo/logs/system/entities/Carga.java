@@ -2,7 +2,9 @@ package com.ramajo.logs.system.entities;
 
 import com.ramajo.logs.system.enums.Posicao;
 import com.ramajo.logs.system.enums.TipoCarga;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -14,6 +16,9 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
+import java.util.HashSet;
+import java.util.Set;
+import org.hibernate.annotations.BatchSize;
 
 /**
  * Dispositivo físico reutilizável (tambor, trave ou cesto) que carrega peças.
@@ -57,6 +62,24 @@ public class Carga {
 
     @Column(name = "tag_id", length = 64)
     private String tagId;
+
+    /**
+     * OS que pegaram carona NESTA carga: peças delas estão no mesmo tanque
+     * que as da titular (`ordemAtual`). Vale enquanto o vínculo durar — cada
+     * passo aberto na carga nasce com esta composição, e liberar a carga
+     * esvazia-a.
+     *
+     * Espelha Log.ordensAcopladas de propósito, incluindo o @BatchSize: o
+     * front lê a composição de todas as cargas de uma vez em GET /api/cargas,
+     * e sem o lote seria um SELECT por carga.
+     */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @BatchSize(size = 100)
+    @CollectionTable(
+            name = "carga_ordens_acopladas",
+            joinColumns = @JoinColumn(name = "carga_id"))
+    @Column(name = "ordem_servico_id", nullable = false)
+    private Set<Long> ordensAcopladas = new HashSet<>();
 
     protected Carga() {
     }
@@ -121,6 +144,10 @@ public class Carga {
 
     public void setOrdemAtual(OrdemServico ordemAtual) {
         this.ordemAtual = ordemAtual;
+    }
+
+    public Set<Long> getOrdensAcopladas() {
+        return ordensAcopladas;
     }
 
     public String getTagId() {

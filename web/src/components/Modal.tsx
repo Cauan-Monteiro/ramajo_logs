@@ -17,7 +17,7 @@ export function Modal({
     <div className="dlg-bd" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="dlg">
         <div className="dlg-hd">
-          <div style={{ lineHeight: 1.15 }}>
+          <div className="dlg-ttl">
             <span style={{
               display: "block", font: "600 12px 'Barlow Condensed'",
               letterSpacing: ".14em", opacity: 0.7,
@@ -27,7 +27,7 @@ export function Modal({
             <h3>{titulo}</h3>
           </div>
           <button
-            className="btn2"
+            className="btn2 dlg-x"
             style={{
               marginLeft: "auto", background: "transparent",
               borderColor: "rgba(255,255,255,.3)", color: "#f2f2f3", padding: "8px 14px",
