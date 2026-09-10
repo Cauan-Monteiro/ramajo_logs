@@ -141,6 +141,18 @@ export interface LoteDTO {
   finalizadoPorNome: string | null;
 }
 
+/**
+ * dtos/OrdemDtos.ReaberturaDTO — resposta de POST /api/ordens/{id}/reabrir.
+ *
+ * `cargasSugeridas` são as cargas que a expedição total tinha soltado e que
+ * ainda estão livres no setor. É SUGESTÃO: nenhuma foi revinculada. O detalhe
+ * da OS usa-as para abrir o modal de vínculo já com elas marcadas.
+ */
+export interface ReaberturaDTO {
+  lote: LoteDTO;
+  cargasSugeridas: CargaDTO[];
+}
+
 /** dtos/OrdemDtos.LogDTO */
 export interface LogDTO {
   id: string;

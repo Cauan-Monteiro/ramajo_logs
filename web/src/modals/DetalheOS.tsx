@@ -54,13 +54,24 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
   /**
    * Reabre a OS num lote novo e emenda no vínculo de cargas: o lote nasce
    * vazio, então sem esse passo a OS voltaria a produzir sem nada dentro.
+   *
+   * A resposta traz as cargas que aquela expedição soltou e que ainda estão
+   * livres — nenhuma foi revinculada. Vão para o modal como pré-seleção: o
+   * operador confirma, desmarca ou acrescenta, e é essa confirmação que
+   * vincula. Guardada numa variável porque `agir` não passa o resultado do
+   * `fazer` ao `depois`; ele só corre depois do recarregar, então `ctx.data`
+   * já está fresco quando o modal abre.
    */
   function reabrir() {
     setReabrindo(false);
+    let sugeridas: CargaDTO[] = [];
     ctx.agir({
-      fazer: () => api.reabrirOrdem(osId, ctx.operador.id),
+      fazer: async () => {
+        sugeridas = (await api.reabrirOrdem(osId, ctx.operador.id)).cargasSugeridas;
+      },
       ok: "OS reaberta num lote novo.",
-      depois: () => ctx.abrir({ tipo: "vinc", osId }),
+      depois: () =>
+        ctx.abrir({ tipo: "vinc", osId, preSel: sugeridas.map((c) => c.nome) }),
     });
   }
 
@@ -522,8 +533,12 @@ function Acoplamento({ ctx, osId, cargas }: { ctx: Ctx; osId: number; cargas: Ca
    Vincular cargas a uma OS já aberta
    ══════════════════════════════════════════════════════════════════════════ */
 
-export function VincularModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
-  const [sel, setSel] = useState<string[]>([]);
+export function VincularModal(
+  { ctx, osId, preSel }: { ctx: Ctx; osId: number; preSel?: string[] },
+) {
+  // `preSel` só semeia o estado inicial: a partir daí a seleção é do operador,
+  // e uma recarga do `ctx.data` não pode remarcar o que ele desmarcou.
+  const [sel, setSel] = useState<string[]>(preSel ?? []);
   const [acopladas, setAcopladas] = useState<Acoplamentos>({});
   const ordem = ctx.data.ordens.find((o) => o.id === osId);
   if (!ordem) return null;

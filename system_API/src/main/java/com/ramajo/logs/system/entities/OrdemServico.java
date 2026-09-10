@@ -1,7 +1,9 @@
 package com.ramajo.logs.system.entities;
 
 import com.ramajo.logs.system.enums.Posicao;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -17,7 +19,9 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import lombok.Setter;
 import org.hibernate.annotations.BatchSize;
@@ -111,6 +115,27 @@ public class OrdemServico {
     @OrderBy("iniciadaEm ASC, id ASC")
     @BatchSize(size = 100)
     private List<OrdemDesidrogenizacao> desidrogenizacoes = new ArrayList<>();
+
+    /**
+     * As cargas que a EXPEDIÇÃO TOTAL soltou, guardadas para a reabertura as
+     * poder sugerir de volta.
+     *
+     * É estado efémero, não histórico: `finalizar` escreve a lista, `reabrir`
+     * consome-a e limpa-a. Existe porque `finalizar` zera `Carga.ordemAtual` e
+     * não deixa registo do vínculo desfeito — e `logs` não serve de substituto,
+     * porque diz que a carga passou pela OS, não que estava lá no instante da
+     * expedição (uma carga com o passo já finalizado à mão não teria como ser
+     * reconhecida).
+     *
+     * Só ids, sem @ManyToMany, pela mesma razão de Carga.ordensAcopladas: a
+     * pergunta é sempre "quais cargas esta OS soltou", e é uma leitura só.
+     */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+            name = "os_cargas_expedidas",
+            joinColumns = @JoinColumn(name = "ordem_servico_id"))
+    @Column(name = "carga_id", nullable = false)
+    private Set<Long> cargasExpedidas = new HashSet<>();
 
     protected OrdemServico() {
     }
@@ -210,5 +235,9 @@ public class OrdemServico {
 
     public List<OrdemDesidrogenizacao> getDesidrogenizacoes() {
         return desidrogenizacoes;
+    }
+
+    public Set<Long> getCargasExpedidas() {
+        return cargasExpedidas;
     }
 }

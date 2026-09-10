@@ -147,7 +147,7 @@ rotas separadas:
 | `POST /api/ordens/{id}/cargas/liberar` | fecha o passo aberto de cada carga da lista e a devolve ao pool (`ordemAtual = null`). **Não toca no lote nem no acoplamento.** | hub **Encerrar etapas** da home (`modals/EncerrarLote.tsx`) |
 | `POST /api/ordens/{id}/lotes/finalizar` | fecha o lote corrente e abre o seguinte; a OS segue aberta. **Único caminho para o 2º lote.** | diálogo de confirmação `modals/ExpedirParcial.tsx`, aberto pelo botão **Expedir parcial** da Inspeção final |
 | `POST /api/ordens/{id}/finalizar` | expedição total: libera as cargas restantes, fecha o lote corrente e encerra a OS. | **Expedir** (Inspeção final) e **Expedição total** (modal Expedir) |
-| `POST /api/ordens/{id}/reabrir` | desfaz a expedição total: a OS volta a `emProcesso` e ganha um lote NOVO, vazio. 409 se a OS estiver em produção ou cancelada. | **Reabrir OS** no detalhe de uma OS expedida |
+| `POST /api/ordens/{id}/reabrir` | desfaz a expedição total: a OS volta a `emProcesso` e ganha um lote NOVO, vazio. Devolve, com ele, as cargas que aquela expedição soltou e que ainda estão livres — sugestão, não vínculo. 409 se a OS estiver em produção ou cancelada. | **Reabrir OS** no detalhe de uma OS expedida |
 
 A Inspeção final só lista OS que já não têm carga vinculada, por isso o
 "Expedir parcial" manda `cargaIds` vazio — não há carga a escolher. É por isso
@@ -171,9 +171,25 @@ expedição desfeita: `finalizada_em`/`finalizada_por_id` são o que marca a OS
 como concluída, então limpá-los apaga o evento `OS_EXPEDIDA` da auditoria e dos
 relatórios; sobra o fecho daquele lote como vestígio. Foi uma escolha
 deliberada, para não pagar uma tabela de reaberturas por um caso raro. Daí os
-dois toques no botão, e daí o lote novo nascer sem cargas — `finalizar` já as
-liberou, e adivinhar quais voltam seria inventar história: confirmando, o
-detalhe emenda direto no `VincularModal`.
+dois toques no botão.
+
+O lote novo continua a nascer **sem cargas** — `finalizar` já as liberou, e
+revinculá-las por conta própria seria inventar história. Mas o operador também
+não pode ter de adivinhar quais eram as suas entre todas as cargas livres do
+setor, e o histórico de passos não responde isso (ele diz que a carga passou
+pela OS, não que estava lá no instante da expedição). Por isso `finalizar`
+anota os ids que soltou em `os_cargas_expedidas` (V13) — estado efêmero, não
+histórico — e `reabrir` lê essa lista, descarta o que caducou (carga sucateada,
+tomada por outra OS, mudada de setor), **consome-a** e devolve o resto em
+`cargasSugeridas`. Confirmando, o detalhe emenda direto no `VincularModal`, já
+com essas cargas marcadas; o vínculo em si acontece quando o operador confirma
+ali, um `POST /api/ordens/{id}/cargas` por carga, que é o que abre o passo
+inicial. Desmarcar tudo é caminho válido — a OS fica reaberta e sem cargas.
+
+O lado **carona** do acoplamento não volta nem é sugerido: as linhas que
+`finalizar` apaga dizem "esta OS pegava carona na carga de outra", dependem de
+essa outra OS ainda estar aberta, e nunca produziram linha no painel para esta
+OS — a linha é sempre da titular. Quem precisar reacopla no detalhe da OS.
 
 `liberarCargas` e `finalizarLote` compartilham o mesmo laço no service
 (`OrdemServicoService.liberar`), então as validações não divergem: carga que

@@ -512,7 +512,9 @@ export function Dashboard({
       {modal?.tipo === "processos" && <ProcessosModal ctx={ctx} />}
       {modal?.tipo === "livres" && <CargasLivresModal ctx={ctx} />}
       {modal?.tipo === "det" && <DetalheOSModal ctx={ctx} osId={modal.osId} />}
-      {modal?.tipo === "vinc" && <VincularModal ctx={ctx} osId={modal.osId} />}
+      {modal?.tipo === "vinc" && (
+        <VincularModal ctx={ctx} osId={modal.osId} preSel={modal.preSel} />
+      )}
       {modal?.tipo === "passo" && <PassoModal ctx={ctx} osId={modal.osId} />}
       {modal?.tipo === "exp" && <ExpedirModal ctx={ctx} osId={modal.osId} />}
       {modal?.tipo === "expParcial" && <ExpedirParcialModal ctx={ctx} osId={modal.osId} />}

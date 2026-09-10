@@ -5,7 +5,9 @@ import com.ramajo.logs.system.entities.Carga;
 import com.ramajo.logs.system.entities.Log;
 import com.ramajo.logs.system.entities.Lote;
 import com.ramajo.logs.system.entities.OrdemServico;
+import com.ramajo.logs.system.dtos.CargaDtos.CargaDTO;
 import com.ramajo.logs.system.enums.Posicao;
+import com.ramajo.logs.system.services.OrdemServicoService.Reabertura;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -111,8 +113,9 @@ public final class OrdemDtos {
 
     /**
      * Reabertura da OS expedida. Mesmo corpo do FinalizarOrdemDTO — a operação
-     * é o inverso dele — e sem `cargaIds`: o lote novo nasce vazio e as cargas
-     * entram pela rota de vínculo.
+     * é o inverso dele — e sem `cargaIds`: o lote novo nasce vazio, e as cargas
+     * entram pela rota de vínculo, a partir da sugestão que a resposta traz
+     * (ver ReaberturaDTO).
      */
     public record ReabrirOrdemDTO(@NotNull Long operadorId) {
     }
@@ -195,6 +198,24 @@ public final class OrdemDtos {
                     lote.getId(), lote.getNumero(), lote.getIniciadoEm(),
                     lote.getFinalizadoEm(),
                     lote.getFinalizadoPor() != null ? lote.getFinalizadoPor().getNome() : null);
+        }
+    }
+
+    /**
+     * Resposta da reabertura: o lote recém-aberto e as cargas que a expedição
+     * total tinha soltado e que ainda estão livres neste setor.
+     *
+     * `cargasSugeridas` é SUGESTÃO, não estado — nenhuma delas foi revinculada.
+     * O front abre o modal de vínculo com elas marcadas e o operador confirma,
+     * desmarca ou acrescenta outras; o vínculo em si continua a acontecer em
+     * POST /api/ordens/{id}/cargas, que é o que abre o passo inicial.
+     */
+    public record ReaberturaDTO(LoteDTO lote, List<CargaDTO> cargasSugeridas) {
+
+        public static ReaberturaDTO from(Reabertura r) {
+            return new ReaberturaDTO(
+                    LoteDTO.from(r.lote()),
+                    r.cargasSugeridas().stream().map(CargaDTO::from).toList());
         }
     }
 

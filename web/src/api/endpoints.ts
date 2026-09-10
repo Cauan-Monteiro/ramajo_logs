@@ -4,7 +4,7 @@ import type {
   DesidrogenizacaoDTO, Etapa,
   LogDTO, LoteDTO, OperadorDTO, OrdemDesidrogenizacaoDTO, Permissao,
   OrdemDetalheDTO, OrdemResumoDTO, Posicao, ProcessoDTO, ProcessoInicialDTO,
-  RevisaoDTO, TipoCarga,
+  ReaberturaDTO, RevisaoDTO, TipoCarga,
 } from "./types";
 
 /** Uma função por rota de system_API. Nada mais mora aqui. */
@@ -250,13 +250,20 @@ export const finalizarOrdem = (osId: number, operadorId: number) =>
 
 /**
  * Desfaz a expedição total: a OS volta a produzir num LOTE NOVO, vazio — os
- * lotes anteriores ficam intactos e as cargas entram depois por vincularCarga.
- * Devolve o lote recém-aberto. Recusa com 409 uma OS em produção ou cancelada.
+ * lotes anteriores ficam intactos. Recusa com 409 uma OS em produção ou
+ * cancelada.
+ *
+ * Devolve, além do lote, as `cargasSugeridas`: as cargas que aquela expedição
+ * soltou e que ainda estão livres neste setor. Nenhuma delas foi revinculada —
+ * o vínculo continua a ser um `vincularCarga` por carga, disparado quando o
+ * operador confirma no modal, que é o que abre o passo inicial. A sugestão só
+ * existe para ele não ter de adivinhar quais eram as suas entre todas as cargas
+ * livres do setor.
  *
  * Não devolve a data da expedição desfeita a lugar nenhum: ela é apagada da OS.
  */
 export const reabrirOrdem = (osId: number, operadorId: number) =>
-  http.post<LoteDTO>(`/api/ordens/${osId}/reabrir`, { operadorId });
+  http.post<ReaberturaDTO>(`/api/ordens/${osId}/reabrir`, { operadorId });
 
 export const cancelarOrdem = (osId: number, operadorId: number) =>
   http.post<void>(`/api/ordens/${osId}/cancelar`, { operadorId });

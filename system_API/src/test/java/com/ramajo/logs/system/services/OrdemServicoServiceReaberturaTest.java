@@ -7,12 +7,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.ramajo.logs.system.entities.Carga;
 import com.ramajo.logs.system.entities.Cliente;
 import com.ramajo.logs.system.entities.Lote;
 import com.ramajo.logs.system.entities.Operador;
 import com.ramajo.logs.system.entities.OrdemServico;
 import com.ramajo.logs.system.enums.Permissao;
 import com.ramajo.logs.system.enums.Posicao;
+import com.ramajo.logs.system.enums.TipoCarga;
 import com.ramajo.logs.system.exceptions.OperadorInativoException;
 import com.ramajo.logs.system.exceptions.ReaberturaInvalidaException;
 import com.ramajo.logs.system.exceptions.RecursoNaoEncontradoException;
@@ -24,6 +26,7 @@ import com.ramajo.logs.system.repositories.OperadorRepository;
 import com.ramajo.logs.system.repositories.OrdemServicoRepository;
 import com.ramajo.logs.system.repositories.ProcessoInicialRepository;
 import com.ramajo.logs.system.repositories.ProcessoRepository;
+import com.ramajo.logs.system.services.OrdemServicoService.Reabertura;
 import java.lang.reflect.Field;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -45,6 +48,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * 2. Só OS finalizada reabre. Em produção não há expedição a desfazer, e
  *    cancelada é um fim — ressuscitá-la apagaria a diferença entre abortar e
  *    concluir.
+ * 3. As cargas que a expedição soltou voltam como SUGESTÃO, nunca como
+ *    vínculo: `ordemAtual` continua nula em todas, e o snapshot que as
+ *    guardava é consumido. Quem revincula é o operador, no modal.
  */
 @ExtendWith(MockitoExtension.class)
 class OrdemServicoServiceReaberturaTest {
@@ -76,7 +82,7 @@ class OrdemServicoServiceReaberturaTest {
                 .thenReturn(List.of(primeiro, segundo));
         when(loteRepo.save(any(Lote.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Lote novo = service.reabrir(1L, 10L);
+        Lote novo = service.reabrir(1L, 10L).lote();
 
         assertThat(novo.getNumero()).isEqualTo((short) 3);
         assertThat(novo.isFinalizado()).isFalse();
@@ -90,6 +96,151 @@ class OrdemServicoServiceReaberturaTest {
         assertThat(primeiro.getFinalizadoEm()).isEqualTo(T1);
         assertThat(segundo.getFinalizadoEm()).isEqualTo(T1);
     }
+
+    /* -- a sugestão de cargas ---------------------------------------------- */
+
+    /**
+     * O caso que motivou o snapshot: sem ele o operador reabre a OS e fica
+     * diante de todas as cargas livres do setor sem saber quais eram as dela.
+     * O que a reabertura NÃO faz é revincular — repare no `ordemAtual` nulo.
+     */
+    @Test
+    void sugereAsCargasQueAExpedicaoSoltouSemAsRevincular() throws Exception {
+        OrdemServico os = ordemExpedida(1L);
+        set(os, "lotes", new ArrayList<>(List.of(lote(os, (short) 1, T1))));
+
+        Carga t01 = carga(7L, "T-01", Posicao.OXIDACAO);
+        Carga t02 = carga(8L, "T-02", Posicao.OXIDACAO);
+        os.getCargasExpedidas().addAll(List.of(7L, 8L));
+
+        when(osRepo.findById(1L)).thenReturn(Optional.of(os));
+        when(operadorRepo.findById(10L)).thenReturn(Optional.of(operador()));
+        when(cargaRepo.findById(7L)).thenReturn(Optional.of(t01));
+        when(cargaRepo.findById(8L)).thenReturn(Optional.of(t02));
+        when(loteRepo.findByOrdemServicoIdOrderByNumeroAsc(1L))
+                .thenReturn(List.of(lote(os, (short) 1, T1)));
+        when(loteRepo.save(any(Lote.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Reabertura r = service.reabrir(1L, 10L);
+
+        assertThat(r.cargasSugeridas()).extracting(Carga::getNome)
+                .containsExactly("T-01", "T-02");
+
+        // Sugestão não é vínculo: nenhuma delas entrou na OS, e nenhum passo
+        // foi aberto. Quem faz isso é vincularCarga, quando o operador
+        // confirma no modal.
+        assertThat(t01.getOrdemAtual()).isNull();
+        assertThat(t02.getOrdemAtual()).isNull();
+        verify(logRepo, never()).save(any());
+
+        // Consumido: reabrir de novo, sem ter expedido no meio, não reoferece
+        // o que o operador já viu (e talvez tenha descartado).
+        assertThat(os.getCargasExpedidas()).isEmpty();
+    }
+
+    /**
+     * Entre a expedição e a reabertura o chão de fábrica andou. Nada disto é
+     * erro de quem reabre: a carga sai da sugestão em silêncio, como
+     * acopladasVigentes() faz com a carona caduca.
+     */
+    @Test
+    void descartaDaSugestaoACargaQueCaducou() throws Exception {
+        OrdemServico os = ordemExpedida(1L);
+        set(os, "lotes", new ArrayList<>(List.of(lote(os, (short) 1, T1))));
+
+        Carga livre = carga(7L, "T-01", Posicao.OXIDACAO);
+
+        Carga tomada = carga(8L, "T-02", Posicao.OXIDACAO);
+        tomada.setOrdemAtual(ordem(2L));          // outra OS pegou-a
+
+        Carga sucateada = carga(9L, "T-03", Posicao.OXIDACAO);
+        sucateada.setAtivo(false);
+
+        Carga mudouDeSetor = carga(11L, "T-04", Posicao.AUTOMATICA);
+
+        os.getCargasExpedidas().addAll(List.of(7L, 8L, 9L, 11L, 12L));
+
+        when(osRepo.findById(1L)).thenReturn(Optional.of(os));
+        when(operadorRepo.findById(10L)).thenReturn(Optional.of(operador()));
+        when(cargaRepo.findById(7L)).thenReturn(Optional.of(livre));
+        when(cargaRepo.findById(8L)).thenReturn(Optional.of(tomada));
+        when(cargaRepo.findById(9L)).thenReturn(Optional.of(sucateada));
+        when(cargaRepo.findById(11L)).thenReturn(Optional.of(mudouDeSetor));
+        when(cargaRepo.findById(12L)).thenReturn(Optional.empty());   // apagada
+        when(loteRepo.findByOrdemServicoIdOrderByNumeroAsc(1L))
+                .thenReturn(List.of(lote(os, (short) 1, T1)));
+        when(loteRepo.save(any(Lote.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Reabertura r = service.reabrir(1L, 10L);
+
+        // Nenhuma exceção: sobra a que ainda pode voltar, e a OS reabre na mesma.
+        assertThat(r.cargasSugeridas()).extracting(Carga::getNome).containsExactly("T-01");
+        assertThat(os.isEmProcesso()).isTrue();
+    }
+
+    /** OS sem snapshot (expedida antes da V13, ou já reaberta) reabre vazia. */
+    @Test
+    void semSnapshotNaoSugereNada() throws Exception {
+        OrdemServico os = ordemExpedida(1L);
+        set(os, "lotes", new ArrayList<>(List.of(lote(os, (short) 1, T1))));
+
+        when(osRepo.findById(1L)).thenReturn(Optional.of(os));
+        when(operadorRepo.findById(10L)).thenReturn(Optional.of(operador()));
+        when(loteRepo.findByOrdemServicoIdOrderByNumeroAsc(1L))
+                .thenReturn(List.of(lote(os, (short) 1, T1)));
+        when(loteRepo.save(any(Lote.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(service.reabrir(1L, 10L).cargasSugeridas()).isEmpty();
+        verify(cargaRepo, never()).findById(any());
+    }
+
+    /**
+     * O snapshot é um retrato da última expedição, não um acumulado: uma OS
+     * expedida duas vezes com cargas diferentes só sugere as da segunda.
+     */
+    @Test
+    void expedicaoNovaReescreveOSnapshotEmVezDeAcumular() throws Exception {
+        OrdemServico os = ordem(1L);
+        set(os, "lotes", new ArrayList<>(List.of(lote(os, (short) 1, null))));
+        os.getCargasExpedidas().add(7L);          // sobra de uma expedição anterior
+
+        Carga t02 = carga(8L, "T-02", Posicao.OXIDACAO);
+        t02.setOrdemAtual(os);
+        set(os, "cargas", new ArrayList<>(List.of(t02)));
+
+        when(osRepo.findById(1L)).thenReturn(Optional.of(os));
+        when(operadorRepo.findById(10L)).thenReturn(Optional.of(operador()));
+        when(logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(1L)).thenReturn(List.of());
+        when(cargaRepo.buscarAcoplamentosDe(1L)).thenReturn(List.of());
+        when(loteRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(1L)).thenReturn(Optional.empty());
+
+        service.finalizar(1L, 10L);
+
+        assertThat(os.getCargasExpedidas()).containsExactly(8L);
+        assertThat(t02.getOrdemAtual()).isNull();
+    }
+
+    /** Cancelada não reabre, então não há sugestão a guardar. */
+    @Test
+    void cancelamentoNaoGravaSnapshot() throws Exception {
+        OrdemServico os = ordem(1L);
+
+        Carga t01 = carga(7L, "T-01", Posicao.OXIDACAO);
+        t01.setOrdemAtual(os);
+        set(os, "cargas", new ArrayList<>(List.of(t01)));
+
+        when(osRepo.findById(1L)).thenReturn(Optional.of(os));
+        when(operadorRepo.findById(10L)).thenReturn(Optional.of(operador()));
+        when(logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(1L)).thenReturn(List.of());
+        when(cargaRepo.buscarAcoplamentosDe(1L)).thenReturn(List.of());
+
+        service.cancelar(1L, 10L);
+
+        assertThat(os.getCargasExpedidas()).isEmpty();
+        assertThat(t01.getOrdemAtual()).isNull();
+    }
+
+    /* -- os gates ---------------------------------------------------------- */
 
     @Test
     void recusaOsEmProducao() throws Exception {
@@ -180,6 +331,12 @@ class OrdemServicoServiceReaberturaTest {
         set(l, "iniciadoEm", T0);
         l.setFinalizadoEm(finalizadoEm);
         return l;
+    }
+
+    private Carga carga(Long id, String nome, Posicao posicao) throws Exception {
+        Carga c = new Carga(nome, TipoCarga.TAMBOR, posicao);
+        set(c, "id", id);
+        return c;
     }
 
     private Operador operador() {

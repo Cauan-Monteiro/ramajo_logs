@@ -11,7 +11,12 @@ export type ModalState =
   | { tipo: "processos" }
   | { tipo: "livres" }
   | { tipo: "det"; osId: number }
-  | { tipo: "vinc"; osId: number }
+  /**
+   * `preSel`: nomes de cargas para abrir já marcadas. Quem o preenche é a
+   * reabertura da OS, com as cargas que a expedição soltou — ver
+   * `api.reabrirOrdem`. Vazio no vínculo normal.
+   */
+  | { tipo: "vinc"; osId: number; preSel?: string[] }
   | { tipo: "passo"; osId: number }
   | { tipo: "exp"; osId: number }
   | { tipo: "expParcial"; osId: number }

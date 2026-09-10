@@ -30,8 +30,9 @@ import org.hibernate.generator.EventType;
  * (garantido no banco pelo índice parcial `ux_lotes_os_aberto`).
  *
  * Reabrir uma OS expedida (OrdemServicoService.reabrir) entra no mesmo molde:
- * abre o número SEGUINTE. Nenhum lote fechado volta atrás — o carimbo dele
- * descreve produção que terminou de facto.
+ * abre o número SEGUINTE, e também vazio — a reabertura sugere de volta as
+ * cargas que a expedição soltou, mas quem as vincula é o operador. Nenhum lote
+ * fechado volta atrás: o carimbo dele descreve produção que terminou de facto.
  */
 @Entity
 @Table(name = "lotes")

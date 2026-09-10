@@ -15,6 +15,7 @@ import com.ramajo.logs.system.dtos.OrdemDtos.LogDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.LoteDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.OrdemDetalheDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.OrdemResumoDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.ReaberturaDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.ReabrirOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.VincularCargaDTO;
 import com.ramajo.logs.system.entities.Log;
@@ -266,10 +267,12 @@ public class OrdemServicoController {
     }
 
     // desfaz o passo 3: a OS expedida volta a produzir num lote NOVO, sem tocar
-    // nos anteriores. Retorna o lote recém-aberto, como finalizarLote.
+    // nos anteriores. Retorna o lote recém-aberto, como finalizarLote, e junto
+    // as cargas que a expedição soltou e ainda estão livres — sugestão para o
+    // modal de vínculo, não vínculo já feito. Ver ReaberturaDTO.
     @PostMapping("/{id}/reabrir")
-    public LoteDTO reabrir(@PathVariable Long id, @Valid @RequestBody ReabrirOrdemDTO dto) {
-        return LoteDTO.from(service.reabrir(id, dto.operadorId()));
+    public ReaberturaDTO reabrir(@PathVariable Long id, @Valid @RequestBody ReabrirOrdemDTO dto) {
+        return ReaberturaDTO.from(service.reabrir(id, dto.operadorId()));
     }
 
     @PostMapping("/{id}/cancelar")

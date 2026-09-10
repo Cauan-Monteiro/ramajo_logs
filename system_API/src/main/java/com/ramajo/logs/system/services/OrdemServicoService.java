@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,14 @@ public class OrdemServicoService {
      * evita depender do estado da coleção `logs` da OS.
      */
     public record OrdemCriada(OrdemServico ordem, List<Log> logsIniciados) {
+    }
+
+    /**
+     * O lote recém-aberto pela reabertura e as cargas que a expedição soltou e
+     * ainda podem voltar. As cargas são SUGESTÃO — nenhuma foi revinculada;
+     * quem as vincula é o operador, no modal de vínculo. Ver reabrir().
+     */
+    public record Reabertura(Lote lote, List<Carga> cargasSugeridas) {
     }
 
     // CRIAÇÃO  ===============================================================================
@@ -704,7 +713,15 @@ public class OrdemServicoService {
             fecharPasso(aberto, at);
         }
 
+        // Antes de soltar: quais cargas estavam aqui. É o único registo do
+        // vínculo desfeito — sem ele a reabertura abre o modal de vínculo em
+        // branco, e nem o histórico de passos o substitui (ver
+        // OrdemServico.cargasExpedidas). clear() primeiro: uma expedição
+        // anterior desta mesma OS não pode acumular com esta.
+        os.getCargasExpedidas().clear();
+
         for(Carga c : os.getCargas()){
+            os.getCargasExpedidas().add(c.getId());
             c.setOrdemAtual(null);
         }
 
@@ -737,16 +754,32 @@ public class OrdemServicoService {
      * a expedição parcial faz, com a diferença de que aqui não há lote corrente
      * a fechar antes.
      *
-     * O lote nasce VAZIO: `finalizar` já liberou as cargas e limpou os
-     * acoplamentos, e adivinhar quais peças voltam seria inventar história —
-     * quem reabre revincula pela rota de vínculo, como numa OS qualquer.
+     * O lote nasce VAZIO, e continua a nascer: nenhuma carga é revinculada
+     * aqui. O que esta rota devolve, além do lote, são as cargas que a
+     * expedição soltou (`OrdemServico.cargasExpedidas`) e que ainda podem
+     * voltar — é uma SUGESTÃO, que o front usa para abrir o modal de vínculo já
+     * com elas marcadas. Quem vincula continua a ser o operador, pela rota de
+     * vínculo, como numa OS qualquer: adivinhar por ele seria inventar
+     * história, mas deixá-lo escolher às cegas entre todas as cargas livres do
+     * setor era pior.
+     *
+     * A sugestão é filtrada, não validada: carga sucateada, tomada por outra OS
+     * ou mudada de setor no entretanto sai da lista em silêncio. É caducidade,
+     * não erro do operador — mesmo tratamento que acopladasVigentes() dá à
+     * carona caduca.
+     *
+     * O lado CARONA do acoplamento não é sugerido: as linhas que `finalizar`
+     * apagou em carga_ordens_acopladas dizem "esta OS pegava carona na carga de
+     * outra", dependem de essa outra OS ainda estar aberta, e nunca produziram
+     * linha no painel para esta OS de qualquer forma — a linha é da titular.
+     * Quem precisar reacopla no detalhe da OS.
      *
      * O que não volta: `finalizada_em`/`finalizada_por_id` são limpos (é o que
      * marca a OS como concluída), então a data da expedição desfeita se perde.
      * O fecho do último lote fica como o vestígio dela.
      */
     @Transactional
-    public Lote reabrir(Long osId, Long operadorId){
+    public Reabertura reabrir(Long osId, Long operadorId){
         // Sem carregarAberta(): é justamente o gate que recusa OS finalizada.
         OrdemServico os = buscar(osId);
 
@@ -756,13 +789,21 @@ public class OrdemServicoService {
         // não deveria ter nenhum, mas o INSERT abaixo falharia feio se tivesse.
         if (os.getLoteAberto() != null) throw ReaberturaInvalidaException.loteAberto(osId);
 
-        // Nada é gravado com ele — o lote novo ainda não tem quem o feche —,
-        // mas a rota não aceita operador inexistente ou inativo, como as outras.
+        // Nada é gravado com ele — o lote novo ainda não tem quem o feche, e o
+        // vínculo das cargas ainda não aconteceu —, mas a rota não aceita
+        // operador inexistente ou inativo, como as outras.
         exigirOperadorAtivo(operadorId);
 
         os.setFinalizadaEm(null);
         os.setFinalizadaPor(null);
         os.setEmProcesso(true);
+
+        // Lido ANTES do clear, e depois de todas as recusas: uma reabertura
+        // que vá ser rejeitada não pode consumir o snapshot.
+        List<Carga> sugeridas = cargasSugeridas(os);
+        // Consumido: a sugestão vale para ESTA reabertura. Reabrir de novo sem
+        // ter expedido no meio não reoferece o que o operador já descartou.
+        os.getCargasExpedidas().clear();
 
         // A partir do ÚLTIMO lote, e não da contagem: numeração que tenha um
         // buraco continua a crescer em vez de colidir com ux_lotes_os_numero.
@@ -771,7 +812,38 @@ public class OrdemServicoService {
                 ? 1
                 : (short)(anteriores.get(anteriores.size() - 1).getNumero() + 1);
 
-        return loteRepo.save(new Lote(os, proximo));
+        return new Reabertura(loteRepo.save(new Lote(os, proximo)), sugeridas);
+    }
+
+    /**
+     * As cargas soltas pela expedição que ainda fazem sentido oferecer de volta.
+     *
+     * Entre a expedição e a reabertura o chão de fábrica andou: a carga pode ter
+     * sido sucateada, pega por outra OS ou mudada de setor no Ajustes. Nenhuma
+     * dessas é erro de quem reabre — a linha simplesmente sai da sugestão, do
+     * mesmo modo que acopladasVigentes() limpa a carona caduca em vez de
+     * recusar o passo.
+     */
+    private List<Carga> cargasSugeridas(OrdemServico os){
+        List<Carga> sugeridas = new ArrayList<>();
+
+        for (Long cargaId : os.getCargasExpedidas()){
+            Carga carga = cargaRepo.findById(cargaId).orElse(null);
+
+            if (carga == null
+                    || !carga.isAtivo()
+                    || carga.getOrdemAtual() != null
+                    || carga.getPosicao() != os.getPosicao()){
+                continue;
+            }
+            sugeridas.add(carga);
+        }
+
+        // Pela mesma ordem em que o painel e o modal de vínculo as mostram — o
+        // conjunto de ids não tem ordem nenhuma, e uma sugestão que troca de
+        // ordem a cada leitura confunde quem confere antes de confirmar.
+        sugeridas.sort(Comparator.comparing(Carga::getNome));
+        return sugeridas;
     }
 
     @Transactional
