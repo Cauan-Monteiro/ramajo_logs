@@ -1,8 +1,8 @@
 import { http, NotFoundError } from "./client";
 import type {
-  CargaDTO, ClienteDTO, ConfigDesidrogenizacaoDTO, DesidroEmAndamentoDTO,
+  AvaliacaoDTO, AvaliacaoInput, CargaDTO, ClienteDTO, ConfigDesidrogenizacaoDTO, DesidroEmAndamentoDTO,
   DesidrogenizacaoDTO, Etapa,
-  LogDTO, LoteDTO, OperadorDTO, OrdemDesidrogenizacaoDTO, Permissao,
+  LogDTO, LoteDTO, OperadorDTO, OrdemAlteracaoDTO, OrdemDesidrogenizacaoDTO, Permissao,
   OrdemDetalheDTO, OrdemResumoDTO, Posicao, ProcessoDTO, ProcessoInicialDTO,
   ReaberturaDTO, RevisaoDTO, TipoCarga,
 } from "./types";
@@ -245,8 +245,20 @@ export const desidrogenizacoesDaOrdem = (osId: number) =>
   http.get<OrdemDesidrogenizacaoDTO[]>(`/api/ordens/${osId}/desidrogenizacoes`);
 
 /** Expedição total: libera as cargas restantes e encerra a OS. */
-export const finalizarOrdem = (osId: number, operadorId: number) =>
-  http.post<void>(`/api/ordens/${osId}/finalizar`, { operadorId });
+/**
+ * Expedição total. Com `avaliacao`, a inspeção final é gravada na mesma
+ * transação — uma avaliação inválida não deixa a OS expedir sem ela.
+ */
+export const finalizarOrdem = (osId: number, operadorId: number, avaliacao?: AvaliacaoInput) =>
+  http.post<void>(`/api/ordens/${osId}/finalizar`, { operadorId, avaliacao: avaliacao ?? null });
+
+/** A avaliação da OS, ou null se ainda não houver (a API responde 204). */
+export const avaliacaoOrdem = async (osId: number): Promise<AvaliacaoDTO | null> =>
+  (await http.get<AvaliacaoDTO | undefined>(`/api/ordens/${osId}/avaliacao`)) ?? null;
+
+/** Avaliação feita fora da expedição — só ADMIN. Substitui a que houver. */
+export const salvarAvaliacao = (osId: number, operadorId: number, avaliacao: AvaliacaoInput) =>
+  http.put<AvaliacaoDTO>(`/api/ordens/${osId}/avaliacao`, { operadorId, avaliacao });
 
 /**
  * Desfaz a expedição total: a OS volta a produzir num LOTE NOVO, vazio — os
@@ -267,6 +279,25 @@ export const reabrirOrdem = (osId: number, operadorId: number) =>
 
 export const cancelarOrdem = (osId: number, operadorId: number) =>
   http.post<void>(`/api/ordens/${osId}/cancelar`, { operadorId });
+
+/**
+ * Correção da OS pelo ADMIN (Ajustes › Corrigir OS). Os três campos vão
+ * inteiros; o que difere do atual é o que muda, e cada mudança vira linha no
+ * histórico com o `motivo`. Recusa com 403 quem não é ADMIN, 409 uma OS fora de
+ * produção ou um Nº de outra OS, 422 um pedido sem alteração.
+ *
+ * Trocar a `posicao` solta as cargas do setor antigo (passos abertos são
+ * cancelados) e vincula `cargaIds` — livres do setor novo — no processo
+ * inicial dele, tudo na mesma transação. Sem troca de posição, `cargaIds` é
+ * ignorado.
+ */
+export const corrigirOrdem = (osId: number, dto: {
+  operadorId: number; idExterno: number; clienteId: number; posicao: Posicao;
+  cargaIds: number[]; motivo: string;
+}) => http.put<OrdemDetalheDTO>(`/api/ordens/${osId}`, dto);
+
+export const alteracoesOrdem = (osId: number) =>
+  http.get<OrdemAlteracaoDTO[]>(`/api/ordens/${osId}/alteracoes`);
 
 // ── relatórios ──────────────────────────────────────────────────────────
 /**

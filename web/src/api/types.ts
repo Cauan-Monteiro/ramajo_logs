@@ -198,6 +198,49 @@ export interface OrdemDetalheDTO {
   logsIniciados: LogDTO[] | null;
 }
 
+/**
+ * Um ponto da avaliação da inspeção final: `null` = não avaliado, `true` =
+ * avaliado sem observação, texto = avaliado com a observação daquele ponto.
+ * `false` não existe — a API recusa.
+ */
+export type ItemAvaliacao = null | true | string;
+
+/** Corpo de avaliação — dtos/OrdemDtos.AvaliacaoInputDTO. */
+export interface AvaliacaoInput {
+  visual: ItemAvaliacao;
+  aderencia: ItemAvaliacao;
+  embalagem: ItemAvaliacao;
+  camada: ItemAvaliacao;
+  observacao: string | null;
+}
+
+/** dtos/OrdemDtos.AvaliacaoDTO — GET /api/ordens/{id}/avaliacao. */
+export interface AvaliacaoDTO extends AvaliacaoInput {
+  /** Gravado pela API ao salvar: salvar é concluir a avaliação. */
+  isVerificado: boolean;
+  avaliadaPorNome: string;
+  avaliadaEm: string;
+}
+
+/** enums/CampoAlterado — `CARGAS` é o efeito da troca de posição, não um campo da OS. */
+export type CampoAlterado = "ID_EXTERNO" | "CLIENTE" | "POSICAO" | "CARGAS";
+
+/**
+ * dtos/OrdemDtos.OrdemAlteracaoDTO — uma linha do histórico de correções do
+ * ADMIN. Os valores já vêm como texto gravado no momento ("#12 ACME",
+ * "OXIDACAO", "CG-01, CG-02"), não o cadastro de hoje; null = não havia valor.
+ * As linhas de uma mesma correção partilham `alteradaEm` e `motivo`.
+ */
+export interface OrdemAlteracaoDTO {
+  id: number;
+  campo: CampoAlterado;
+  valorAnterior: string | null;
+  valorNovo: string | null;
+  motivo: string;
+  alteradaPorNome: string;
+  alteradaEm: string;
+}
+
 /** web/ApiError */
 export interface ApiErrorBody {
   codigo: string;

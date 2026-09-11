@@ -20,6 +20,8 @@ export type ModalState =
   | { tipo: "passo"; osId: number }
   | { tipo: "exp"; osId: number }
   | { tipo: "expParcial"; osId: number }
+  /** O "Expedir" da Inspeção final: avaliação (opcional) + expedição total. */
+  | { tipo: "avaliarExp"; osId: number }
   | { tipo: "desidro"; osId: number }
   /** O painel do forno — leitura das que estão a correr, sem `osId`. */
   | { tipo: "desidroPainel" }

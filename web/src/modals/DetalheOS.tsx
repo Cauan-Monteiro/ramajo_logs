@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import * as api from "../api/endpoints";
 import type {
-  CargaDTO, LogDTO, OrdemDesidrogenizacaoDTO, OrdemDetalheDTO,
+  AvaliacaoDTO, CargaDTO, LogDTO, OrdemAlteracaoDTO, OrdemDesidrogenizacaoDTO, OrdemDetalheDTO,
 } from "../api/types";
 import { Corners } from "../components/Blueprint";
+import { HistoricoAlteracoes } from "../components/HistoricoAlteracoes";
 import { Modal, Vazio } from "../components/Modal";
+import { ResumoAvaliacao } from "../components/ResumoAvaliacao";
 import { ScanField } from "../components/ScanField";
 import {
   SEL_CHIP, SEL_PICK, cargaCarona, caronasDa, dotStyle, ehAcoplada, etapaStyle, etapaDoLog,
@@ -31,6 +33,8 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
   // buscamos o histórico sob demanda ao abrir o detalhe.
   const [extra, setExtra] = useState<LogDTO[] | null>(null);
   const [desidros, setDesidros] = useState<OrdemDesidrogenizacaoDTO[]>([]);
+  const [alteracoes, setAlteracoes] = useState<OrdemAlteracaoDTO[]>([]);
+  const [avaliacao, setAvaliacao] = useState<AvaliacaoDTO | null>(null);
   // O resumo em `ctx.data.ordens` não traz `finalizadaEm` nem `cancelada` —
   // a data de encerramento só existe no detalhe, buscado junto do histórico.
   const [detalhe, setDetalhe] = useState<OrdemDetalheDTO | null>(null);
@@ -49,6 +53,9 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
   // recarrega os dados e troca a identidade do objeto).
   useEffect(() => {
     api.desidrogenizacoesDaOrdem(osId).then(setDesidros).catch(() => setDesidros([]));
+    // Mesma lógica: correção do ADMIN é rara, então vem sob demanda também.
+    api.alteracoesOrdem(osId).then(setAlteracoes).catch(() => setAlteracoes([]));
+    api.avaliacaoOrdem(osId).then(setAvaliacao).catch(() => setAvaliacao(null));
   }, [osId, ctx.data]);
 
   /**
@@ -231,6 +238,21 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
                 </span>
               </div>
             ))}
+          </div>
+        </>
+      )}
+
+      {/* Em produção só aparece se o ADMIN já avaliou; expedida, sempre — "sem
+          avaliação" também é informação sobre uma OS que saiu. */}
+      {(avaliacao || !ordem.emProcesso) && <ResumoAvaliacao avaliacao={avaliacao} />}
+
+      {/* Antes das etapas: quem lê o detalhe precisa saber logo que o Nº, o
+          cliente ou o setor que vê no cabeçalho foram corrigidos. */}
+      {alteracoes.length > 0 && (
+        <>
+          <span className="lbl" style={{ color: "#8f3421" }}>Correções do ADMIN</span>
+          <div style={{ margin: "6px 0 18px" }}>
+            <HistoricoAlteracoes alteracoes={alteracoes} />
           </div>
         </>
       )}

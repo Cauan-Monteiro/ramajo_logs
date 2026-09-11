@@ -1,5 +1,7 @@
 import { useCallback, useState } from "react";
 import { ApiErrorException } from "./api/client";
+import type { DesidroEmAndamentoDTO } from "./api/types";
+import { AlertaDesidro } from "./components/AlertaDesidro";
 import { AppNav } from "./components/AppNav";
 import { Toast, type Aviso } from "./components/Toast";
 import { POSICOES } from "./domain/format";
@@ -9,6 +11,7 @@ import { Dashboard } from "./screens/Dashboard";
 import { Login } from "./screens/Login";
 import { Relatorios } from "./screens/Relatorios";
 import { useAba } from "./state/useAba";
+import { useAlertaDesidro } from "./state/useAlertaDesidro";
 import { useAppData } from "./state/useAppData";
 import { useSession } from "./state/useSession";
 import { useSync } from "./state/useSync";
@@ -37,6 +40,20 @@ export function App() {
   }, []);
 
   const { data, carregando, pronto, marca, recarregar } = useAppData(reportarErro);
+
+  const alerta = useAlertaDesidro(data.desidrosEmAndamento, !!operador && pronto);
+
+  /**
+   * "Ver OS" da faixa. O modal de detalhe pertence ao Dashboard, então o App
+   * troca para a aba da posição da OS e deixa o pedido; o Dashboard abre o
+   * modal e o consome — senão uma troca de aba posterior reabriria a mesma OS.
+   */
+  const [osPedida, setOsPedida] = useState<number | null>(null);
+  const verOS = useCallback((d: DesidroEmAndamentoDTO) => {
+    setAba(d.posicao);
+    setOsPedida(d.ordemServicoId);
+  }, [setAba]);
+  const pedidoAtendido = useCallback(() => setOsPedida(null), []);
 
   // Mantém este terminal no mesmo ponto que os demais, sem F5.
   useSync({
@@ -96,6 +113,18 @@ export function App() {
         onSair={encerrar}
       />
 
+      {alerta.pendentes.length > 0 && (
+        <AlertaDesidro
+          pendentes={alerta.pendentes}
+          onCiente={alerta.ciente}
+          onCienteTodas={alerta.cienteTodas}
+          onVerOS={verOS}
+          silenciadoAte={alerta.silenciadoAte}
+          onSilenciar={alerta.silenciar}
+          onReativarSom={alerta.reativarSom}
+        />
+      )}
+
       {!pronto ? (
         <div className="boot">
           {carregando ? (
@@ -141,6 +170,8 @@ export function App() {
           agir={agir}
           ocupado={ocupado}
           isMobile={isMobile}
+          abrirOS={osPedida}
+          onAbriuOS={pedidoAtendido}
         />
       )}
     </div>

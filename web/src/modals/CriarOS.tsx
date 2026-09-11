@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import * as api from "../api/endpoints";
 import type { CargaDTO, Posicao } from "../api/types";
+import { BuscaCliente } from "../components/BuscaCliente";
 import { Corners } from "../components/Blueprint";
 import type { Acoplamentos } from "./AcoplarCargas";
 import { AcoplarCargas, paresDe } from "./AcoplarCargas";
 import { Modal } from "../components/Modal";
 import { ScanField } from "../components/ScanField";
-import { SEL_CHIP, SEL_PICK, SEL_SEG } from "../domain/derive";
+import { SEL_CHIP, SEL_SEG } from "../domain/derive";
 import { POSICOES, posLabel } from "../domain/format";
 import { cargasLivres } from "../state/useAppData";
 import type { Ctx } from "./tipos";
@@ -24,7 +25,6 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
   const [verificando, setVerificando] = useState(false);
   const [posicao, setPosicao] = useState<Posicao>(ctx.posicao);
   const [clienteId, setClienteId] = useState<number | null>(null);
-  const [buscaCliente, setBuscaCliente] = useState("");
   const [sel, setSel] = useState<string[]>([]);
   const [acopladas, setAcopladas] = useState<Acoplamentos>({});
 
@@ -130,25 +130,6 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
       depois: ctx.fechar,
     });
   }
-
-  const clientes = useMemo(() => {
-    const q = buscaCliente.trim().toLowerCase();
-    return ctx.data.clientes
-      .map((c) => {
-        const id = String(c.id);
-        const nome = c.nome.toLowerCase();
-        let rank = -1;
-        if (!q) rank = 2;
-        else if (id === q) rank = 0;
-        else if (id.startsWith(q)) rank = 1;
-        else if (id.includes(q)) rank = 2;
-        else if (nome.includes(q)) rank = 3;
-        return { c, rank };
-      })
-      .filter((x) => x.rank >= 0)
-      .sort((a, b) => a.rank - b.rank || a.c.id - b.c.id)
-      .map((x) => x.c);
-  }, [buscaCliente, ctx.data.clientes]);
 
   const chips = (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
@@ -398,35 +379,11 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
           </div>
 
           <span className="lbl">3 · Cliente</span>
-          <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
-            <input
-              className="inp"
-              placeholder="Buscar por ID ou nome..."
-              value={buscaCliente}
-              onChange={(e) => setBuscaCliente(e.target.value)}
-              style={{ flex: 1 }}
-            />
-          </div>
-          <div
-            style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 220, overflow: "auto" }}
-          >
-            {clientes.map((c) => (
-              <button
-                key={c.id}
-                className="pick"
-                style={clienteId === c.id ? SEL_PICK : undefined}
-                onClick={() => setClienteId(c.id)}
-              >
-                <span
-                  style={{ font: "600 13px 'Barlow Condensed'", color: "#5980a6", minWidth: 48 }}
-                >
-                  #{c.id}
-                </span>
-                {c.nome}
-              </button>
-            ))}
-            {clientes.length === 0 && <span className="os-tv">Nenhum cliente encontrado.</span>}
-          </div>
+          <BuscaCliente
+            clientes={ctx.data.clientes}
+            selecionado={clienteId}
+            onEscolher={setClienteId}
+          />
         </>
       )}
     </Modal>

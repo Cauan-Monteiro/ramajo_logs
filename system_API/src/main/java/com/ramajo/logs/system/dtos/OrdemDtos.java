@@ -4,9 +4,14 @@ import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.OrdemDesidrogenizacaoDTO
 import com.ramajo.logs.system.entities.Carga;
 import com.ramajo.logs.system.entities.Log;
 import com.ramajo.logs.system.entities.Lote;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.ramajo.logs.system.entities.OrdemAlteracao;
+import com.ramajo.logs.system.entities.OrdemAvaliacao;
 import com.ramajo.logs.system.entities.OrdemServico;
 import com.ramajo.logs.system.dtos.CargaDtos.CargaDTO;
+import com.ramajo.logs.system.enums.CampoAlterado;
 import com.ramajo.logs.system.enums.Posicao;
+import com.ramajo.logs.system.services.OrdemAvaliacaoService;
 import com.ramajo.logs.system.services.OrdemServicoService.Reabertura;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -105,7 +110,34 @@ public final class OrdemDtos {
             @NotBlank @Size(max = 64) String responsavelTagId) {
     }
 
-    public record FinalizarOrdemDTO(@NotNull Long operadorId) {
+    /**
+     * `avaliacao` é opcional: ausente, a OS expede sem avaliar (e quem já
+     * chamava só com `operadorId` continua a funcionar).
+     */
+    public record FinalizarOrdemDTO(@NotNull Long operadorId, @Valid AvaliacaoInputDTO avaliacao) {
+    }
+
+    /**
+     * Os pontos da inspeção final. Cada um de `visual`, `aderencia`,
+     * `embalagem` e `camada` é `null` (não avaliado), `true` (avaliado) ou o
+     * texto da observação daquele ponto. Tipados como Object porque o JSON
+     * mistura os três; a validação de cada valor é de ItemAvaliacao.de, que
+     * responde 422.
+     *
+     * Sem `isVerificado`: salvar é concluir, e a avaliação é gravada verificada.
+     */
+    public record AvaliacaoInputDTO(
+            Object visual, Object aderencia, Object embalagem, Object camada,
+            @Size(max = 500) String observacao) {
+
+        public OrdemAvaliacaoService.Entrada entrada() {
+            return new OrdemAvaliacaoService.Entrada(
+                    visual, aderencia, embalagem, camada, observacao);
+        }
+    }
+
+    /** Avaliação pelo Ajustes (só ADMIN). */
+    public record SalvarAvaliacaoDTO(@NotNull Long operadorId, @Valid @NotNull AvaliacaoInputDTO avaliacao) {
     }
 
     public record CancelarOrdemDTO(@NotNull Long operadorId) {
@@ -118,6 +150,24 @@ public final class OrdemDtos {
      * (ver ReaberturaDTO).
      */
     public record ReabrirOrdemDTO(@NotNull Long operadorId) {
+    }
+
+    /**
+     * Correção de OS pelo ADMIN. Os três campos vão inteiros — o que difere do
+     * atual é o que muda —, e `idExterno` é obrigatório: a tela de correção
+     * acha a OS por ele, e esvaziá-lo a tiraria de lá.
+     *
+     * `cargaIds` são cargas LIVRES do setor novo, e só contam quando `posicao`
+     * muda: aí as cargas antigas saem e estas entram, na mesma transação.
+     * Ausente ou vazio, a OS fica sem carga no setor novo.
+     */
+    public record CorrigirOrdemDTO(
+            @NotNull Long operadorId,
+            @NotNull Long idExterno,
+            @NotNull Long clienteId,
+            @NotNull Posicao posicao,
+            List<@NotNull Long> cargaIds,
+            @NotBlank @Size(max = 500) String motivo) {
     }
 
     /**
@@ -186,6 +236,37 @@ public final class OrdemDtos {
                     logsIniciados == null
                             ? null
                             : logsIniciados.stream().map(LogDTO::from).toList());
+        }
+    }
+
+    /**
+     * Uma linha do histórico de correções. `valorAnterior`/`valorNovo` já vêm
+     * como texto de tela ("#12 ACME", "OXIDACAO", "CG-01, CG-02"); null quando
+     * não havia valor (OS sem Nº, nenhuma carga).
+     */
+    public record OrdemAlteracaoDTO(
+            Long id, CampoAlterado campo, String valorAnterior, String valorNovo,
+            String motivo, String alteradaPorNome, Instant alteradaEm) {
+
+        public static OrdemAlteracaoDTO from(OrdemAlteracao a) {
+            return new OrdemAlteracaoDTO(
+                    a.getId(), a.getCampo(), a.getValorAnterior(), a.getValorNovo(),
+                    a.getMotivo(), a.getAlteradaPor().getNome(), a.getAlteradaEm());
+        }
+    }
+
+    /** Os pontos saem no mesmo formato em que entram: null | true | "observação". */
+    public record AvaliacaoDTO(
+            @JsonProperty("isVerificado") boolean isVerificado,
+            Object visual, Object aderencia, Object embalagem, Object camada,
+            String observacao, String avaliadaPorNome, Instant avaliadaEm) {
+
+        public static AvaliacaoDTO from(OrdemAvaliacao a) {
+            return new AvaliacaoDTO(
+                    a.isVerificado(),
+                    a.getVisual().valor(), a.getAderencia().valor(),
+                    a.getEmbalagem().valor(), a.getCamada().valor(),
+                    a.getObservacao(), a.getAvaliadaPor().getNome(), a.getAvaliadaEm());
         }
     }
 

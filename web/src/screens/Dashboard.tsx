@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   CargaDTO, LogDTO, OperadorDTO, OrdemResumoDTO, Posicao, ProcessoDTO,
 } from "../api/types";
@@ -18,6 +18,7 @@ import {
 import { ETAPAS, duracao, hhmm, osNum, posLabel } from "../domain/format";
 import { useAgora } from "../state/useAgora";
 import { cargasLivres, logsDe, type AppData } from "../state/useAppData";
+import { AvaliarExpedicaoModal } from "../modals/AvaliarExpedicao";
 import { BuscarOSModal } from "../modals/BuscarOS";
 import { CargasLivresModal } from "../modals/CargasLivres";
 import { CriarOSModal } from "../modals/CriarOS";
@@ -106,7 +107,7 @@ function colunasDe(processos: ProcessoDTO[]): ColunaOrd<Linha>[] {
 }
 
 export function Dashboard({
-  data, posicao, operador, isAdmin, agir, ocupado, isMobile,
+  data, posicao, operador, isAdmin, agir, ocupado, isMobile, abrirOS, onAbriuOS,
 }: {
   data: AppData;
   posicao: Posicao;
@@ -115,8 +116,18 @@ export function Dashboard({
   agir: Ctx["agir"];
   ocupado: boolean;
   isMobile: boolean;
+  /** Pedido de fora (a faixa de desidro estourada) para abrir o Detalhe de uma OS. */
+  abrirOS: number | null;
+  /** Consome o pedido: sem isto, remontar o Dashboard reabriria a mesma OS. */
+  onAbriuOS: () => void;
 }) {
   const [modal, setModal] = useState<ModalState>(null);
+
+  useEffect(() => {
+    if (abrirOS === null) return;
+    setModal({ tipo: "det", osId: abrirOS });
+    onAbriuOS();
+  }, [abrirOS, onAbriuOS]);
   const [sel, setSel] = useState<string[]>([]);
   const [pagina, setPagina] = useState(0);
 
@@ -518,6 +529,7 @@ export function Dashboard({
       {modal?.tipo === "passo" && <PassoModal ctx={ctx} osId={modal.osId} />}
       {modal?.tipo === "exp" && <ExpedirModal ctx={ctx} osId={modal.osId} />}
       {modal?.tipo === "expParcial" && <ExpedirParcialModal ctx={ctx} osId={modal.osId} />}
+      {modal?.tipo === "avaliarExp" && <AvaliarExpedicaoModal ctx={ctx} osId={modal.osId} />}
       {modal?.tipo === "desidro" && <DesidrogenizarModal ctx={ctx} osId={modal.osId} />}
       {modal?.tipo === "desidroPainel" && <DesidroPainelModal ctx={ctx} />}
       {modal?.tipo === "cancel" && <CancelarModal ctx={ctx} osId={modal.osId} />}

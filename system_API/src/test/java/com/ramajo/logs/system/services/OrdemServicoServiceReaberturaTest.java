@@ -66,6 +66,7 @@ class OrdemServicoServiceReaberturaTest {
     @Mock private LogRepository logRepo;
     @Mock private LoteRepository loteRepo;
     @Mock private ProcessoInicialRepository processoInicialRepo;
+    @Mock private OrdemAvaliacaoService avaliacaoService;
 
     @InjectMocks private OrdemServicoService service;
 
@@ -95,6 +96,9 @@ class OrdemServicoServiceReaberturaTest {
         // O preço da reabertura para na OS: o histórico de lotes não é tocado.
         assertThat(primeiro.getFinalizadoEm()).isEqualTo(T1);
         assertThat(segundo.getFinalizadoEm()).isEqualTo(T1);
+
+        // A avaliação era da expedição desfeita.
+        verify(avaliacaoService).descartar(1L);
     }
 
     /* -- a sugestão de cargas ---------------------------------------------- */
@@ -266,6 +270,8 @@ class OrdemServicoServiceReaberturaTest {
                 .hasMessageContaining("cancelada");
 
         verify(loteRepo, never()).save(any());
+        // Reabertura recusada não apaga a avaliação.
+        verify(avaliacaoService, never()).descartar(any());
     }
 
     /** Estado que não deveria existir; se existisse, o INSERT bateria no índice. */

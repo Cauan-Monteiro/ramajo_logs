@@ -27,7 +27,7 @@ const LIMITE_CRITICO = 0.9;
  * saiu da tela nunca fica sabendo que passou; fica para sempre e o vermelho
  * acende indefinidamente por algo que ninguém pode mais evitar.
  */
-export const JANELA_ESTOURADA_MIN = 30;
+export const JANELA_ESTOURADA_MIN = 15;
 
 /** 0 = acabou de começar · 1 = no horário de término · >1 = estourou. */
 export function progresso(d: DesidroEmAndamentoDTO, agora: number): number {
@@ -37,6 +37,42 @@ export function progresso(d: DesidroEmAndamentoDTO, agora: number): number {
   // zero devolveria Infinity e pintaria a barra de vermelho por um dado ruim.
   if (!(fim > inicio)) return 0;
   return (agora - inicio) / (fim - inicio);
+}
+
+/**
+ * Por quanto tempo um alerta JÁ ACESO e sem "Ciente" continua na faixa.
+ *
+ * Acender é outra conta: só acende o estouro que o terminal percebe dentro de
+ * JANELA_ESTOURADA_MIN — um terminal que passou horas desligado não pode voltar
+ * à produção a tocar por estouros que ninguém podia mais evitar. Mas o que
+ * acendeu à frente de alguém só some quando alguém diz que viu, e isto é o teto
+ * disso: sem ele, um terminal ligado e esquecido acenderia amanhã por uma OS
+ * que ficou aberta. Um turno basta.
+ */
+export const JANELA_ALERTA_MIN = 12 * 60;
+
+/** As que já passaram do horário de término há menos de `janelaMin`. */
+export function estouradas(
+  ds: DesidroEmAndamentoDTO[], agora: number, janelaMin = JANELA_ALERTA_MIN,
+): DesidroEmAndamentoDTO[] {
+  const limite = janelaMin * 60000;
+  return ds.filter((d) => {
+    const fim = new Date(d.finalizadaEm).getTime();
+    return agora >= fim && agora - fim < limite;
+  });
+}
+
+/**
+ * O próximo término ainda no futuro, em ms — o instante exato em que vale a
+ * pena reavaliar o alerta. `null` quando nenhuma está a correr.
+ */
+export function proximoFim(ds: DesidroEmAndamentoDTO[], agora: number): number | null {
+  let prox: number | null = null;
+  for (const d of ds) {
+    const fim = new Date(d.finalizadaEm).getTime();
+    if (fim > agora && (prox === null || fim < prox)) prox = fim;
+  }
+  return prox;
 }
 
 export function nivel(pct: number): NivelDesidro {
@@ -125,7 +161,7 @@ export function detalhe(ds: DesidroEmAndamentoDTO[], agora: number): string {
     .map((d) => {
       const pct = progresso(d, agora);
       const situacao = pct >= 1
-        ? "ESTOUROU"
+        ? "RETIRAR DO FORNO"
         : `${Math.round(pct * 100)}% · termina ${hhmm(d.finalizadaEm)}`;
       const os = osNum({ id: d.ordemServicoId, idExterno: d.ordemIdExterno });
       return `OS ${os} · ${d.nome} · ${situacao}`;

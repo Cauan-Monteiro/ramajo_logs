@@ -4,7 +4,10 @@ import com.ramajo.logs.system.dtos.CargaDtos.CargaDTO;
 import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.AplicarDesidrogenizacaoDTO;
 import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.OrdemDesidrogenizacaoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.AcoplamentoDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.AvaliacaoDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.SalvarAvaliacaoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.CancelarOrdemDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.CorrigirOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.CriarOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.FinalizarLoteDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.FinalizarOrdemDTO;
@@ -13,6 +16,7 @@ import com.ramajo.logs.system.dtos.OrdemDtos.IniciarLogPorTagDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.LiberarCargasDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.LogDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.LoteDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.OrdemAlteracaoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.OrdemDetalheDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.OrdemResumoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.ReaberturaDTO;
@@ -23,6 +27,7 @@ import com.ramajo.logs.system.entities.Lote;
 import com.ramajo.logs.system.entities.OrdemDesidrogenizacao;
 import com.ramajo.logs.system.entities.OrdemServico;
 import com.ramajo.logs.system.services.DesidrogenizacaoService;
+import com.ramajo.logs.system.services.OrdemAvaliacaoService;
 import com.ramajo.logs.system.services.OrdemServicoService;
 import com.ramajo.logs.system.services.PlanilhaOrdemServicoService;
 import jakarta.validation.Valid;
@@ -42,6 +47,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -62,13 +68,16 @@ public class OrdemServicoController {
     private final OrdemServicoService service;
     private final PlanilhaOrdemServicoService planilhaService;
     private final DesidrogenizacaoService desidrogenizacaoService;
+    private final OrdemAvaliacaoService avaliacaoService;
 
     public OrdemServicoController(OrdemServicoService service,
                                   PlanilhaOrdemServicoService planilhaService,
-                                  DesidrogenizacaoService desidrogenizacaoService) {
+                                  DesidrogenizacaoService desidrogenizacaoService,
+                                  OrdemAvaliacaoService avaliacaoService) {
         this.service = service;
         this.planilhaService = planilhaService;
         this.desidrogenizacaoService = desidrogenizacaoService;
+        this.avaliacaoService = avaliacaoService;
     }
 
     @PostMapping
@@ -107,6 +116,20 @@ public class OrdemServicoController {
     @GetMapping("/{id}")
     public OrdemDetalheDTO buscar(@PathVariable Long id) {
         return OrdemDetalheDTO.from(service.buscar(id));
+    }
+
+    // Correção pelo ADMIN (Nº, cliente, posição). PUT porque o corpo traz os
+    // três campos inteiros; cada um que muda vira linha no histórico abaixo.
+    @PutMapping("/{id}")
+    public OrdemDetalheDTO corrigir(@PathVariable Long id, @Valid @RequestBody CorrigirOrdemDTO dto) {
+        return OrdemDetalheDTO.from(service.corrigir(
+                id, dto.operadorId(), dto.idExterno(), dto.clienteId(), dto.posicao(),
+                dto.cargaIds(), dto.motivo()));
+    }
+
+    @GetMapping("/{id}/alteracoes")
+    public List<OrdemAlteracaoDTO> alteracoes(@PathVariable Long id) {
+        return service.alteracoes(id).stream().map(OrdemAlteracaoDTO::from).toList();
     }
 
     @GetMapping("/{id}/logs")
@@ -258,12 +281,32 @@ public class OrdemServicoController {
                 .toList();
     }
 
-    // passo 3: expedição total (fecha a OS e o lote corrente junto)
+    // passo 3: expedição total (fecha a OS e o lote corrente junto). Com
+    // `avaliacao` no corpo, a inspeção final é gravada na mesma transação.
     @PostMapping("/{id}/finalizar")
     public ResponseEntity<Void> finalizar(
             @PathVariable Long id, @Valid @RequestBody FinalizarOrdemDTO dto) {
-        service.finalizar(id, dto.operadorId());
+        service.finalizar(id, dto.operadorId(),
+                dto.avaliacao() == null ? null : dto.avaliacao().entrada());
         return ResponseEntity.noContent().build();
+    }
+
+    // AVALIAÇÃO  =============================================================
+    // A da inspeção final. Nasce na expedição (acima); estas rotas são a
+    // leitura e a avaliação feita depois, pelo ADMIN no Ajustes.
+
+    // 204 quando a OS não tem avaliação: é o estado normal de muitas, não erro.
+    @GetMapping("/{id}/avaliacao")
+    public ResponseEntity<AvaliacaoDTO> avaliacao(@PathVariable Long id) {
+        return avaliacaoService.daOrdem(id)
+                .map(a -> ResponseEntity.ok(AvaliacaoDTO.from(a)))
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @PutMapping("/{id}/avaliacao")
+    public AvaliacaoDTO avaliar(@PathVariable Long id, @Valid @RequestBody SalvarAvaliacaoDTO dto) {
+        return AvaliacaoDTO.from(avaliacaoService.avaliarComoAdmin(
+                id, dto.operadorId(), dto.avaliacao().entrada()));
     }
 
     // desfaz o passo 3: a OS expedida volta a produzir num lote NOVO, sem tocar

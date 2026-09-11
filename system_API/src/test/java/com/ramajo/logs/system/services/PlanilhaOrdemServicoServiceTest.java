@@ -9,16 +9,22 @@ import com.ramajo.logs.system.entities.Cliente;
 import com.ramajo.logs.system.entities.Log;
 import com.ramajo.logs.system.entities.Lote;
 import com.ramajo.logs.system.entities.Desidrogenizacao;
+import com.ramajo.logs.system.entities.ItemAvaliacao;
 import com.ramajo.logs.system.entities.Operador;
+import com.ramajo.logs.system.entities.OrdemAlteracao;
+import com.ramajo.logs.system.entities.OrdemAvaliacao;
 import com.ramajo.logs.system.entities.OrdemDesidrogenizacao;
 import com.ramajo.logs.system.entities.OrdemServico;
 import com.ramajo.logs.system.entities.Processo;
+import com.ramajo.logs.system.enums.CampoAlterado;
 import com.ramajo.logs.system.enums.Etapa;
 import com.ramajo.logs.system.enums.Permissao;
 import com.ramajo.logs.system.enums.Posicao;
 import com.ramajo.logs.system.enums.TipoCarga;
 import com.ramajo.logs.system.repositories.LogRepository;
 import com.ramajo.logs.system.repositories.LoteRepository;
+import com.ramajo.logs.system.repositories.OrdemAlteracaoRepository;
+import com.ramajo.logs.system.repositories.OrdemAvaliacaoRepository;
 import com.ramajo.logs.system.repositories.OrdemDesidrogenizacaoRepository;
 import com.ramajo.logs.system.repositories.OrdemServicoRepository;
 import java.io.ByteArrayInputStream;
@@ -55,6 +61,11 @@ class PlanilhaOrdemServicoServiceTest {
     @Mock private LogRepository logRepo;
     @Mock private LoteRepository loteRepo;
     @Mock private OrdemDesidrogenizacaoRepository desidroRepo;
+    // Sem stub nos testes que não tratam de correção: o mock devolve lista
+    // vazia, que é o caso de quase toda OS.
+    @Mock private OrdemAlteracaoRepository alteracaoRepo;
+    // Idem: sem stub, Optional vazio — a OS expedida sem avaliar.
+    @Mock private OrdemAvaliacaoRepository avaliacaoRepo;
 
     @InjectMocks private PlanilhaOrdemServicoService service;
 
@@ -81,11 +92,13 @@ class PlanilhaOrdemServicoServiceTest {
         byte[] bytes = service.gerar(42L);
 
         try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
-            assertThat(wb.getNumberOfSheets()).isEqualTo(4);
+            assertThat(wb.getNumberOfSheets()).isEqualTo(6);
             assertThat(wb.getSheetName(0)).isEqualTo("Relatório");
             assertThat(wb.getSheetName(1)).isEqualTo("Lotes");
             assertThat(wb.getSheetName(2)).isEqualTo("Desidrogenizações");
-            assertThat(wb.getSheetName(3)).isEqualTo("Dados");
+            assertThat(wb.getSheetName(3)).isEqualTo("Avaliação");
+            assertThat(wb.getSheetName(4)).isEqualTo("Dados");
+            assertThat(wb.getSheetName(5)).isEqualTo("Alterações");
 
             // a aba do forno traz a aplicação, com a duração somável do Excel
             Sheet forno = wb.getSheetAt(2);
@@ -114,7 +127,7 @@ class PlanilhaOrdemServicoServiceTest {
 
             // autofiltro só na aba plana
             assertThat(relatorio.getCTWorksheet().isSetAutoFilter()).isFalse();
-            assertThat(wb.getSheetAt(3).getCTWorksheet().isSetAutoFilter()).isTrue();
+            assertThat(wb.getSheetAt(4).getCTWorksheet().isSetAutoFilter()).isTrue();
         }
     }
 
@@ -181,6 +194,78 @@ class PlanilhaOrdemServicoServiceTest {
             assertThat(forno).isNotNull();
             assertThat(forno.getRow(1).getCell(0).getStringCellValue())
                     .startsWith("Nenhuma desidrogenização");
+        }
+    }
+
+    /**
+     * A correção do ADMIN chega à planilha como foi gravada — texto de antes e
+     * de depois, motivo e quem fez —; sem correção, a aba diz que não houve.
+     */
+    @Test
+    void abaDeAlteracoesTrazAsCorrecoesOuDizQueNaoHouve() throws Exception {
+        OrdemServico os = ordem();
+        Operador admin = new Operador("Ana", Permissao.ADMIN, "A1");
+        OrdemAlteracao numero = new OrdemAlteracao(os, CampoAlterado.ID_EXTERNO,
+                "99123", "99124", "Nº digitado errado", admin);
+        set(numero, "alteradaEm", T0);
+
+        when(osRepo.findById(42L)).thenReturn(Optional.of(os));
+        when(logRepo.buscarParaRelatorio(42L)).thenReturn(List.of());
+        when(loteRepo.buscarParaRelatorio(42L)).thenReturn(List.of());
+        when(desidroRepo.buscarDaOrdem(42L)).thenReturn(List.of());
+        when(alteracaoRepo.buscarDaOrdem(42L)).thenReturn(List.of(numero));
+
+        try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(service.gerar(42L)))) {
+            Sheet aba = wb.getSheet("Alterações");
+            assertThat(aba.getRow(0).getCell(4).getStringCellValue()).isEqualTo("Motivo");
+            assertThat(aba.getRow(1).getCell(1).getStringCellValue()).isEqualTo("Nº da OS");
+            assertThat(aba.getRow(1).getCell(2).getStringCellValue()).isEqualTo("99123");
+            assertThat(aba.getRow(1).getCell(3).getStringCellValue()).isEqualTo("99124");
+            assertThat(aba.getRow(1).getCell(4).getStringCellValue()).isEqualTo("Nº digitado errado");
+            assertThat(aba.getRow(1).getCell(5).getStringCellValue()).isEqualTo("Ana");
+        }
+
+        when(alteracaoRepo.buscarDaOrdem(42L)).thenReturn(List.of());
+        try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(service.gerar(42L)))) {
+            assertThat(wb.getSheet("Alterações").getRow(1).getCell(0).getStringCellValue())
+                    .startsWith("Nenhuma alteração");
+        }
+    }
+
+    /** Cada ponto com a situação em palavras; sem avaliação, a aba diz isso. */
+    @Test
+    void abaDeAvaliacaoTrazOsPontosOuDizQueNaoHouve() throws Exception {
+        OrdemServico os = ordem();
+        Operador joao = new Operador("João", Permissao.FUNCIONARIO, "T1");
+        OrdemAvaliacao avaliacao = new OrdemAvaliacao(os, new OrdemAvaliacao.Dados(
+                ItemAvaliacao.de("visual", true),
+                ItemAvaliacao.de("aderencia", "descascando na borda"),
+                ItemAvaliacao.de("embalagem", null),
+                ItemAvaliacao.de("camada", true),
+                "lote conferido"), joao);
+        set(avaliacao, "avaliadaEm", T0);
+
+        when(osRepo.findById(42L)).thenReturn(Optional.of(os));
+        when(logRepo.buscarParaRelatorio(42L)).thenReturn(List.of());
+        when(loteRepo.buscarParaRelatorio(42L)).thenReturn(List.of());
+        when(desidroRepo.buscarDaOrdem(42L)).thenReturn(List.of());
+        when(avaliacaoRepo.buscarDaOrdem(42L)).thenReturn(Optional.of(avaliacao));
+
+        try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(service.gerar(42L)))) {
+            Sheet aba = wb.getSheet("Avaliação");
+            assertThat(aba.getRow(0).getCell(2).getStringCellValue()).isEqualTo("Observação");
+            assertThat(aba.getRow(1).getCell(1).getStringCellValue()).isEqualTo("Avaliado");
+            assertThat(aba.getRow(2).getCell(1).getStringCellValue()).isEqualTo("Avaliado");
+            assertThat(aba.getRow(2).getCell(2).getStringCellValue()).isEqualTo("descascando na borda");
+            assertThat(aba.getRow(3).getCell(1).getStringCellValue()).isEqualTo("Não avaliado");
+            assertThat(textos(aba, "Verificado")).hasSize(1);
+            assertThat(textos(aba, "Avaliada por")).hasSize(1);
+        }
+
+        when(avaliacaoRepo.buscarDaOrdem(42L)).thenReturn(Optional.empty());
+        try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(service.gerar(42L)))) {
+            assertThat(wb.getSheet("Avaliação").getRow(1).getCell(0).getStringCellValue())
+                    .startsWith("Sem avaliação");
         }
     }
 

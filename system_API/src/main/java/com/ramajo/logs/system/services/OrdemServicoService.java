@@ -1,6 +1,8 @@
 package com.ramajo.logs.system.services;
 
 import com.ramajo.logs.system.entities.*;
+import com.ramajo.logs.system.enums.CampoAlterado;
+import com.ramajo.logs.system.enums.Permissao;
 import com.ramajo.logs.system.enums.Posicao;
 import com.ramajo.logs.system.exceptions.*;
 import com.ramajo.logs.system.repositories.*;
@@ -29,6 +31,8 @@ public class OrdemServicoService {
     private final LogRepository logRepo;
     private final LoteRepository loteRepo;
     private final ProcessoInicialRepository processoInicialRepo;
+    private final OrdemAlteracaoRepository alteracaoRepo;
+    private final OrdemAvaliacaoService avaliacaoService;
 
     // Fallback do processo inicial, usado só quando a posição não tem linha em
     // posicao_processo_inicial (V7) — o valor global que valia antes dela.
@@ -296,6 +300,25 @@ public class OrdemServicoService {
 
         Operador operador = responsavelDoVinculo(os, operadorId);
 
+        // Sem add() em os.getCargas(): aqui a coleção é LAZY e a resposta é o
+        // passo, não a OS — tocá-la só provocaria um SELECT inútil.
+        Log passo = vincularNaOs(os, cargaId, operador);
+
+        // Depois do passo estar aberto: acoplarNaCarga injeta a carona nele
+        // além de a gravar na carga, e assim a etapa inicial já vale para
+        // todas as OS envolvidas.
+        aplicarAcoplamentos(Map.of(cargaId, ordensAcopladasIds == null
+                ? List.<Long>of() : ordensAcopladasIds));
+
+        return passo;
+    }
+
+    /**
+     * O vínculo em si: valida a carga, amarra-a à OS e abre o passo no
+     * processo inicial do setor da OS. Partilhado por vincularCarga() e pela
+     * troca de posição em corrigir(), que vincula as cargas do setor novo.
+     */
+    private Log vincularNaOs(OrdemServico os, Long cargaId, Operador operador){
         Carga carga = cargaRepo.findById(cargaId)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Carga", cargaId));
 
@@ -317,18 +340,172 @@ public class OrdemServicoService {
         carga.setOrdemAtual(os);
 
         // abrirLog revalida vínculo/carga ativa/operador ativo e enxerga o
-        // setOrdemAtual acima porque é a mesma sessão. Sem add() em
-        // os.getCargas(): aqui a coleção é LAZY e a resposta é o passo, não a
-        // OS — tocá-la só provocaria um SELECT inútil.
-        Log passo = abrirLog(os, carga, processoInicial(os.getPosicao()), operador);
+        // setOrdemAtual acima porque é a mesma sessão.
+        return abrirLog(os, carga, processoInicial(os.getPosicao()), operador);
+    }
 
-        // Depois do passo estar aberto: acoplarNaCarga injeta a carona nele
-        // além de a gravar na carga, e assim a etapa inicial já vale para
-        // todas as OS envolvidas.
-        aplicarAcoplamentos(Map.of(cargaId, ordensAcopladasIds == null
-                ? List.<Long>of() : ordensAcopladasIds));
+    // CORREÇÃO (ADMIN)  ======================================================
+    /**
+     * Corrige Nº, cliente e/ou posição de uma OS aberta com dado errado. É a
+     * saída para o engano de quem criou a OS — não há rota de apagar OS — e só
+     * um ADMIN ativo a usa. Cada campo que muda vira uma linha em
+     * `ordem_alteracoes`, com o motivo; sem registro, a correção não acontece.
+     *
+     * O corpo traz os três campos inteiros (não só os alterados): o que difere
+     * do atual é o que muda. Nada diferente é recusado — uma correção vazia
+     * deixaria no histórico uma entrada que não diz nada.
+     *
+     * Só OS em processo: expedida ou cancelada já está nos relatórios como
+     * foi, e quem precisa mexer nela reabre primeiro.
+     *
+     * Trocar a POSIÇÃO não é só trocar a coluna: as cargas vinculadas e os
+     * passos abertos são do setor antigo. Ver trocarPosicao(). `cargaIds` são
+     * as cargas do setor novo a vincular nessa mesma transação, e só contam
+     * quando a posição muda.
+     *
+     * Tudo numa transação: carga inválida, Nº repetido ou cliente inexistente
+     * derrubam a correção inteira, histórico incluído.
+     */
+    @Transactional
+    public OrdemServico corrigir(Long osId, Long operadorId, Long idExterno, Long clienteId,
+                                 Posicao posicao, List<Long> cargaIds, String motivo){
+        OrdemServico os = carregarAberta(osId);
 
-        return passo;
+        Operador admin = exigirOperadorAtivo(operadorId);
+        if (admin.getPermissao() != Permissao.ADMIN){
+            throw new OperacaoRestritaException(operadorId);
+        }
+
+        boolean mudaNumero = !idExterno.equals(os.getIdExterno());
+        boolean mudaCliente = !clienteId.equals(os.getCliente().getId());
+        boolean mudaPosicao = posicao != os.getPosicao();
+
+        if (!mudaNumero && !mudaCliente && !mudaPosicao){
+            throw CorrecaoInvalidaException.semAlteracao(osId);
+        }
+
+        String porque = motivo.trim();
+
+        // Todas as recusas que não dependem das cargas ANTES de qualquer
+        // mutação, pela disciplina de sempre. As das cargas novas só aparecem
+        // no vínculo, e aí quem desfaz é o rollback.
+        if (mudaNumero){
+            osRepo.findByIdExterno(idExterno)
+                    .filter(outra -> !outra.getId().equals(osId))
+                    .ifPresent(outra -> { throw new OrdemIdExternoExistente(idExterno); });
+        }
+        Cliente novoCliente = mudaCliente
+                ? clienteRepo.findById(clienteId)
+                        .orElseThrow(() -> new RecursoNaoEncontradoException("Cliente", clienteId))
+                : null;
+
+        List<OrdemAlteracao> alteracoes = new ArrayList<>();
+
+        if (mudaNumero){
+            alteracoes.add(new OrdemAlteracao(os, CampoAlterado.ID_EXTERNO,
+                    os.getIdExterno() == null ? null : String.valueOf(os.getIdExterno()),
+                    String.valueOf(idExterno), porque, admin));
+            os.setIdExterno(idExterno);
+        }
+
+        if (mudaCliente){
+            alteracoes.add(new OrdemAlteracao(os, CampoAlterado.CLIENTE,
+                    descrever(os.getCliente()), descrever(novoCliente), porque, admin));
+            os.setCliente(novoCliente);
+        }
+
+        if (mudaPosicao){
+            alteracoes.addAll(trocarPosicao(os, posicao, cargaIds, admin, porque));
+        }
+
+        alteracaoRepo.saveAll(alteracoes);
+        return os;
+    }
+
+    /**
+     * A OS muda de setor. O que era do setor antigo sai, e o que o ADMIN
+     * escolheu do novo entra:
+     *
+     * 1. Passos abertos da OS são CANCELADOS, não só fechados — foram
+     *    registrados na OS errada, e `cancelado` é o que os tira da duração
+     *    nos relatórios. Mesma regra de cancelar(). Passos já fechados ficam
+     *    como estão: `logs` é append-only.
+     * 2. As cargas voltam ao pool, com as caronas delas (regra de liberar():
+     *    as peças das outras OS continuam no tanque).
+     * 3. A OS deixa de ser carona em qualquer carga — as cargas em que ela ia
+     *    são do setor antigo. Mesma limpeza de cancelar().
+     * 4. As cargas novas entram pelo processo inicial do setor NOVO. O passo
+     *    fica no nome de quem abriu a OS (quem de fato trabalha nela); sem
+     *    ele, ou inativo, no do ADMIN.
+     *
+     * Devolve as linhas de histórico da troca: POSICAO e, se alguma carga saiu
+     * ou entrou, CARGAS.
+     */
+    private List<OrdemAlteracao> trocarPosicao(OrdemServico os, Posicao nova, List<Long> cargaIds,
+                                               Operador admin, String motivo){
+        Long osId = os.getId();
+        Posicao antiga = os.getPosicao();
+        Instant at = Instant.now();
+
+        for (Log aberto : logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(osId)){
+            aberto.setCancelado(true);
+            fecharPasso(aberto, at);
+        }
+        // Os UPDATEs dos passos antes dos INSERTs dos novos: no flush
+        // automático o Hibernate faria o contrário. Hoje as cargas são outras e
+        // nenhum índice colide, mas é a mesma ordem de finalizarLote/abrirLog.
+        logRepo.flush();
+
+        List<Carga> soltas = new ArrayList<>(os.getCargas());
+        for (Carga c : soltas){
+            c.setOrdemAtual(null);
+        }
+        // Lado inverso da relação: não gera SQL, só mantém a resposta do PUT
+        // coerente com o que ficou gravado.
+        os.getCargas().clear();
+
+        cargaRepo.buscarAcoplamentosDe(osId)
+                .forEach(c -> c.getOrdensAcopladas().remove(osId));
+
+        os.setPosicao(nova);
+
+        Operador iniciou = os.getIniciadaPor();
+        Operador responsavel = iniciou != null && iniciou.isAtivo() ? iniciou : admin;
+
+        List<Carga> vinculadas = new ArrayList<>();
+        if (cargaIds != null){
+            for (Long cargaId : new LinkedHashSet<>(cargaIds)){
+                Carga carga = vincularNaOs(os, cargaId, responsavel).getCarga();
+                vinculadas.add(carga);
+                os.getCargas().add(carga);
+            }
+        }
+
+        List<OrdemAlteracao> linhas = new ArrayList<>();
+        linhas.add(new OrdemAlteracao(os, CampoAlterado.POSICAO,
+                antiga.name(), nova.name(), motivo, admin));
+        if (!soltas.isEmpty() || !vinculadas.isEmpty()){
+            linhas.add(new OrdemAlteracao(os, CampoAlterado.CARGAS,
+                    nomes(soltas), nomes(vinculadas), motivo, admin));
+        }
+        return linhas;
+    }
+
+    /** "#12 ACME LTDA": o id é o que o ERP conhece, o nome é o que se lê. */
+    private static String descrever(Cliente cliente){
+        return "#" + cliente.getId() + " " + cliente.getNome();
+    }
+
+    /** Nomes por ordem alfabética; lista vazia é null — "nenhuma", não "". */
+    private static String nomes(List<Carga> cargas){
+        if (cargas.isEmpty()) return null;
+        return String.join(", ", cargas.stream().map(Carga::getNome).sorted().toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<OrdemAlteracao> alteracoes(Long osId){
+        buscar(osId);
+        return alteracaoRepo.buscarDaOrdem(osId);
     }
 
     /**
@@ -699,10 +876,28 @@ public class OrdemServicoService {
 
     @Transactional
     public void finalizar(Long osId, Long operadorId){
+        finalizar(osId, operadorId, null);
+    }
+
+    /**
+     * Expedição total, com a avaliação da inspeção final quando ela vem.
+     *
+     * `avaliacao` é opcional: nula, a OS expede sem avaliar, e uma avaliação
+     * que já exista (feita pelo ADMIN com a OS em produção) continua valendo.
+     * Preenchida, é gravada NA MESMA TRANSAÇÃO, em nome de quem expede — ponto
+     * inválido derruba a expedição inteira, em vez de expedir sem a avaliação
+     * que o operador achou que tinha salvo.
+     */
+    @Transactional
+    public void finalizar(Long osId, Long operadorId, OrdemAvaliacaoService.Entrada avaliacao){
         OrdemServico os = carregarAberta(osId);
 
         Operador op = operadorRepo.findById(operadorId)
                 .orElseThrow(()-> new RecursoNaoEncontradoException("Operador", operadorId));
+
+        if (avaliacao != null){
+            avaliacaoService.registrar(os, op, avaliacao);
+        }
 
         Instant at = Instant.now();
 
@@ -793,6 +988,10 @@ public class OrdemServicoService {
         // vínculo das cargas ainda não aconteceu —, mas a rota não aceita
         // operador inexistente ou inativo, como as outras.
         exigirOperadorAtivo(operadorId);
+
+        // A avaliação era da expedição que está a ser desfeita. Se sobrasse,
+        // a próxima expedição sem avaliar mostraria a de uma produção anterior.
+        avaliacaoService.descartar(osId);
 
         os.setFinalizadaEm(null);
         os.setFinalizadaPor(null);

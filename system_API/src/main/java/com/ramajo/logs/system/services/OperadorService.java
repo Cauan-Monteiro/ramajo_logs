@@ -11,6 +11,8 @@ import com.ramajo.logs.system.exceptions.RecursoNaoEncontradoException;
 import com.ramajo.logs.system.repositories.LogRepository;
 import com.ramajo.logs.system.repositories.LoteRepository;
 import com.ramajo.logs.system.repositories.OperadorRepository;
+import com.ramajo.logs.system.repositories.OrdemAlteracaoRepository;
+import com.ramajo.logs.system.repositories.OrdemAvaliacaoRepository;
 import com.ramajo.logs.system.repositories.OrdemServicoRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,15 +26,21 @@ public class OperadorService {
     private final LogRepository logRepo;
     private final OrdemServicoRepository ordemRepo;
     private final LoteRepository loteRepo;
+    private final OrdemAlteracaoRepository alteracaoRepo;
+    private final OrdemAvaliacaoRepository avaliacaoRepo;
 
     public OperadorService(OperadorRepository operadorRepo,
                            LogRepository logRepo,
                            OrdemServicoRepository ordemRepo,
-                           LoteRepository loteRepo) {
+                           LoteRepository loteRepo,
+                           OrdemAlteracaoRepository alteracaoRepo,
+                           OrdemAvaliacaoRepository avaliacaoRepo) {
         this.operadorRepo = operadorRepo;
         this.logRepo = logRepo;
         this.ordemRepo = ordemRepo;
         this.loteRepo = loteRepo;
+        this.alteracaoRepo = alteracaoRepo;
+        this.avaliacaoRepo = avaliacaoRepo;
     }
 
     @Transactional
@@ -87,8 +95,14 @@ public class OperadorService {
         long passos = logRepo.countByResponsavelId(id);
         long ordens = ordemRepo.countByIniciadaPorIdOrFinalizadaPorId(id, id);
         long lotes = loteRepo.countByFinalizadoPorId(id);
-        if (passos + ordens + lotes > 0) {
-            throw new OperadorEmUsoException(id, operador.getNome(), passos, ordens, lotes);
+        // Correções de OS assinadas: append-only e com FK, como os passos.
+        // Contam como "ordens" na mensagem — é sobre OS que o admin mexeu.
+        long correcoes = alteracaoRepo.countByAlteradaPorId(id);
+        // Avaliações assinadas: FK NOT NULL; contam como "ordens" pelo mesmo motivo.
+        long avaliacoes = avaliacaoRepo.countByAvaliadaPorId(id);
+        if (passos + ordens + lotes + correcoes + avaliacoes > 0) {
+            throw new OperadorEmUsoException(
+                    id, operador.getNome(), passos, ordens + correcoes + avaliacoes, lotes);
         }
 
         exigirOutroAdmin(operador);

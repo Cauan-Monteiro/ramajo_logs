@@ -7,7 +7,9 @@ import { SEL_PICK, SEL_SEG, dotStyle } from "../domain/derive";
 import { ETAPAS, posLabel, POSICOES } from "../domain/format";
 import type { AppData } from "../state/useAppData";
 import type { Ctx } from "../modals/tipos";
+import { AjustesAvaliarOS } from "./AjustesAvaliarOS";
 import { AjustesCatalogo } from "./AjustesCatalogo";
+import { AjustesCorrigirOS } from "./AjustesCorrigirOS";
 import { AjustesDesidrogenizacao } from "./AjustesDesidrogenizacao";
 import { AjustesOperadores } from "./AjustesOperadores";
 import { RegistrarCargas } from "./RegistrarCargas";
@@ -15,7 +17,7 @@ import { RegistrarCargas } from "./RegistrarCargas";
 /** O que o diálogo de confirmação precisa saber: para onde e para qual. */
 type Troca = { pos: Posicao; processo: ProcessoDTO };
 
-type Sub = "inicial" | "catalogo" | "desidro" | "operadores" | "cargas";
+type Sub = "inicial" | "catalogo" | "desidro" | "operadores" | "cargas" | "corrigir" | "avaliar";
 
 const SUBS: { key: Sub; label: string }[] = [
   { key: "inicial", label: "Processo inicial" },
@@ -23,14 +25,17 @@ const SUBS: { key: Sub; label: string }[] = [
   { key: "desidro", label: "Desidrogenização" },
   { key: "operadores", label: "Operadores" },
   { key: "cargas", label: "Registrar cargas" },
+  { key: "corrigir", label: "Corrigir OS" },
+  { key: "avaliar", label: "Avaliar OS" },
 ];
 
 /**
- * Ajustes de configuração, em cinco frentes: o processo inicial de cada setor
+ * Ajustes de configuração, em sete frentes: o processo inicial de cada setor
  * (em que processo toda carga entra ao ser vinculada a uma OS daquela posição),
  * o catálogo de processos em si — cadastrar, editar e arquivar —, as receitas
- * de desidrogenização (com a temperatura do forno), o cadastro de operadores e
- * o cadastro de cargas.
+ * de desidrogenização (com a temperatura do forno), o cadastro de operadores,
+ * o cadastro de cargas, a correção de OS criada com dado errado e a avaliação
+ * da inspeção final feita fora da expedição.
  *
  * Tela de ADMIN (App.tsx só a monta com isAdmin), mas o gate é de conveniência:
  * a API não tem autenticação, então quem sabe a rota chama o PUT direto. Mesma
@@ -44,7 +49,10 @@ export function Ajustes({
   data, operador, posicaoAtual, agir, ocupado, isMobile,
 }: {
   data: AppData;
-  /** O operador do turno — a sub-aba de operadores usa para não removê-lo. */
+  /**
+   * O operador do turno — a sub-aba de operadores usa para não removê-lo, e a
+   * de correção assina a correção com ele.
+   */
   operador: OperadorDTO;
   /** Posição pré-selecionada no formulário da sub-aba de cargas. */
   posicaoAtual: Posicao;
@@ -76,6 +84,10 @@ export function Ajustes({
         <AjustesCatalogo data={data} agir={agir} ocupado={ocupado} />
       ) : sub === "desidro" ? (
         <AjustesDesidrogenizacao data={data} agir={agir} ocupado={ocupado} />
+      ) : sub === "corrigir" ? (
+        <AjustesCorrigirOS data={data} operador={operador} agir={agir} ocupado={ocupado} />
+      ) : sub === "avaliar" ? (
+        <AjustesAvaliarOS data={data} operador={operador} agir={agir} ocupado={ocupado} />
       ) : sub === "cargas" ? (
         <RegistrarCargas
           data={data}

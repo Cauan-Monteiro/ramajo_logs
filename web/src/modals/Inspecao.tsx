@@ -1,11 +1,14 @@
 import { useMemo } from "react";
-import * as api from "../api/endpoints";
 import type { OrdemResumoDTO } from "../api/types";
 import { Corners } from "../components/Blueprint";
 import { Modal, Vazio } from "../components/Modal";
 import { OrdenarMenu, useOrdenacao, type ColunaOrd } from "../components/Ordenar";
 import { cargaCarona, emEspera } from "../domain/derive";
+import {
+  COR_NIVEL, detalhe, emCurso, nivel, porUrgencia, progresso,
+} from "../domain/desidro";
 import { diaHora, osNum, posLabel } from "../domain/format";
+import { useAgora } from "../state/useAgora";
 import { logsDe } from "../state/useAppData";
 import type { Ctx } from "./tipos";
 
@@ -24,7 +27,8 @@ const porNumero = (a: OrdemResumoDTO, b: OrdemResumoDTO) => numDe(a) - numDe(b);
 
 /**
  * Inspeção final: OS abertas que já não têm carga vinculada — só falta
- * expedir. "Expedir" é a expedição total (POST /{id}/finalizar).
+ * expedir. "Expedir" abre a avaliação (AvaliarExpedicaoModal), que faz a
+ * expedição total (POST /{id}/finalizar) com ou sem ela.
  *
  * "Expedir parcial" encerra só o lote corrente e abre o seguinte, deixando a OS
  * aberta à espera de novas cargas — é o único caminho do sistema para uma OS
@@ -62,6 +66,11 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
     [ctx.data, ctx.posicao, ordenar],
   );
 
+  // Mesmo passo e mesma regra de "em curso" do painel do forno: a cor do cartão
+  // e a da linha lá nunca discordam, e avança com o modal aberto.
+  const agora = useAgora(30000);
+  const desidros = emCurso(ctx.data.desidrosEmAndamento, agora);
+
   return (
     <Modal
       kicker={`INSPEÇÃO FINAL · ${label.toUpperCase()}`}
@@ -91,6 +100,12 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
         {semCargas.map((o) => {
           const passos = logsDe(ctx.data, o.id).filter((l) => !l.cancelado).length;
+          const dsOs = desidros.filter((d) => d.ordemServicoId === o.id);
+          // A que ainda roda manda no botão; só sem nenhuma a rodar é que a
+          // estourada aparece.
+          const rodando = porUrgencia(dsOs.filter((d) => progresso(d, agora) < 1), agora);
+          const pctRodando = rodando.length > 0 ? progresso(rodando[0], agora) : null;
+          const estourada = pctRodando === null && dsOs.length > 0;
           return (
             <div
               key={o.id}
@@ -140,12 +155,30 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
                 </div>
               </div>
               <div className="insp-acoes">
+                {/* O botão é o indicativo do forno: rodando, mostra a % no fundo
+                    da cor do nível; estourada (nos 15 min de `emCurso`), volta ao
+                    normal com uma faixa vermelha à esquerda. Inset shadow, não
+                    border-left, para não mudar a largura do botão. */}
                 <button
                   className="btn2"
-                  title="Registrar uma desidrogenização nesta OS. O término é preenchido a partir da duração cadastrada."
+                  title={
+                    dsOs.length > 0
+                      ? detalhe(dsOs, agora)
+                      : "Registrar uma desidrogenização nesta OS. O término é preenchido a partir da duração cadastrada."
+                  }
+                  style={
+                    pctRodando !== null
+                      ? {
+                          background: COR_NIVEL[nivel(pctRodando)],
+                          borderColor: COR_NIVEL[nivel(pctRodando)],
+                        }
+                      : estourada
+                        ? { boxShadow: `inset 4px 0 0 ${COR_NIVEL.critico}` }
+                        : undefined
+                  }
                   onClick={() => ctx.abrir({ tipo: "desidro", osId: o.id })}
                 >
-                  Desidrogenizar
+                  {pctRodando !== null ? `${Math.round(pctRodando * 100)}%` : "Desidrogenizar"}
                 </button>
                 <button
                   className="btn2"
@@ -154,15 +187,12 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
                 >
                   Expedir parcial
                 </button>
+                {/* Abre a avaliação; é de lá que a expedição total sai — com ou
+                    sem avaliar. */}
                 <button
                   className="btn2 btn2-x"
                   disabled={ctx.ocupado}
-                  onClick={() =>
-                    ctx.agir({
-                      fazer: () => api.finalizarOrdem(o.id, ctx.operador.id),
-                      ok: `OS ${osNum(o)} expedida e encerrada.`,
-                    })
-                  }
+                  onClick={() => ctx.abrir({ tipo: "avaliarExp", osId: o.id })}
                 >
                   Expedir
                 </button>

@@ -16,13 +16,18 @@ import static com.ramajo.logs.system.services.EscritorPlanilha.valorDuracao;
 import static com.ramajo.logs.system.services.EscritorPlanilha.valorTexto;
 
 import com.ramajo.logs.system.entities.Carga;
+import com.ramajo.logs.system.entities.ItemAvaliacao;
 import com.ramajo.logs.system.entities.Log;
 import com.ramajo.logs.system.entities.Lote;
+import com.ramajo.logs.system.entities.OrdemAlteracao;
+import com.ramajo.logs.system.entities.OrdemAvaliacao;
 import com.ramajo.logs.system.entities.OrdemDesidrogenizacao;
 import com.ramajo.logs.system.entities.OrdemServico;
 import com.ramajo.logs.system.exceptions.RecursoNaoEncontradoException;
 import com.ramajo.logs.system.repositories.LogRepository;
 import com.ramajo.logs.system.repositories.LoteRepository;
+import com.ramajo.logs.system.repositories.OrdemAlteracaoRepository;
+import com.ramajo.logs.system.repositories.OrdemAvaliacaoRepository;
 import com.ramajo.logs.system.repositories.OrdemDesidrogenizacaoRepository;
 import com.ramajo.logs.system.repositories.OrdemServicoRepository;
 import com.ramajo.logs.system.util.DataHoraBr;
@@ -57,9 +62,14 @@ import org.springframework.transaction.annotation.Transactional;
  *   Desidrogenizações - o forno: uma linha por aplicação. Fica em aba própria,
  *                       e não entre as etapas, porque não é uma delas — não tem
  *                       carga nem processo, e corre no nível da OS inteira.
+ *   Avaliação         - a inspeção final: os quatro pontos, o verificado, a
+ *                       observação e quem avaliou.
  *   Dados             - a mesma coisa em lista plana, com autofiltro, para quem quiser
  *               filtrar ou pivotar. O autofiltro vive só aqui: numa aba com
  *               blocos e subtotais ele esconderia os subtítulos junto.
+ *   Alterações        - as correções que um ADMIN fez na OS (Nº, cliente,
+ *                       posição), com o motivo. Por último: não é produção, é
+ *                       a nota de que a identificação lá em cima foi corrigida.
  *
  * Os estilos e a escrita de célula (data de verdade, duração somável) moram em
  * {@link EstilosPlanilha} e {@link EscritorPlanilha}, compartilhados com os
@@ -83,6 +93,8 @@ public class PlanilhaOrdemServicoService {
     private final LogRepository logRepo;
     private final LoteRepository loteRepo;
     private final OrdemDesidrogenizacaoRepository desidroRepo;
+    private final OrdemAlteracaoRepository alteracaoRepo;
+    private final OrdemAvaliacaoRepository avaliacaoRepo;
 
     @Transactional(readOnly = true)
     public byte[] gerar(Long osId) {
@@ -97,6 +109,8 @@ public class PlanilhaOrdemServicoService {
         // fábrica — uma na titular e outra aqui.
         List<Log> acopladas = logRepo.buscarAcopladasParaRelatorio(osId);
         List<OrdemDesidrogenizacao> desidros = desidroRepo.buscarDaOrdem(osId);
+        List<OrdemAlteracao> alteracoes = alteracaoRepo.buscarDaOrdem(osId);
+        OrdemAvaliacao avaliacao = avaliacaoRepo.buscarDaOrdem(osId).orElse(null);
 
         try (XSSFWorkbook wb = new XSSFWorkbook();
              ByteArrayOutputStream saida = new ByteArrayOutputStream()) {
@@ -105,7 +119,9 @@ public class PlanilhaOrdemServicoService {
             abaRelatorio(wb, estilos, os, lotes, logs, acopladas, desidros);
             abaLotes(wb, estilos, lotes);
             abaDesidrogenizacoes(wb, estilos, desidros);
+            abaAvaliacao(wb, estilos, avaliacao);
             abaDados(wb, estilos, logs, acopladas);
+            abaAlteracoes(wb, estilos, alteracoes);
 
             // Os subtotais são fórmulas sem valor em cache; sem isto o
             // LibreOffice abre mostrando célula vazia até alguém editar.
@@ -453,6 +469,53 @@ public class PlanilhaOrdemServicoService {
     }
 
     /**
+     * A avaliação da inspeção final: um ponto por linha, com a observação
+     * própria dele, depois o verificado, a
+     * observação e quem avaliou. Existe mesmo sem avaliação, pela razão da aba
+     * do forno — "sem avaliação" é informação.
+     */
+    private void abaAvaliacao(Workbook wb, EstilosPlanilha e, OrdemAvaliacao avaliacao) {
+        Sheet aba = wb.createSheet("Avaliação");
+        int[] linha = {0};
+        cabecalhoTabela(aba, e, linha, "Item", "Situação", "Observação");
+        aba.createFreezePane(0, 1);
+
+        if (avaliacao == null) {
+            Row r = aba.createRow(linha[0]++);
+            texto(r, e, 0, "Sem avaliação registrada nesta OS.", false, false);
+            ajustar(aba, 3);
+            return;
+        }
+
+        boolean zebra = false;
+        String[] itens = {"Visual", "Aderência", "Embalagem", "Camada"};
+        ItemAvaliacao[] valores = {avaliacao.getVisual(), avaliacao.getAderencia(),
+                avaliacao.getEmbalagem(), avaliacao.getCamada()};
+        for (int i = 0; i < itens.length; i++) {
+            Row r = aba.createRow(linha[0]++);
+            texto(r, e, 0, itens[i], zebra, false);
+            texto(r, e, 1, valores[i].isAvaliado() ? "Avaliado" : "Não avaliado", zebra, false);
+            texto(r, e, 2, valores[i].getObservacao(), zebra, false);
+            zebra = !zebra;
+        }
+
+        linha[0]++;
+        par(aba, e, linha, "Verificado", avaliacao.isVerificado() ? "Sim" : "Não");
+        par(aba, e, linha, "Observação", avaliacao.getObservacao());
+        par(aba, e, linha, "Avaliada por", nome(avaliacao.getAvaliadaPor()));
+        Row r = aba.createRow(linha[0]++);
+        rotulo(r, e, 0, "Avaliada em");
+        valorData(r, e, 1, avaliacao.getAvaliadaEm());
+        ajustar(aba, 3);
+    }
+
+    private void par(Sheet aba, EstilosPlanilha e, int[] linha, String rotulo, String valor) {
+        Row r = aba.createRow(linha[0]++);
+        rotulo(r, e, 0, rotulo);
+        valorTexto(r, e, 1, valor);
+    }
+
+    /**
      * Lista plana, com o UUID: é a aba de quem vai filtrar, pivotar ou rastrear.
      *
      * Traz os passos próprios e os acoplados na mesma tabela, separados pela
@@ -479,6 +542,45 @@ public class PlanilhaOrdemServicoService {
         // Tabela contínua e sem subtotais: aqui o autofiltro não tem o que quebrar.
         aba.setAutoFilter(new CellRangeAddress(0, Math.max(linha[0] - 1, 0), 0, 11));
         ajustar(aba, 12);
+    }
+
+    /**
+     * O histórico de correções, linha a linha. Os valores são o texto gravado
+     * na correção, não o cadastro de hoje. Como a do forno, a aba existe mesmo
+     * vazia: dizer "nenhuma alteração" é informação, não ausência.
+     */
+    private void abaAlteracoes(Workbook wb, EstilosPlanilha e, List<OrdemAlteracao> alteracoes) {
+        Sheet aba = wb.createSheet("Alterações");
+        int[] linha = {0};
+        cabecalhoTabela(aba, e, linha, "Data/hora", "Campo", "Antes", "Depois",
+                "Motivo", "Alterada por");
+        aba.createFreezePane(0, 1);
+
+        boolean zebra = false;
+        for (OrdemAlteracao a : alteracoes) {
+            Row r = aba.createRow(linha[0]++);
+            data(r, e, 0, a.getAlteradaEm(), zebra, false);
+            texto(r, e, 1, campo(a), zebra, false);
+            texto(r, e, 2, a.getValorAnterior(), zebra, false);
+            texto(r, e, 3, a.getValorNovo(), zebra, false);
+            texto(r, e, 4, a.getMotivo(), zebra, false);
+            texto(r, e, 5, nome(a.getAlteradaPor()), zebra, false);
+            zebra = !zebra;
+        }
+        if (alteracoes.isEmpty()) {
+            Row r = aba.createRow(linha[0]++);
+            texto(r, e, 0, "Nenhuma alteração registrada nesta OS.", false, false);
+        }
+        ajustar(aba, 6);
+    }
+
+    private String campo(OrdemAlteracao a) {
+        return switch (a.getCampo()) {
+            case ID_EXTERNO -> "Nº da OS";
+            case CLIENTE -> "Cliente";
+            case POSICAO -> "Posição";
+            case CARGAS -> "Cargas";
+        };
     }
 
     /** `titular` nulo = passo próprio; preenchido = carga de outra OS. */

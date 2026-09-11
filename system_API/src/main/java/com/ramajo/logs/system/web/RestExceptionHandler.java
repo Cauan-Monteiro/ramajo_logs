@@ -6,8 +6,10 @@ import com.ramajo.logs.system.exceptions.CargaNaoVinculadaException;
 import com.ramajo.logs.system.exceptions.DesidrogenizacaoInativaException;
 import com.ramajo.logs.system.exceptions.DominioException;
 import com.ramajo.logs.system.exceptions.OperadorEmUsoException;
+import com.ramajo.logs.system.exceptions.OperacaoRestritaException;
 import com.ramajo.logs.system.exceptions.OperadorInativoException;
 import com.ramajo.logs.system.exceptions.OrdemForaDeCirculacaoException;
+import com.ramajo.logs.system.exceptions.OrdemIdExternoExistente;
 import com.ramajo.logs.system.exceptions.PassoJaFinalizadoException;
 import com.ramajo.logs.system.exceptions.PeriodoInvalidoException;
 import com.ramajo.logs.system.exceptions.PosicaoIncompativelException;
@@ -33,6 +35,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  *
  * Regra de status:
  *   - recurso inexistente ...................... 404 NOT FOUND
+ *   - operação de ADMIN pedida por não-admin ... 403 FORBIDDEN
  *   - conflito de ESTADO (já finalizada, carga
  *     em outra OS, passo já fechado, corrida
  *     de lote no índice único, processo ainda
@@ -54,8 +57,19 @@ public class RestExceptionHandler {
         return build(ex, HttpStatus.NOT_FOUND, req);
     }
 
+    /**
+     * Operação de ADMIN pedida por quem não é. A API não autentica, então é
+     * conferência sobre o `operadorId` informado — mas o status é o de
+     * permissão, não o de regra de negócio.
+     */
+    @ExceptionHandler(OperacaoRestritaException.class)
+    public ResponseEntity<ApiError> restrita(OperacaoRestritaException ex, HttpServletRequest req) {
+        return build(ex, HttpStatus.FORBIDDEN, req);
+    }
+
     @ExceptionHandler({
             OrdemForaDeCirculacaoException.class,
+            OrdemIdExternoExistente.class,
             ReaberturaInvalidaException.class,
             CargaIndisponivelException.class,
             PassoJaFinalizadoException.class,

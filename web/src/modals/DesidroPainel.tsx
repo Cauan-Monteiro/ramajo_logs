@@ -105,7 +105,7 @@ function LinhaDesidro({
 
       <div style={{ flex: "none", textAlign: "right", alignSelf: "center", minWidth: 96 }}>
         <div style={{ font: "600 22px 'Barlow Condensed'", color: cor, lineHeight: 1 }}>
-          {estourou ? "ESTOUROU" : `${Math.round(pct * 100)}%`}
+          {estourou ? "RETIRAR DO FORNO" : `${Math.round(pct * 100)}%`}
         </div>
         <div className="os-tv" style={{ marginTop: 4 }}>
           {estourou
