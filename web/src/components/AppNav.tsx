@@ -28,7 +28,6 @@ export function AppNav({
             {p.label}
           </button>
         ))}
-        <div className="navdiv" />
         {/* Com o contador: a fila de entrega só se lembra se ela se anunciar —
             ao contrário das posições, ninguém passa o dia dentro desta aba. */}
         <button
@@ -39,6 +38,7 @@ export function AppNav({
           Entregas
           {aguardandoEntrega > 0 && <b className="tabnum">{aguardandoEntrega}</b>}
         </button>
+        <div className="navdiv" />
         <button className="tabbtn" style={tabStyle(aba === "geral")} onClick={() => onAba("geral")}>
           Visão Geral
         </button>
