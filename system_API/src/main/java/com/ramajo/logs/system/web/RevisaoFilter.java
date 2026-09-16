@@ -19,9 +19,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class RevisaoFilter extends OncePerRequestFilter {
 
     private final RevisaoEstado revisao;
+    private final EstadoStream stream;
 
-    public RevisaoFilter(RevisaoEstado revisao) {
+    public RevisaoFilter(RevisaoEstado revisao, EstadoStream stream) {
         this.revisao = revisao;
+        this.stream = stream;
     }
 
     @Override
@@ -29,7 +31,12 @@ public class RevisaoFilter extends OncePerRequestFilter {
             HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         chain.doFilter(request, response);
-        if (mudouEstado(request, response)) revisao.marcarMudanca();
+        if (mudouEstado(request, response)) {
+            revisao.marcarMudanca();
+            // Nao difunde aqui: so marca. O EstadoStream publica no proximo
+            // flush agendado, fora do caminho da resposta desta mutacao.
+            stream.marcarSujo();
+        }
     }
 
     private static boolean mudouEstado(HttpServletRequest req, HttpServletResponse res) {

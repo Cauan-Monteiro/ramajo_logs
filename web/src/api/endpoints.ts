@@ -323,5 +323,12 @@ export const planilhaPeriodo = (dataInicio: string, dataFim: string) =>
   );
 
 // ── estado ──────────────────────────────────────────────────────────────
-/** Sonda de sincronização: resposta minúscula, chamada em loop pelos terminais. */
+/** Sonda avulsa: usada ao voltar para a aba e como fallback se o SSE cair. */
 export const revisaoEstado = () => http.get<RevisaoDTO>("/api/estado/revisao");
+
+/**
+ * Canal SSE por onde o servidor avisa que o estado mudou. Fica aqui, ao lado
+ * das outras rotas, porque `EventSource` não passa pelo wrapper `http`: ele
+ * abre a conexão sozinho e a URL precisava de um lugar nomeado mesmo assim.
+ */
+export const ROTA_ESTADO_STREAM = "/api/estado/stream";

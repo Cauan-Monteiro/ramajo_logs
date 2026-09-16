@@ -7,10 +7,10 @@ import org.springframework.stereotype.Component;
 /**
  * Marca de versão do estado do sistema, em memória.
  *
- * Os terminais consultam esta marca de poucos em poucos segundos e só refazem a
- * carga completa (que é cara: catálogos + ordens + um GET de logs por OS em
- * processo) quando ela muda. É o que mantém todos os terminais no mesmo ponto
- * sem manter uma conexão aberta por cliente.
+ * Os terminais recebem esta marca pelo EstadoStream (SSE) e só refazem a carga
+ * completa (que é cara: catálogos + ordens + um GET de logs por OS em processo)
+ * quando ela muda. É o que mantém todos os terminais no mesmo ponto sem que o
+ * servidor precise saber o que cada um tem em mão.
  *
  * `instancia` muda a cada boot da API: sem ela, um restart zeraria o contador e
  * o cliente concluiria "nada mudou" enquanto olha para dados de antes da queda.

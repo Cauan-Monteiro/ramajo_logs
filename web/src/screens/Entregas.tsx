@@ -181,7 +181,7 @@ export function Entregas({
   return (
     <>
       <div className="grp-h">
-        <span>Eexpedição</span>
+        <span>Expedição</span>
         <i />
         {isMobile && <OrdenarMenu colunas={colunas} ord={ord} ordenarPor={ordenarPor} />}
       </div>
@@ -227,7 +227,7 @@ export function Entregas({
         <div className="entr-filtros">
           <input
             className="inp"
-            placeholder="Nº da OS (ex: 1042)"
+            placeholder="Nº da OS)"
             aria-label="Nº da OS"
             value={qOs}
             onChange={(e) => { setQOs(e.target.value); setPagina(0); }}
