@@ -181,7 +181,7 @@ export function Entregas({
   return (
     <>
       <div className="grp-h">
-        <span>Entregas</span>
+        <span>Eexpedição</span>
         <i />
         {isMobile && <OrdenarMenu colunas={colunas} ord={ord} ordenarPor={ordenarPor} />}
       </div>
