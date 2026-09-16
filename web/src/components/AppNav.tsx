@@ -35,7 +35,7 @@ export function AppNav({
           style={tabStyle(aba === "entregas")}
           onClick={() => onAba("entregas")}
         >
-          Entregas
+          Expedição
           {aguardandoEntrega > 0 && <b className="tabnum">{aguardandoEntrega}</b>}
         </button>
         <div className="navdiv" />
