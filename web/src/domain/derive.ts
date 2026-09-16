@@ -34,6 +34,8 @@ export function tabStyle(on: boolean): CSSProperties {
     : { color: "#b7b7ba", borderBottomColor: "transparent" };
 }
 
+/** A pílula genérica: em curso (azul) ou encerrado (cinza). Serve eventos e
+    barras da auditoria, que não são ordens — para uma OS, ver `pillOrdemStyle`. */
 export function pillStyle(encerrada: boolean): CSSProperties {
   return encerrada
     ? { background: "#e7e7ea", color: "#5d5d60" }
@@ -118,9 +120,35 @@ export const emEspera = (o: OrdemResumoDTO, cargas: CargaDTO[], logs: LogDTO[]) 
 /** O design chama de "2º lote" toda OS que já expediu ao menos um lote. */
 export const emSegundoLote = (o: OrdemResumoDTO) => o.lotesFinalizados > 0;
 
+/** Já saiu da casa: a expedição tirou as peças da produção, a entrega do pátio. */
+export const foiEntregue = (o: OrdemResumoDTO) => o.entregueEm !== null;
+
+/**
+ * A fila da aba Entregas: expedida, não cancelada e ainda não entregue.
+ *
+ * Sai do resumo — que passou a trazer `cancelada` e `entregueEm` —, então a aba
+ * filtra `data.ordens` sem ir à rede. A OS cancelada também tem `emProcesso`
+ * falso e nunca terá entrega; sem o teste dela a fila encheria de ordens que
+ * foram abortadas, não expedidas.
+ */
+export const aguardandoEntrega = (o: OrdemResumoDTO) =>
+  !o.emProcesso && !o.cancelada && !foiEntregue(o);
+
 export function situacaoOrdem(o: OrdemResumoDTO): string {
-  if (!o.emProcesso) return "Expedida";
+  if (o.cancelada) return "Cancelada";
+  if (!o.emProcesso) return foiEntregue(o) ? "Entregue" : "Aguardando entrega";
   return emSegundoLote(o) ? "2º lote" : "Em produção";
+}
+
+/**
+ * A pílula da OS, no tom da sua situação: o verde da entrega é o único estado
+ * que `pillStyle` sozinho não sabe dizer — expedida e entregue são as duas
+ * "encerradas", e é a diferença entre elas que a aba de Entregas mostra.
+ */
+export function pillOrdemStyle(o: OrdemResumoDTO): CSSProperties {
+  return foiEntregue(o)
+    ? { background: "#dff0e3", color: "#2f6b3c" }
+    : pillStyle(!o.emProcesso);
 }
 
 /** Sub-linha de um passo: "Carga T-07 · Rita Salgado · 42 min". */

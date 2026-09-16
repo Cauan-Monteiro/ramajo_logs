@@ -9,6 +9,7 @@ import com.ramajo.logs.system.dtos.OrdemDtos.SalvarAvaliacaoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.CancelarOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.CorrigirOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.CriarOrdemDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.EntregarOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.FinalizarLoteDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.FinalizarOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.IniciarLogDTO;
@@ -316,6 +317,16 @@ public class OrdemServicoController {
     @PostMapping("/{id}/reabrir")
     public ReaberturaDTO reabrir(@PathVariable Long id, @Valid @RequestBody ReabrirOrdemDTO dto) {
         return ReaberturaDTO.from(service.reabrir(id, dto.operadorId()));
+    }
+
+    // passo 4: a entrega ao cliente. A expedição tira as peças da produção;
+    // esta rota regista que saíram da casa, e por quem. Só sobre OS expedida, e
+    // uma vez só — reabrir a OS apaga o carimbo (ver OrdemServicoService).
+    @PostMapping("/{id}/entregar")
+    public ResponseEntity<Void> entregar(
+            @PathVariable Long id, @Valid @RequestBody EntregarOrdemDTO dto) {
+        service.entregar(id, dto.operadorId());
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/cancelar")

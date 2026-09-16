@@ -159,6 +159,18 @@ body {
    cursor: pointer
 }
 
+/* Contador da aba Entregas. `currentColor` no texto e no traço: a aba ativa e
+   a inativa têm tons diferentes (ver tabStyle), e o selo acompanha os dois sem
+   uma segunda regra. */
+.tabnum {
+   font: 600 11px "Barlow", system-ui, sans-serif;
+   margin-left: 6px;
+   padding: 1px 6px;
+   border: 1px solid currentColor;
+   border-radius: 9px;
+   vertical-align: 1px;
+}
+
 .opchip {
    margin-left: auto;
    display: flex;
@@ -1150,6 +1162,78 @@ body.is-mobile .ac-carga {
    color: rgba(29, 31, 32, .55)
 }
 
+/* — tabela da aba Entregas —
+   Mesmo desenho do par .clhead/.clrow, com grid próprio: as colunas são outras
+   (OS, cliente, posição, datas) e o modo "Entregues" tem duas a mais, que é o
+   que `.entr-full` acrescenta em cima das duas regras base. */
+.entr-head {
+   display: grid;
+   grid-template-columns: 90px 1.4fr .9fr 1fr auto;
+   gap: 14px;
+   padding: 10px 16px;
+   background: #1d2d3d;
+   color: #cfe0f0;
+   font: 600 11px "Barlow Condensed";
+   letter-spacing: .1em;
+   text-transform: uppercase;
+   align-items: center
+}
+
+.entr-row {
+   display: grid;
+   grid-template-columns: 90px 1.4fr .9fr 1fr auto;
+   gap: 14px;
+   align-items: center;
+   padding: 11px 16px;
+   border-bottom: 1px solid rgba(0, 0, 0, .08);
+   cursor: pointer;
+   transition: background .1s
+}
+
+.entr-head.entr-full,
+.entr-row.entr-full {
+   grid-template-columns: 90px 1.3fr .8fr 1fr 1fr .9fr auto
+}
+
+@media (hover:hover) {
+   .entr-row:hover {
+      background: color-mix(in srgb, #5980a6 7%, transparent)
+   }
+}
+
+.entr-row .e-cli {
+   font: 600 16px "Barlow Condensed";
+   color: #1d1f20
+}
+
+/* As três de texto encolhem em vez de empurrar a ação para fora da linha. */
+.entr-row .e-cli,
+.entr-row .e-pos,
+.entr-row .e-por {
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap
+}
+
+.entr-row .e-acao,
+.entr-head > span:last-child {
+   justify-self: end
+}
+
+/* Os dois campos que se cruzam: lado a lado enquanto couberem, em duas linhas
+   quando não — `flex-basis` de 180px porque abaixo disso um nome de cliente
+   deixa de caber e o campo passa a ser adivinhação. */
+.entr-filtros {
+   display: flex;
+   gap: 10px;
+   flex-wrap: wrap
+}
+
+.entr-filtros .inp {
+   flex: 1 1 180px;
+   min-width: 0
+}
+
 .pager {
    display: flex;
    align-items: center;
@@ -2072,6 +2156,11 @@ select.inp {
    color: #2f6b3c
 }
 
+/* O verde da entrega, o mesmo da pílula "Entregue" (pillOrdemStyle). */
+.aud-marco.m-OS_ENTREGUE {
+   color: #2f6b3c
+}
+
 /* O âmbar do indicativo do forno, escurecido para a faixa clara do swimlane —
    o #e0a53f da .posbar foi feito para fundo escuro e some aqui. */
 .aud-marco.m-DESIDRO_APLICADA {
@@ -2495,6 +2584,37 @@ body.is-mobile .clrow .csince {
 
 body.is-mobile .clrow .cdur {
    grid-area: dur;
+   justify-self: end
+}
+
+/* Entregas em cartão, pela mesma razão do .clrow: sem cabeçalho onde clicar
+   (o `⇅` do OrdenarMenu toma o lugar dele) e duas alturas por registro. As
+   datas ficam na segunda linha, a ação sempre à direita da primeira. */
+body.is-mobile .entr-head {
+   display: none
+}
+
+body.is-mobile .entr-row,
+body.is-mobile .entr-row.entr-full {
+   grid-template-columns: auto 1fr auto;
+   grid-template-areas: "os cli acao" "pos exp exp" "ent ent por";
+   gap: 4px 10px;
+   padding: 12px 14px
+}
+
+body.is-mobile .entr-row .e-os { grid-area: os }
+body.is-mobile .entr-row .e-cli { grid-area: cli }
+body.is-mobile .entr-row .e-pos { grid-area: pos }
+body.is-mobile .entr-row .e-exp { grid-area: exp }
+body.is-mobile .entr-row .e-ent { grid-area: ent }
+
+body.is-mobile .entr-row .e-por {
+   grid-area: por;
+   justify-self: end
+}
+
+body.is-mobile .entr-row .e-acao {
+   grid-area: acao;
    justify-self: end
 }
 

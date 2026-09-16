@@ -5,6 +5,7 @@ import com.ramajo.logs.system.exceptions.CargaInativaException;
 import com.ramajo.logs.system.exceptions.CargaNaoVinculadaException;
 import com.ramajo.logs.system.exceptions.DesidrogenizacaoInativaException;
 import com.ramajo.logs.system.exceptions.DominioException;
+import com.ramajo.logs.system.exceptions.EntregaInvalidaException;
 import com.ramajo.logs.system.exceptions.OperadorEmUsoException;
 import com.ramajo.logs.system.exceptions.OperacaoRestritaException;
 import com.ramajo.logs.system.exceptions.OperadorInativoException;
@@ -71,6 +72,7 @@ public class RestExceptionHandler {
             OrdemForaDeCirculacaoException.class,
             OrdemIdExternoExistente.class,
             ReaberturaInvalidaException.class,
+            EntregaInvalidaException.class,
             CargaIndisponivelException.class,
             PassoJaFinalizadoException.class,
             ProcessoEmUsoException.class,

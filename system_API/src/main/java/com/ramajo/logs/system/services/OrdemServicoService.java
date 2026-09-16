@@ -175,7 +175,9 @@ public class OrdemServicoService {
     // CARGAS: LIBERAÇÃO  =====================================================
     /**
      * Fecha o passo aberto de cada carga listada e a devolve ao pool de livres
-     * (`ordemAtual = null`). A OS continua aberta e **o lote não muda**.
+     * (`ordemAtual = null`), **desfazendo o acoplamento**: as OS que pegavam
+     * carona saem da carga junto com a etapa. A OS continua aberta e **o lote
+     * não muda**.
      *
      * É a rotina de chão de fábrica ("encerrar etapas"), separada de propósito
      * de finalizarLote(): virar o lote é decisão de expedição parcial, tomada
@@ -217,17 +219,30 @@ public class OrdemServicoService {
             logRepo.findByCargaIdAndFinalizadoEmIsNull(cargaId)
                     .ifPresent(aberto -> fecharPasso(aberto, at));
 
-            // A composição NÃO se desfaz aqui. Encerrar a etapa não tira as
-            // peças da carona de dentro do tanque: elas continuam lá, e a
-            // carga volta ao pool ainda a levá-las. Quem desfaz é o operador,
-            // no × do detalhe da OS — é a única saída do acoplamento.
-            //
-            // A linha fica sem titular até o próximo vínculo, e trg_coa_protege
-            // não se opõe: ela é BEFORE INSERT OR UPDATE, e ninguém escreve
-            // aqui. Quem pega a carga a seguir herda as caronas (vincularCarga
-            // + acopladasVigentes), que é o que a física do tanque diz.
-            carga.setOrdemAtual(null);
+            // Encerrar a etapa desfaz a composição: as peças da carona saem
+            // do tanque junto com as da titular, e a carga volta ao pool
+            // vazia. É a saída normal do acoplamento — o × do detalhe da OS
+            // continua a existir para desfazê-lo antes disso.
+            soltarCarga(carga);
         }
+    }
+
+    /**
+     * Soltar a carga de uma OS é desfazer a composição inteira. Encerrar a
+     * etapa tira as peças da carona de dentro do tanque junto com as da
+     * titular: a carga volta ao pool vazia, e quem a pegar a seguir começa do
+     * zero, sem herdar carona de ninguém.
+     *
+     * Carga sem titular nunca carrega carona — é o mesmo invariante que
+     * trg_coa_protege (V12) já exige de qualquer INSERT, agora também
+     * respeitado por quem solta a carga.
+     *
+     * O histórico não se perde: log_ordens_acopladas é o snapshot do passo,
+     * é append-only, e nada aqui lhe toca.
+     */
+    private void soltarCarga(Carga carga){
+        carga.getOrdensAcopladas().clear();
+        carga.setOrdemAtual(null);
     }
 
     private Operador exigirOperadorAtivo(Long operadorId){
@@ -330,11 +345,10 @@ public class OrdemServicoService {
         }
         exigirMesmaPosicao(carga, os);
 
-        // A carga pode voltar do pool ainda com caronas — liberar() já não as
-        // apaga. Se ESTA OS era uma delas, o vínculo promove-a a titular: as
-        // peças são as mesmas, muda quem responde pelo tanque. Sem isto,
-        // abrirLog acoplá-la-ia a si mesma e trg_coa_protege recusaria o
-        // próximo acoplamento nesta carga.
+        // Defesa, não regra: soltarCarga() esvazia as caronas, então uma carga
+        // do pool já chega aqui sem nenhuma. Sobra para linha legada gravada
+        // antes de V18 — sem isto abrirLog acoplá-la-ia a si mesma e
+        // trg_coa_protege recusaria o próximo acoplamento nesta carga.
         carga.getOrdensAcopladas().remove(os.getId());
 
         carga.setOrdemAtual(os);
@@ -458,7 +472,7 @@ public class OrdemServicoService {
 
         List<Carga> soltas = new ArrayList<>(os.getCargas());
         for (Carga c : soltas){
-            c.setOrdemAtual(null);
+            soltarCarga(c);
         }
         // Lado inverso da relação: não gera SQL, só mantém a resposta do PUT
         // coerente com o que ficou gravado.
@@ -917,7 +931,7 @@ public class OrdemServicoService {
 
         for(Carga c : os.getCargas()){
             os.getCargasExpedidas().add(c.getId());
-            c.setOrdemAtual(null);
+            soltarCarga(c);
         }
 
         // O outro lado do acoplamento: a OS sai de cena também como carona, e
@@ -938,6 +952,38 @@ public class OrdemServicoService {
         os.setFinalizadaEm(at);
         os.setFinalizadaPor(op);
         os.setEmProcesso(false);
+    }
+
+    /**
+     * A entrega ao cliente: o passo DEPOIS da expedição.
+     *
+     * A expedição tira as peças da produção; a entrega tira-as da casa. São
+     * dois eventos, e por isso dois carimbos — quem expediu não é
+     * necessariamente quem entrega, nem no mesmo dia.
+     *
+     * Carimbo único: `jaEntregue` recusa a segunda chamada em vez de reescrever
+     * a primeira, que perderia a hora e o nome de quem entregou de facto.
+     *
+     * Sem gate de ADMIN, ao contrário de corrigir(): entregar é trabalho de
+     * chão, como abrir um passo ou expedir.
+     *
+     * O que a desfaz é a reabertura, que limpa o carimbo junto com o da
+     * expedição — ver reabrir().
+     */
+    @Transactional
+    public void entregar(Long osId, Long operadorId){
+        // Sem carregarAberta(): aqui exige-se o oposto — a OS TEM de estar fora
+        // de circulação, e expedida em vez de cancelada.
+        OrdemServico os = buscar(osId);
+
+        if (os.isCancelada())   throw EntregaInvalidaException.cancelada(osId);
+        if (!os.isFinalizada()) throw EntregaInvalidaException.naoFinalizada(osId);
+        if (os.isEntregue())    throw EntregaInvalidaException.jaEntregue(osId);
+
+        Operador op = exigirOperadorAtivo(operadorId);
+
+        os.setEntregueEm(Instant.now());
+        os.setEntreguePor(op);
     }
 
     /**
@@ -971,7 +1017,9 @@ public class OrdemServicoService {
      *
      * O que não volta: `finalizada_em`/`finalizada_por_id` são limpos (é o que
      * marca a OS como concluída), então a data da expedição desfeita se perde.
-     * O fecho do último lote fica como o vestígio dela.
+     * O fecho do último lote fica como o vestígio dela. O carimbo de ENTREGA
+     * segue o mesmo caminho, e pelo mesmo motivo da avaliação: descrevia uma
+     * saída que deixou de ter acontecido — as peças estão de volta à produção.
      */
     @Transactional
     public Reabertura reabrir(Long osId, Long operadorId){
@@ -996,6 +1044,11 @@ public class OrdemServicoService {
         os.setFinalizadaEm(null);
         os.setFinalizadaPor(null);
         os.setEmProcesso(true);
+
+        // A entrega era daquela expedição. Limpa junto — e ANTES de qualquer
+        // flush, porque ck_os_entrega exige finalizada_em quando ela existe.
+        os.setEntregueEm(null);
+        os.setEntreguePor(null);
 
         // Lido ANTES do clear, e depois de todas as recusas: uma reabertura
         // que vá ser rejeitada não pode consumir o snapshot.
@@ -1063,7 +1116,7 @@ public class OrdemServicoService {
         }
 
         for(Carga c : os.getCargas()){
-            c.setOrdemAtual(null);
+            soltarCarga(c);
         }
 
         // O outro lado do acoplamento: a OS sai de cena também como carona, e
@@ -1114,6 +1167,6 @@ public class OrdemServicoService {
 
     @Transactional(readOnly = true)
     public List<OrdemServico> listarTodas() {
-        return osRepo.findAll();
+        return osRepo.listarParaResumo();
     }
 }

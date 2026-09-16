@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Modal, Vazio } from "../components/Modal";
 import { Corners } from "../components/Blueprint";
-import { pillStyle, situacaoOrdem } from "../domain/derive";
+import { pillOrdemStyle, situacaoOrdem } from "../domain/derive";
 import { COR_NIVEL, emCurso, nivel, progresso } from "../domain/desidro";
 import { diaHora, osNum, posLabel } from "../domain/format";
 import { useAgora } from "../state/useAgora";
@@ -100,7 +100,7 @@ export function BuscarOSModal({ ctx }: { ctx: Ctx }) {
                 EM FORNO
               </span>
             )}
-            <span className="lote-pill" style={{ ...pillStyle(!o.emProcesso), flex: "none" }}>
+            <span className="lote-pill" style={{ ...pillOrdemStyle(o), flex: "none" }}>
               {situacaoOrdem(o)}
             </span>
           </div>

@@ -10,7 +10,7 @@ import { ResumoAvaliacao } from "../components/ResumoAvaliacao";
 import { ScanField } from "../components/ScanField";
 import {
   SEL_CHIP, SEL_PICK, cargaCarona, caronasDa, dotStyle, ehAcoplada, etapaStyle, etapaDoLog,
-  isAberto, labelEtapaDoLog, logSub,
+  isAberto, labelEtapaDoLog, logSub, pillOrdemStyle, situacaoOrdem,
 } from "../domain/derive";
 import {
   ETAPAS, diaHora, duracao, hhmm, iniciais, minutos, osNum, posLabel,
@@ -102,6 +102,19 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
               o mesmo cuidado dado ao encerramento de passo acoplado.
               Só sobre OS expedida — cancelada é um fim, não uma pausa —, e só
               depois de `detalhe` chegar, porque é ele que distingue as duas. */}
+          {/* A entrega vem antes da reabertura porque é o passo seguinte no
+              fluxo normal — reabrir é a exceção. A confirmação é o diálogo de
+              entrega, o mesmo da aba Entregas: só a reabertura desfaz uma
+              entrega, e ela custa a expedição. */}
+          {!ordem.emProcesso && detalhe && !detalhe.cancelada && !detalhe.entregueEm && (
+            <button
+              className="btn2 btn2-p"
+              disabled={ctx.ocupado}
+              onClick={() => ctx.abrir({ tipo: "entregar", osId, deDetalhe: true })}
+            >
+              Marcar entregue
+            </button>
+          )}
           {!ordem.emProcesso && detalhe && !detalhe.cancelada && (
             <button
               className="btn2 btn2-p"
@@ -187,17 +200,26 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
             </div>
           </div>
         )}
+        {detalhe?.entregueEm && (
+          <div>
+            <div className="os-tv">Entregue em</div>
+            <div className="os-cli" style={{ fontSize: 16 }}>
+              {diaHora(detalhe.entregueEm)}
+              {detalhe.entreguePorNome ? ` · ${detalhe.entreguePorNome}` : ""}
+            </div>
+          </div>
+        )}
         <div>
           <div className="os-tv">Situação</div>
           <div>
-            <span className="lote-pill">
-              {!ordem.emProcesso
-                ? detalhe?.cancelada
-                  ? "Cancelada"
-                  : "Expedida"
-                : ordem.lotesFinalizados > 0
-                  ? `${ordem.lotesFinalizados}º lote — Expedido`
-                  : "Em produção"}
+            {/* O resumo passou a trazer `cancelada` e `entregueEm`, então o
+                derive responde sozinho — e sem esperar o `detalhe` chegar. O
+                2º lote continua a ser dito aqui: é detalhe da produção, e
+                `situacaoOrdem` fala para listas, onde ele não cabe. */}
+            <span className="lote-pill" style={pillOrdemStyle(ordem)}>
+              {ordem.emProcesso && ordem.lotesFinalizados > 0
+                ? `${ordem.lotesFinalizados}º lote — Expedido`
+                : situacaoOrdem(ordem)}
             </span>
           </div>
         </div>
@@ -469,14 +491,13 @@ function Acoplamento({ ctx, osId, cargas }: { ctx: Ctx; osId: number; cargas: Ca
             marginTop: cargas.length > 0 ? 10 : 0,
           }}
         >
+          {/* A carga tem sempre titular: soltá-la desacopla, então uma carga
+              do pool nunca chega aqui com caronas. A guarda é só para não
+              quebrar o render se a recarga apanhar um estado a meio. */}
           <span className="os-tv">
             Peças desta OS estão na carga <b>{emprestada.nome}</b>
-            {emprestada.ordemAtualId !== null ? (
+            {emprestada.ordemAtualId !== null && (
               <> · da OS {rotulo(emprestada.ordemAtualId)}</>
-            ) : (
-              // A carga foi liberada e voltou ao pool ainda a levá-las: o
-              // acoplamento não morre com a etapa, morre no botão abaixo.
-              <> · carga liberada, ainda a levá-las</>
             )}
           </span>
           <button

@@ -144,7 +144,7 @@ rotas separadas:
 
 | Rota | Efeito | Quem chama |
 |---|---|---|
-| `POST /api/ordens/{id}/cargas/liberar` | fecha o passo aberto de cada carga da lista e a devolve ao pool (`ordemAtual = null`). **Não toca no lote nem no acoplamento.** | hub **Encerrar etapas** da home (`modals/EncerrarLote.tsx`) |
+| `POST /api/ordens/{id}/cargas/liberar` | fecha o passo aberto de cada carga da lista e a devolve ao pool (`ordemAtual = null`), **desacoplando** quem pegava carona. **Não toca no lote.** | hub **Encerrar etapas** da home (`modals/EncerrarLote.tsx`) |
 | `POST /api/ordens/{id}/lotes/finalizar` | fecha o lote corrente e abre o seguinte; a OS segue aberta. **Único caminho para o 2º lote.** | diálogo de confirmação `modals/ExpedirParcial.tsx`, aberto pelo botão **Expedir parcial** da Inspeção final |
 | `POST /api/ordens/{id}/finalizar` | expedição total: libera as cargas restantes, fecha o lote corrente e encerra a OS. | **Expedir** (Inspeção final) e **Expedição total** (modal Expedir) |
 | `POST /api/ordens/{id}/reabrir` | desfaz a expedição total: a OS volta a `emProcesso` e ganha um lote NOVO, vazio. Devolve, com ele, as cargas que aquela expedição soltou e que ainda estão livres — sugestão, não vínculo. 409 se a OS estiver em produção ou cancelada. | **Reabrir OS** no detalhe de uma OS expedida |
@@ -287,25 +287,25 @@ segunda só afirma o que já é verdade, sem fechar passo nenhum.
 
 ### Como termina
 
-Um caminho manual, e mais nada que o operador não tenha pedido — nem "a etapa
-fechou", nem "a carga foi liberada":
+O acoplamento atravessa as etapas — **Abrir etapa** fecha a anterior e abre a
+seguinte já para todas as OS da carga (`abrirLog` + `acopladasVigentes`) — e
+termina quando a carga é solta da OS:
 
 | Caminho | O que faz |
 |---|---|
-| `DELETE /api/ordens/cargas/{cargaId}/acopladas/{osId}` | o `×` no chip (lado da titular) ou **Desacoplar** (lado da carona), ambos no **cabeçalho** do detalhe da OS. É a saída normal |
+| hub **Encerrar etapas** (`POST /api/ordens/{id}/cargas/liberar`) | fecha o passo e solta a carga, **desfazendo a composição**: as peças da carona saem do tanque junto com as da titular. É a saída normal |
+| `DELETE /api/ordens/cargas/{cargaId}/acopladas/{osId}` | o `×` no chip (lado da titular) ou **Desacoplar** (lado da carona), ambos no **cabeçalho** do detalhe da OS. Desfaz antes de a etapa acabar |
 | carona expedida ou cancelada | sai da carga na hora, em `finalizar`/`cancelar`; e `acopladasVigentes` ainda varre as caducas na abertura da etapa seguinte |
 
-**Encerrar etapas não desacopla.** Fechar a etapa não tira as peças da carona de
-dentro do tanque: a carga volta ao pool **ainda a levá-las**, e quem a vincular
-a seguir herda a composição (`vincularCarga` + `acopladasVigentes`) — que é o
-que a física do tanque diz. Se a OS que vincula era ela própria uma das caronas,
-o vínculo **promove-a a titular**: as peças são as mesmas, muda quem responde
-pela carga.
+**Carga sem titular nunca carrega carona.** Todo caminho que solta uma carga —
+`liberar`, `finalizar`, `cancelar`, `trocarPosicao` — passa por
+`OrdemServicoService.soltarCarga`, que esvazia `carga_ordens_acopladas` junto
+com `ordemAtual`. É o mesmo invariante que `trg_coa_protege` já exigia de todo
+INSERT, e a V18 limpou as linhas órfãs que a regra anterior deixou.
 
-Enquanto a carga está livre com caronas, `trg_coa_protege` não se opõe: ela é
-`BEFORE INSERT OR UPDATE`, e a liberação não escreve nada. A recusa de "carga
-sem titular" continua a valer onde importa — em `acoplarNaCarga`, que é um
-INSERT e exige alguém a dar boleia.
+Assim a carga volta ao pool vazia: quem a vincular a seguir começa do zero, e a
+OS que era carona reaparece sozinha na **Inspeção final** (se já produziu) ou no
+aviso "OS sem carga" do painel (se não).
 
 O desacoplamento manual vive no cabeçalho, e não junto das etapas, justamente
 porque o vínculo existe **entre** uma etapa e a seguinte — pendurá-lo no passo

@@ -18,20 +18,9 @@ import {
 import { ETAPAS, duracao, hhmm, osNum, posLabel } from "../domain/format";
 import { useAgora } from "../state/useAgora";
 import { cargasLivres, logsDe, type AppData } from "../state/useAppData";
-import { AvaliarExpedicaoModal } from "../modals/AvaliarExpedicao";
-import { BuscarOSModal } from "../modals/BuscarOS";
-import { CargasLivresModal } from "../modals/CargasLivres";
-import { CriarOSModal } from "../modals/CriarOS";
-import { DesidroPainelModal } from "../modals/DesidroPainel";
-import { DesidrogenizarModal } from "../modals/Desidrogenizacao";
-import {
-  CancelarModal, DetalheOSModal, ExpedirModal, PassoModal, VincularModal,
-} from "../modals/DetalheOS";
 import { EncerrarLoteModal } from "../modals/EncerrarLote";
-import { ExpedirParcialModal } from "../modals/ExpedirParcial";
-import { InspecaoModal } from "../modals/Inspecao";
+import { Modais } from "../modals/Modais";
 import { PassoLoteModal } from "../modals/PassoLote";
-import { ProcessosModal } from "../modals/Processos";
 import type { Ctx, ModalState } from "../modals/tipos";
 
 /* Em ecrã de telemóvel a linha da carga ocupa duas alturas e o polegar rola
@@ -515,24 +504,11 @@ export function Dashboard({
         </div>
       </div>
 
-      {modal?.tipo === "cad" && <CriarOSModal ctx={ctx} />}
+      {/* Os dois que dependem da seleção da tabela ficam aqui; o resto da teia
+          de modais é partilhado com as outras telas. */}
       {modal?.tipo === "passoLote" && <PassoLoteModal ctx={ctx} selecao={sel} />}
       {modal?.tipo === "encerrarLote" && <EncerrarLoteModal ctx={ctx} selecao={sel} />}
-      {modal?.tipo === "inspecao" && <InspecaoModal ctx={ctx} />}
-      {modal?.tipo === "buscar" && <BuscarOSModal ctx={ctx} />}
-      {modal?.tipo === "processos" && <ProcessosModal ctx={ctx} />}
-      {modal?.tipo === "livres" && <CargasLivresModal ctx={ctx} />}
-      {modal?.tipo === "det" && <DetalheOSModal ctx={ctx} osId={modal.osId} />}
-      {modal?.tipo === "vinc" && (
-        <VincularModal ctx={ctx} osId={modal.osId} preSel={modal.preSel} />
-      )}
-      {modal?.tipo === "passo" && <PassoModal ctx={ctx} osId={modal.osId} />}
-      {modal?.tipo === "exp" && <ExpedirModal ctx={ctx} osId={modal.osId} />}
-      {modal?.tipo === "expParcial" && <ExpedirParcialModal ctx={ctx} osId={modal.osId} />}
-      {modal?.tipo === "avaliarExp" && <AvaliarExpedicaoModal ctx={ctx} osId={modal.osId} />}
-      {modal?.tipo === "desidro" && <DesidrogenizarModal ctx={ctx} osId={modal.osId} />}
-      {modal?.tipo === "desidroPainel" && <DesidroPainelModal ctx={ctx} />}
-      {modal?.tipo === "cancel" && <CancelarModal ctx={ctx} osId={modal.osId} />}
+      <Modais ctx={ctx} modal={modal} />
     </div>
   );
 }

@@ -90,6 +90,21 @@ public class OrdemServico {
     @JoinColumn(name = "finalizada_por_id")
     private Operador finalizadaPor;
 
+    // A entrega ao cliente: o passo DEPOIS da expedição. Carimbo posto pelo
+    // service (Instant.now()) e não pelo default do Postgres — é um UPDATE de
+    // transição, como finalizadaEm, não o INSERT de uma linha nova.
+    //
+    // Estado da expedição corrente: reabrir() limpa os dois, pelo mesmo motivo
+    // que descarta a avaliação.
+    @Setter
+    @Column(name = "entregue_em")
+    private Instant entregueEm;
+
+    @Setter
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "entregue_por_id")
+    private Operador entreguePor;
+
     // Histórico de passos, em ordem cronológica. Sem cascade de remoção: logs
     // nunca são apagados.
     @OneToMany(mappedBy = "ordemServico", fetch = FetchType.LAZY)
@@ -149,6 +164,11 @@ public class OrdemServico {
     @Transient
     public boolean isFinalizada() {
         return finalizadaEm != null;
+    }
+
+    @Transient
+    public boolean isEntregue() {
+        return entregueEm != null;
     }
 
     // Quantos lotes esta OS teve. Derivado da coleção — sem coluna redundante
@@ -219,6 +239,14 @@ public class OrdemServico {
 
     public void setFinalizadaPor(Operador finalizadaPor) {
         this.finalizadaPor = finalizadaPor;
+    }
+
+    public Instant getEntregueEm() {
+        return entregueEm;
+    }
+
+    public Operador getEntreguePor() {
+        return entreguePor;
     }
 
     public List<Log> getLogs() {

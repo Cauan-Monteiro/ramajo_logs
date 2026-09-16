@@ -233,28 +233,38 @@ public class PlanilhaOrdemServicoService {
         valorTexto(r5, e, 4, nome(os.getFinalizadaPor()));
         mesclarValores(aba, linha[0] + 4);
 
+        // A entrega ao cliente, logo abaixo da expedição: são dois eventos, e a
+        // conciliação com o ERP pergunta pelos dois. Células vazias enquanto a
+        // OS não saiu — como as de "Finalizada em" numa OS em processo.
+        Row r6 = aba.createRow(linha[0] + 5);
+        rotulo(r6, e, 0, "Entregue em");
+        valorData(r6, e, 1, os.getEntregueEm());
+        rotulo(r6, e, 3, "Entregue por");
+        valorTexto(r6, e, 4, nome(os.getEntreguePor()));
+        mesclarValores(aba, linha[0] + 5);
+
         // O forno é uma quarta medida de tempo, ao lado da duração total: corre
         // no nível da OS, sem carga e sem etapa, e por isso não entra no
         // subtotal de nenhum bloco lá em baixo.
-        Row r6 = aba.createRow(linha[0] + 5);
-        rotulo(r6, e, 0, "Desidrogenizações");
-        valorTexto(r6, e, 1, String.valueOf(desidros.size()));
-        rotulo(r6, e, 3, "Tempo em forno");
-        valorDuracao(r6, e, 4, tempoEmForno(desidros));
-        mesclarValores(aba, linha[0] + 5);
+        Row r7 = aba.createRow(linha[0] + 6);
+        rotulo(r7, e, 0, "Desidrogenizações");
+        valorTexto(r7, e, 1, String.valueOf(desidros.size()));
+        rotulo(r7, e, 3, "Tempo em forno");
+        valorDuracao(r7, e, 4, tempoEmForno(desidros));
+        mesclarValores(aba, linha[0] + 6);
 
         // Quinta medida, na mesma prateleira do forno: tempo em que as peças
         // desta OS estiveram numa carga de outra. Fica aqui, e não entre os
         // indicadores, justamente por NÃO ser produção desta ordem — os
         // indicadores contam o que ela executou.
-        Row r7 = aba.createRow(linha[0] + 6);
-        rotulo(r7, e, 0, "Etapas acopladas");
-        valorTexto(r7, e, 1, String.valueOf(acopladas.size()));
-        rotulo(r7, e, 3, "Tempo acoplado");
-        valorDuracao(r7, e, 4, tempoAcoplado(acopladas));
-        mesclarValores(aba, linha[0] + 6);
+        Row r8 = aba.createRow(linha[0] + 7);
+        rotulo(r8, e, 0, "Etapas acopladas");
+        valorTexto(r8, e, 1, String.valueOf(acopladas.size()));
+        rotulo(r8, e, 3, "Tempo acoplado");
+        valorDuracao(r8, e, 4, tempoAcoplado(acopladas));
+        mesclarValores(aba, linha[0] + 7);
 
-        linha[0] += 8;
+        linha[0] += 9;
     }
 
     /**

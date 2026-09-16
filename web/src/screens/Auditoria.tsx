@@ -26,7 +26,7 @@ import type { AppData } from "../state/useAppData";
 
 const TIPOS: TipoEvento[] = [
   "OS_ABERTA", "ETAPA_ABERTA", "ETAPA_FECHADA", "LOTE_FECHADO", "DESIDRO_APLICADA",
-  "OS_EXPEDIDA", "OS_CANCELADA",
+  "OS_EXPEDIDA", "OS_ENTREGUE", "OS_CANCELADA",
 ];
 
 export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown) => void }) {

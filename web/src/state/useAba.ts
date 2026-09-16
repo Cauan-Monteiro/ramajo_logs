@@ -7,6 +7,7 @@ const KEY = "ramajo.aba";
 const ABAS_VALIDAS: readonly Aba[] = [
   ...POSICOES.map((p) => p.key),
   "geral",
+  "entregas",
   "rel",
   "config",
 ];

@@ -12,7 +12,8 @@ import {
   porOperador, rankingComCadastro, type AtividadeOperador, type Evento, type TipoEvento,
 } from "../domain/auditoria";
 import {
-  SEL_PICK, etapaStyle, etapaDoLog, labelEtapaDoLog, logSub, pillStyle, situacaoOrdem,
+  SEL_PICK, etapaStyle, etapaDoLog, labelEtapaDoLog, logSub, pillOrdemStyle, pillStyle,
+  situacaoOrdem,
 } from "../domain/derive";
 import {
   diaHora, duracao, etapaLabel, hhmm, hm, horasEntre, iniciais, iso, minutos, osNum,
@@ -175,7 +176,7 @@ function HistoricoOS({ data, onErro }: { data: AppData; onErro: (e: unknown) => 
           </div>
           <div className="os-tv" style={{ marginBottom: 16 }}>
             Aberta {diaHora(ordem.iniciadaEm)} · {posLabel(ordem.posicao)} ·{" "}
-            {ordem.emProcesso ? "em aberto" : "expedida"}
+            {situacaoOrdem(ordem).toLowerCase()}
           </div>
           {passos.map((p) =>
             p.tipo === "log" ? (
@@ -284,7 +285,7 @@ function OSPorCliente({ data }: { data: AppData }) {
                   <td>{posLabel(o.posicao)}</td>
                   <td>{diaHora(o.iniciadaEm)}</td>
                   <td>
-                    <span className="lote-pill" style={pillStyle(!o.emProcesso)}>
+                    <span className="lote-pill" style={pillOrdemStyle(o)}>
                       {situacaoOrdem(o)}
                     </span>
                   </td>
@@ -513,7 +514,7 @@ function PlanilhaPeriodo({ onErro }: { onErro: (e: unknown) => void }) {
 
 const TIPOS_OP: TipoEvento[] = [
   "OS_ABERTA", "ETAPA_ABERTA", "LOTE_FECHADO", "DESIDRO_APLICADA", "OS_EXPEDIDA",
-  "OS_CANCELADA",
+  "OS_ENTREGUE", "OS_CANCELADA",
 ];
 
 const COLUNAS_OP: ColunaOrd<Evento>[] = [

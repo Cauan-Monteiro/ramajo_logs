@@ -31,4 +31,17 @@ public interface OrdemServicoRepository extends JpaRepository<OrdemServico, Long
             """)
     List<OrdemServico> buscarParaRelatorioPorPeriodo(@Param("inicio") Instant inicio,
                                                      @Param("fim") Instant fim);
+
+    /**
+     * Todas as OSs para a listagem da tela, com as LAZY que o OrdemResumoDTO lê
+     * já resolvidas: o cliente (que o resumo sempre mostra) e quem entregou. Sem
+     * o fetch seria uma query por linha — e esta rota devolve o histórico
+     * inteiro, não só as ordens em processo.
+     */
+    @Query("""
+            select os from OrdemServico os
+              join fetch os.cliente
+              left join fetch os.entreguePor
+            """)
+    List<OrdemServico> listarParaResumo();
 }

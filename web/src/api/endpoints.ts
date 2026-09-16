@@ -214,7 +214,8 @@ export const desacoplarDaCarga = (cargaId: number, osId: number) =>
   http.del(`/api/ordens/cargas/${cargaId}/acopladas/${osId}`);
 
 /**
- * Fecha o passo aberto de cada carga indicada e a devolve ao pool de livres.
+ * Fecha o passo aberto de cada carga indicada e a devolve ao pool de livres,
+ * **desacoplando**: as OS que pegavam carona saem da carga junto com a etapa.
  * A OS segue aberta e o **lote não muda** — é a rotina "encerrar etapas" da
  * home, deliberadamente separada da expedição parcial.
  */
@@ -276,6 +277,14 @@ export const salvarAvaliacao = (osId: number, operadorId: number, avaliacao: Ava
  */
 export const reabrirOrdem = (osId: number, operadorId: number) =>
   http.post<ReaberturaDTO>(`/api/ordens/${osId}/reabrir`, { operadorId });
+
+/**
+ * Carimba a entrega ao cliente: o passo DEPOIS da expedição. Só sobre OS
+ * expedida e não cancelada, e uma vez só — a segunda chamada é recusada com
+ * 409 em vez de reescrever quem entregou. Reabrir a OS apaga o carimbo.
+ */
+export const entregarOrdem = (osId: number, operadorId: number) =>
+  http.post<void>(`/api/ordens/${osId}/entregar`, { operadorId });
 
 export const cancelarOrdem = (osId: number, operadorId: number) =>
   http.post<void>(`/api/ordens/${osId}/cancelar`, { operadorId });

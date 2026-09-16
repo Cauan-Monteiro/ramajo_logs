@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Barra, Evento, Grupo } from "../domain/auditoria";
 import { ROTULO_EVENTO, fracao, horasDaJanela } from "../domain/auditoria";
-import { etapaStyle, pillStyle, situacaoOrdem } from "../domain/derive";
+import { etapaStyle, pillOrdemStyle, pillStyle, situacaoOrdem } from "../domain/derive";
 import { diaHora, duracao, etapaLabel, hhmm, osNum, posLabel } from "../domain/format";
 import { Corners } from "./Blueprint";
 import { Vazio } from "./Modal";
@@ -23,6 +23,7 @@ const COL_NOME = 104;
 const SIMBOLO: Record<Evento["tipo"], string> = {
   OS_ABERTA: "◆",
   OS_EXPEDIDA: "●",
+  OS_ENTREGUE: "⇥",
   OS_CANCELADA: "✕",
   LOTE_FECHADO: "▣",
   ETAPA_ABERTA: "·",
@@ -94,7 +95,7 @@ export function LinhaDoTempo({
                 <span className="os-num">{osNum(g.ordem)}</span>
                 <span className="os-cli">{g.ordem.clienteNome}</span>
                 <span className="os-tv">{posLabel(g.ordem.posicao)}</span>
-                <span className="lote-pill" style={pillStyle(!g.ordem.emProcesso)}>
+                <span className="lote-pill" style={pillOrdemStyle(g.ordem)}>
                   {situacaoOrdem(g.ordem)}
                 </span>
                 <span className="os-tv" style={{ marginLeft: "auto" }}>

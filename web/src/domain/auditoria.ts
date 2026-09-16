@@ -17,6 +17,12 @@ import { ETAPAS, osNum } from "./format";
 export type TipoEvento =
   | "OS_ABERTA"
   | "OS_EXPEDIDA"
+  /**
+   * A saída para o cliente, depois da expedição. Não é um fecho (não entra em
+   * FECHA): a OS já estava encerrada quando isto aconteceu — o que o evento
+   * marca é que ela deixou de estar à espera.
+   */
+  | "OS_ENTREGUE"
   | "OS_CANCELADA"
   | "LOTE_FECHADO"
   | "ETAPA_ABERTA"
@@ -31,6 +37,7 @@ export type TipoEvento =
 export const ROTULO_EVENTO: Record<TipoEvento, string> = {
   OS_ABERTA: "Abriu OS",
   OS_EXPEDIDA: "Expediu OS",
+  OS_ENTREGUE: "Entregou OS",
   OS_CANCELADA: "Cancelou OS",
   LOTE_FECHADO: "Fechou lote",
   ETAPA_ABERTA: "Abriu etapa",
@@ -194,6 +201,23 @@ export function eventosDoDia(f: FonteDia): Evento[] {
         em: fechadaEm,
         autor: det?.finalizadaPorNome ?? null,
         duracaoMs: abertaEm === null ? null : fechadaEm - abertaEm,
+      });
+    }
+
+    // A entrega ao cliente. Evento à parte, e não um substituto do OS_FIM: a
+    // expedição tirou as peças da produção, a entrega tirou-as da casa, e as
+    // duas podem cair em dias diferentes — é justamente o intervalo entre elas
+    // que a aba Entregas existe para vigiar.
+    const entregueEm = ms(det?.entregueEm);
+    if (dentro(entregueEm, ini, fim)) {
+      out.push({
+        ...base,
+        id: `OS_ENTREGUE:${o.id}`,
+        tipo: "OS_ENTREGUE",
+        em: entregueEm,
+        autor: det?.entreguePorNome ?? null,
+        // Do fecho até a saída: o tempo que a OS ficou pronta à espera.
+        duracaoMs: fechadaEm === null ? null : entregueEm - fechadaEm,
       });
     }
 

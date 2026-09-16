@@ -25,9 +25,10 @@ import type { Ctx } from "./tipos";
  * não selecionou, então cada uma é nomeada na linha da sua carga: encerrar
  * etapa de quem não está na lista não pode acontecer em silêncio.
  *
- * O que NÃO acontece aqui é desacoplar: as peças da carona continuam dentro do
- * tanque depois de a etapa fechar, e a carga volta ao pool ainda a levá-las. O
- * acoplamento só termina no × do detalhe da OS.
+ * Encerrar também DESACOPLA: as peças da carona saem do tanque junto com as da
+ * titular, e a carga volta ao pool vazia. O × do detalhe da OS continua a
+ * existir para desfazer o acoplamento antes disto — é a saída antecipada, não
+ * a única.
  */
 export function EncerrarLoteModal({ ctx, selecao }: { ctx: Ctx; selecao: string[] }) {
   const label = posLabel(ctx.posicao);
@@ -72,7 +73,7 @@ export function EncerrarLoteModal({ ctx, selecao }: { ctx: Ctx; selecao: string[
         ? `${itens.length} carga(s) liberada(s) em ${porOS.length} OS.`
         : `${itens.length} carga(s) liberada(s) em ${porOS.length} OS`
           + ` · etapa encerrada também em ${caronas.length} OS acoplada(s),`
-          + " que continuam acopladas.",
+          + " que saíram da carga.",
       depois: ctx.fechar,
     });
   }
@@ -173,7 +174,7 @@ export function EncerrarLoteModal({ ctx, selecao }: { ctx: Ctx; selecao: string[
                 {suas.map((o, i) => (
                   <span key={o.id}>{i > 0 && " · "}<b>{osNum(o)}</b></span>
                 ))}
-                {" "}— acoplada(s) a esta carga. Continuam acopladas depois de encerrar.
+                {" "}— acoplada(s) a esta carga. Saem da carga ao encerrar.
               </div>
             )}
           </div>
@@ -184,8 +185,8 @@ export function EncerrarLoteModal({ ctx, selecao }: { ctx: Ctx; selecao: string[
       </div>
 
       <div className="os-tv" style={{ marginTop: 16 }}>
-        As cargas voltam para o pool de livres — <b>levando quem estiver acoplado</b>, que só sai
-        no × do detalhe da OS — e o lote da OS não muda · a OS que ficar sem cargas aparece em
+        As cargas voltam para o pool de livres <b>vazias</b> — quem estiver acoplado é
+        desacoplado aqui — e o lote da OS não muda · a OS que ficar sem cargas aparece em
         Inspeção final, onde "Expedir parcial" encerra o lote.
       </div>
     </Modal>

@@ -1,13 +1,15 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ApiErrorException } from "./api/client";
 import type { DesidroEmAndamentoDTO } from "./api/types";
 import { AlertaDesidro } from "./components/AlertaDesidro";
 import { AppNav } from "./components/AppNav";
 import { Toast, type Aviso } from "./components/Toast";
+import { aguardandoEntrega } from "./domain/derive";
 import { POSICOES } from "./domain/format";
 import { Ajustes } from "./screens/Ajustes";
 import { Auditoria } from "./screens/Auditoria";
 import { Dashboard } from "./screens/Dashboard";
+import { Entregas } from "./screens/Entregas";
 import { Login } from "./screens/Login";
 import { Relatorios } from "./screens/Relatorios";
 import { useAba } from "./state/useAba";
@@ -42,6 +44,16 @@ export function App() {
   const { data, carregando, pronto, marca, recarregar } = useAppData(reportarErro);
 
   const alerta = useAlertaDesidro(data.desidrosEmAndamento, !!operador && pronto);
+
+  /**
+   * O contador da aba Entregas. Fica aqui, e não na tela, porque quem o mostra
+   * é a barra de navegação: a fila precisa anunciar-se de fora: ninguém passa o
+   * dia dentro daquela aba como passa numa posição.
+   */
+  const aguardando = useMemo(
+    () => data.ordens.filter(aguardandoEntrega).length,
+    [data.ordens],
+  );
 
   /**
    * "Ver OS" da faixa. O modal de detalhe pertence ao Dashboard, então o App
@@ -110,6 +122,7 @@ export function App() {
         onAba={setAba}
         operador={operador}
         isAdmin={isAdmin}
+        aguardandoEntrega={aguardando}
         onSair={encerrar}
       />
 
@@ -147,6 +160,21 @@ export function App() {
         <div className="rel-body">
           <div className="rel-main">
             <Auditoria data={data} onErro={reportarErro} />
+          </div>
+        </div>
+      ) : aba === "entregas" ? (
+        // Mesmo par .rel-body/.rel-main da Visão Geral: a tela é uma lista que
+        // rola, e reaproveitá-lo poupa CSS de layout novo.
+        <div className="rel-body">
+          <div className="rel-main">
+            <Entregas
+              data={data}
+              operador={operador}
+              isAdmin={isAdmin}
+              agir={agir}
+              ocupado={ocupado}
+              isMobile={isMobile}
+            />
           </div>
         </div>
       ) : aba === "rel" && isAdmin ? (

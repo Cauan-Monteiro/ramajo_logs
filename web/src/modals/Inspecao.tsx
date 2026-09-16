@@ -53,8 +53,8 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
             !ctx.data.cargas.some((c) => c.ordemAtualId === o.id) &&
             // Carga emprestada conta como carga: se as peças desta OS estão
             // dentro do tanque junto com as de outra ordem, ela não está
-            // pronta para expedir — voltará à lista quando for desacoplada,
-            // ou quando a carga que a leva for liberada.
+            // pronta para expedir — volta à lista quando for desacoplada, no
+            // × do detalhe da OS ou no "Encerrar etapas" da carga que a leva.
             !cargaCarona(ctx.data.cargas, o.id) &&
             // A OS que nasceu sem carga e ainda não produziu nada não está
             // pronta para expedir — está à espera de tanque. Ela aparece no

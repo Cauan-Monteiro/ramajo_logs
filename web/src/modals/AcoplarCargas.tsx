@@ -204,9 +204,9 @@ export function AcoplarCargas({
             ))}
           <div className="os-tv" style={{ marginTop: 8 }}>
             Acoplar <b>encerra as etapas abertas</b> das OS escolhidas — as peças
-            delas saem da carga própria e entram nesta. O vínculo <b>não termina com
-            a etapa</b> nem com “Encerrar etapas”: dura até ser desfeito à mão, no
-            detalhe da OS.
+            delas saem da carga própria e entram nesta. O vínculo <b>atravessa as
+            etapas</b> — “Abrir etapa” abre a seguinte para todas — e termina em
+            “Encerrar etapas”, ou antes disso no × do detalhe da OS.
           </div>
         </div>
       )}

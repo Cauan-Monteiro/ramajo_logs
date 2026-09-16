@@ -153,6 +153,13 @@ public final class OrdemDtos {
     }
 
     /**
+     * Entrega da OS expedida. Mesmo corpo da reabertura — nada há a escolher: o
+     * instante é o do servidor e o autor é quem chama.
+     */
+    public record EntregarOrdemDTO(@NotNull Long operadorId) {
+    }
+
+    /**
      * Correção de OS pelo ADMIN. Os três campos vão inteiros — o que difere do
      * atual é o que muda —, e `idExterno` é obrigatório: a tela de correção
      * acha a OS por ele, e esvaziá-lo a tiraria de lá.
@@ -187,15 +194,29 @@ public final class OrdemDtos {
     }
 
     // ------------------------------------------------------------------ saída
+    /**
+     * A OS como ela aparece nas LISTAS. Além do essencial, carrega o fecho —
+     * `finalizadaEm`, `cancelada` e a entrega — porque a tela precisa separar
+     * "expedida e ainda cá" de "entregue" e de "cancelada", e fazê-lo pelo
+     * detalhe custaria um GET por linha. Ver a aba de Entregas no front.
+     *
+     * `entreguePorNome` obriga a tocar a relação LAZY `entreguePor`; quem lista
+     * traz o fetch resolvido (OrdemServicoRepository.listarParaResumo).
+     */
     public record OrdemResumoDTO(
             Long id, Long idExterno, String clienteNome,
             Posicao posicao, boolean emProcesso, Instant iniciadaEm,
+            Instant finalizadaEm, boolean cancelada,
+            Instant entregueEm, String entreguePorNome,
             int totalLotes, long lotesFinalizados) {
 
         public static OrdemResumoDTO from(OrdemServico os) {
             return new OrdemResumoDTO(
                     os.getId(), os.getIdExterno(), os.getCliente().getNome(),
                     os.getPosicao(), os.isEmProcesso(), os.getIniciadaEm(),
+                    os.getFinalizadaEm(), os.isCancelada(),
+                    os.getEntregueEm(),
+                    os.getEntreguePor() != null ? os.getEntreguePor().getNome() : null,
                     os.getTotalLotes(), os.getLotesFinalizados());
         }
     }
@@ -205,6 +226,7 @@ public final class OrdemDtos {
             Posicao posicao, Instant iniciadaEm, Instant finalizadaEm,
             boolean cancelada, boolean emProcesso,
             String iniciadaPorNome, String finalizadaPorNome,
+            Instant entregueEm, String entreguePorNome,
             List<Long> cargasVinculadas, List<LoteDTO> lotes,
             List<OrdemDesidrogenizacaoDTO> desidrogenizacoes,
             List<LogDTO> logsIniciados) {
@@ -227,6 +249,8 @@ public final class OrdemDtos {
                     os.isCancelada(), os.isEmProcesso(),
                     os.getIniciadaPor() != null ? os.getIniciadaPor().getNome() : null,
                     os.getFinalizadaPor() != null ? os.getFinalizadaPor().getNome() : null,
+                    os.getEntregueEm(),
+                    os.getEntreguePor() != null ? os.getEntreguePor().getNome() : null,
                     os.getCargas().stream().map(Carga::getId).toList(),
                     os.getLotes().stream().map(LoteDTO::from).toList(),
                     // Etapa opcional: quase sempre lista vazia. @BatchSize na

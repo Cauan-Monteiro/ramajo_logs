@@ -26,6 +26,12 @@ export type ModalState =
   /** O painel do forno — leitura das que estão a correr, sem `osId`. */
   | { tipo: "desidroPainel" }
   | { tipo: "cancel"; osId: number }
+  /**
+   * Confirmação da entrega ao cliente. `deDetalhe` diz que se veio do detalhe
+   * da OS — é para lá que o "← Voltar" e o pós-sucesso levam; da aba Entregas
+   * (sem a marca) o diálogo simplesmente fecha.
+   */
+  | { tipo: "entregar"; osId: number; deDetalhe?: boolean }
   | null;
 
 /** Tudo o que um modal precisa do app à volta. */

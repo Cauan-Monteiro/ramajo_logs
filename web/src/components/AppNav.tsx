@@ -3,15 +3,17 @@ import { tabStyle } from "../domain/derive";
 import { POSICOES, iniciais } from "../domain/format";
 import { IconLogo } from "./Icons";
 
-export type Aba = Posicao | "geral" | "rel" | "config";
+export type Aba = Posicao | "geral" | "entregas" | "rel" | "config";
 
 export function AppNav({
-  aba, onAba, operador, isAdmin, onSair,
+  aba, onAba, operador, isAdmin, aguardandoEntrega, onSair,
 }: {
   aba: Aba;
   onAba: (a: Aba) => void;
   operador: OperadorDTO;
   isAdmin: boolean;
+  /** Quantas OS expedidas ainda não saíram — o contador da aba Entregas. */
+  aguardandoEntrega: number;
   onSair: () => void;
 }) {
   return (
@@ -27,6 +29,16 @@ export function AppNav({
           </button>
         ))}
         <div className="navdiv" />
+        {/* Com o contador: a fila de entrega só se lembra se ela se anunciar —
+            ao contrário das posições, ninguém passa o dia dentro desta aba. */}
+        <button
+          className="tabbtn"
+          style={tabStyle(aba === "entregas")}
+          onClick={() => onAba("entregas")}
+        >
+          Entregas
+          {aguardandoEntrega > 0 && <b className="tabnum">{aguardandoEntrega}</b>}
+        </button>
         <button className="tabbtn" style={tabStyle(aba === "geral")} onClick={() => onAba("geral")}>
           Visão Geral
         </button>

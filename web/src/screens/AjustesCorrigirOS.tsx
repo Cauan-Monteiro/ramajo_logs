@@ -8,7 +8,7 @@ import { BuscaCliente } from "../components/BuscaCliente";
 import { HistoricoAlteracoes } from "../components/HistoricoAlteracoes";
 import { Modal, Vazio } from "../components/Modal";
 import { ScanField } from "../components/ScanField";
-import { SEL_CHIP, SEL_SEG, isAberto } from "../domain/derive";
+import { SEL_CHIP, SEL_SEG, isAberto, pillOrdemStyle, situacaoOrdem } from "../domain/derive";
 import { diaHora, POSICOES, posLabel } from "../domain/format";
 import type { AppData } from "../state/useAppData";
 import { cargasDe, cargasLivres, logsDe } from "../state/useAppData";
@@ -234,9 +234,6 @@ export function CartaoOrdem({
   data: AppData;
 }) {
   const cargas = cargasDe(data, ordem.id);
-  const situacao = ordem.emProcesso
-    ? "Em produção"
-    : detalhe?.cancelada ? "Cancelada" : "Expedida";
 
   return (
     <div className="bp" style={{ padding: "16px 20px", flex: "none", background: "#eef6ff" }}>
@@ -269,7 +266,11 @@ export function CartaoOrdem({
         </div>
         <div>
           <div className="os-tv">Situação</div>
-          <span className="lote-pill">{situacao}</span>
+          {/* O resumo já traz `cancelada` e a entrega: `situacaoOrdem` responde
+              sozinho, sem depender do detalhe ter chegado. */}
+          <span className="lote-pill" style={pillOrdemStyle(ordem)}>
+            {situacaoOrdem(ordem)}
+          </span>
         </div>
       </div>
     </div>

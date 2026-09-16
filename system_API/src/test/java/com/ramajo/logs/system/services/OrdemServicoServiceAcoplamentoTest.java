@@ -359,16 +359,17 @@ class OrdemServicoServiceAcoplamentoTest {
     }
 
     /**
-     * Encerrar a etapa não tira as peças da carona de dentro do tanque. A carga
-     * volta ao pool ainda a levá-las, e o acoplamento só termina no × do
-     * detalhe da OS — é a regra que separa este modelo do da V11.
+     * Encerrar a etapa desfaz a composição: as peças da carona saem do tanque
+     * junto com as da titular e a carga volta ao pool vazia. O passo que fecha
+     * guarda as suas — log_ordens_acopladas é o histórico, e é append-only.
      */
     @Test
-    void liberarCargaPreservaAsAcopladas() throws Exception {
+    void liberarCargaDesacoplaAsCaronas() throws Exception {
         OrdemServico titular = ordem(1L, Posicao.OXIDACAO);
         Carga carga = carga(10L, titular);
         carga.getOrdensAcopladas().add(2L);
         Log emCurso = log(titular, carga, "Banho ácido");
+        emCurso.getOrdensAcopladas().add(2L);
 
         Operador op = new Operador("João", Permissao.FUNCIONARIO, "T1");
         when(osRepo.findById(1L)).thenReturn(Optional.of(titular));
@@ -378,34 +379,31 @@ class OrdemServicoServiceAcoplamentoTest {
 
         service.liberarCargas(1L, 7L, List.of(10L));
 
-        assertThat(carga.getOrdensAcopladas()).containsExactly(2L);
+        assertThat(carga.getOrdensAcopladas()).isEmpty();
         assertThat(carga.getOrdemAtual()).isNull();
         assertThat(emCurso.getFinalizadoEm()).isNotNull();
+        assertThat(emCurso.getOrdensAcopladas()).containsExactly(2L);
     }
 
     /**
-     * O outro lado de liberarCargaPreservaAsAcopladas: a carga volta do pool
-     * ainda a levar caronas, e quem a vincula a seguir herda-as. Se a OS que
-     * vincula ERA uma delas, o vínculo promove-a a titular — as peças são as
-     * mesmas, muda quem responde pelo tanque. Sem a promoção, o passo inicial
-     * nasceria acoplado à própria titular.
+     * O outro lado de liberarCargaDesacoplaAsCaronas: a carga volta do pool
+     * vazia, então a OS que a vincular a seguir começa do zero — não herda
+     * carona nenhuma da OS anterior, nem no vínculo nem no passo inicial.
      */
     @Test
-    void revincularCargaComCaronasPromoveAOsATitular() throws Exception {
-        OrdemServico nova = ordem(1L, Posicao.OXIDACAO);
-        OrdemServico outra = ordem(2L, Posicao.OXIDACAO);
+    void revincularCargaLiberadaNaoHerdaCaronas() throws Exception {
+        OrdemServico anterior = ordem(1L, Posicao.OXIDACAO);
+        OrdemServico nova = ordem(3L, Posicao.OXIDACAO);
 
-        // Carga livre (sem titular) que guardou a composição da OS anterior.
-        Carga carga = carga(10L, null);
-        carga.getOrdensAcopladas().add(1L);
+        Carga carga = carga(10L, anterior);
         carga.getOrdensAcopladas().add(2L);
 
         Processo processo = new Processo("Banho ácido", Etapa.TRATAMENTO);
         processo.getPosicoes().add(Posicao.OXIDACAO);
         Operador op = new Operador("João", Permissao.FUNCIONARIO, "T1");
 
-        when(osRepo.findById(1L)).thenReturn(Optional.of(nova));
-        when(osRepo.findById(2L)).thenReturn(Optional.of(outra));
+        when(osRepo.findById(1L)).thenReturn(Optional.of(anterior));
+        when(osRepo.findById(3L)).thenReturn(Optional.of(nova));
         when(operadorRepo.findById(7L)).thenReturn(Optional.of(op));
         when(cargaRepo.findById(10L)).thenReturn(Optional.of(carga));
         when(processoInicialRepo.findById(Posicao.OXIDACAO))
@@ -413,11 +411,12 @@ class OrdemServicoServiceAcoplamentoTest {
         when(logRepo.findByCargaIdAndFinalizadoEmIsNull(10L)).thenReturn(Optional.empty());
         when(logRepo.save(any(Log.class))).thenAnswer(i -> i.getArgument(0));
 
-        Log passo = service.vincularCarga(1L, 10L, 7L, List.of());
+        service.liberarCargas(1L, 7L, List.of(10L));
+        Log passo = service.vincularCarga(3L, 10L, 7L, List.of());
 
         assertThat(carga.getOrdemAtual()).isSameAs(nova);
-        assertThat(carga.getOrdensAcopladas()).containsExactly(2L);
-        assertThat(passo.getOrdensAcopladas()).containsExactly(2L);
+        assertThat(carga.getOrdensAcopladas()).isEmpty();
+        assertThat(passo.getOrdensAcopladas()).isEmpty();
     }
 
     /**
@@ -462,6 +461,53 @@ class OrdemServicoServiceAcoplamentoTest {
 
         assertThat(alheia.getOrdensAcopladas()).isEmpty();
         assertThat(alheia.getOrdemAtual()).isNotNull();
+    }
+
+    /**
+     * Expedir a TITULAR solta as cargas dela, e soltar uma carga é desfazer a
+     * composição: a carona sai do tanque junto. Sem isto a carga voltaria ao
+     * pool a levar peças de uma OS que ninguém escolheu — e a próxima OS a
+     * vinculá-la herdaria-as.
+     */
+    @Test
+    void finalizarOsLimpaCaronasDasCargasProprias() throws Exception {
+        OrdemServico titular = ordem(1L, Posicao.OXIDACAO);
+        Carga propria = carga(10L, titular);
+        propria.getOrdensAcopladas().add(2L);
+        titular.getCargas().add(propria);
+
+        Operador op = new Operador("João", Permissao.FUNCIONARIO, "T1");
+        when(osRepo.findById(1L)).thenReturn(Optional.of(titular));
+        when(operadorRepo.findById(7L)).thenReturn(Optional.of(op));
+        when(logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(1L)).thenReturn(List.of());
+        when(loteRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(1L)).thenReturn(Optional.empty());
+        when(cargaRepo.buscarAcoplamentosDe(1L)).thenReturn(List.of());
+
+        service.finalizar(1L, 7L);
+
+        assertThat(propria.getOrdensAcopladas()).isEmpty();
+        assertThat(propria.getOrdemAtual()).isNull();
+        assertThat(titular.getCargasExpedidas()).containsExactly(10L);
+    }
+
+    /** Mesma regra de finalizarOsLimpaCaronasDasCargasProprias, pelo cancelamento. */
+    @Test
+    void cancelarOsLimpaCaronasDasCargasProprias() throws Exception {
+        OrdemServico titular = ordem(1L, Posicao.OXIDACAO);
+        Carga propria = carga(10L, titular);
+        propria.getOrdensAcopladas().add(2L);
+        titular.getCargas().add(propria);
+
+        Operador op = new Operador("João", Permissao.FUNCIONARIO, "T1");
+        when(osRepo.findById(1L)).thenReturn(Optional.of(titular));
+        when(operadorRepo.findById(7L)).thenReturn(Optional.of(op));
+        when(logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(1L)).thenReturn(List.of());
+        when(cargaRepo.buscarAcoplamentosDe(1L)).thenReturn(List.of());
+
+        service.cancelar(1L, 7L);
+
+        assertThat(propria.getOrdensAcopladas()).isEmpty();
+        assertThat(propria.getOrdemAtual()).isNull();
     }
 
     /* -- fixtures --------------------------------------------------------- */

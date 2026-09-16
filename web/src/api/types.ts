@@ -120,7 +120,14 @@ export interface CargaDTO {
   ordensAcopladas: number[];
 }
 
-/** dtos/OrdemDtos.OrdemResumoDTO */
+/**
+ * dtos/OrdemDtos.OrdemResumoDTO — a OS como ela aparece nas listas.
+ *
+ * Carrega o fecho (`finalizadaEm`, `cancelada`) e a entrega porque a tela
+ * precisa separar "expedida e ainda cá" de "entregue" e de "cancelada"; buscá-lo
+ * no detalhe custaria um GET por linha. É o que sustenta a aba de Entregas e o
+ * `situacaoOrdem` de domain/derive.
+ */
 export interface OrdemResumoDTO {
   id: number;
   idExterno: number | null;
@@ -128,6 +135,11 @@ export interface OrdemResumoDTO {
   posicao: Posicao;
   emProcesso: boolean;
   iniciadaEm: string;
+  finalizadaEm: string | null;
+  cancelada: boolean;
+  /** Carimbo da entrega ao cliente; null enquanto a OS não saiu da casa. */
+  entregueEm: string | null;
+  entreguePorNome: string | null;
   totalLotes: number;
   lotesFinalizados: number;
 }
@@ -190,6 +202,9 @@ export interface OrdemDetalheDTO {
   emProcesso: boolean;
   iniciadaPorNome: string | null;
   finalizadaPorNome: string | null;
+  /** A entrega ao cliente, o passo depois da expedição. Reabrir a OS a apaga. */
+  entregueEm: string | null;
+  entreguePorNome: string | null;
   cargasVinculadas: number[];
   lotes: LoteDTO[];
   /** Etapa opcional de forno: quase sempre vazia. */

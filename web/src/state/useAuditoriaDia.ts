@@ -58,7 +58,10 @@ export function useAuditoriaDia(
       .map((o) => ({
         id: o.id,
         emProcesso: o.emProcesso,
-        chave: `${o.emProcesso}:${o.lotesFinalizados}:${o.totalLotes}`,
+        // `entregueEm` entra na chave porque a entrega não muda mais nada do
+        // resumo: sem ela, marcar a entrega deixaria o detalhe em cache e o
+        // evento nunca apareceria na auditoria do dia.
+        chave: `${o.emProcesso}:${o.lotesFinalizados}:${o.totalLotes}:${o.entregueEm ?? ""}`,
       }));
   }, [data.ordens, dia]);
 

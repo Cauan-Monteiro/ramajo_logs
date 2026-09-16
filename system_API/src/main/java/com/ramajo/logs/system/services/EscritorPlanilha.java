@@ -182,6 +182,11 @@ final class EscritorPlanilha {
         if (os.isCancelada()) {
             return "Cancelada";
         }
+        // Entregue vence finalizada pelo mesmo motivo: é o estado mais adiantado
+        // dos dois, e ele implica o outro.
+        if (os.isEntregue()) {
+            return "Entregue";
+        }
         return os.isFinalizada() ? "Finalizada" : "Em processo";
     }
 
