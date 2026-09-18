@@ -35,9 +35,13 @@ export const totalDe = (a: Acoplamentos) =>
  *
  * Recolhido por omissão: a esmagadora maioria das cargas não acopla, e quem
  * não acopla não deve ver a lista.
+ *
+ * Com `onNovaOS`, cada carga ganha um "+ Nova OS": a carona ainda não existe,
+ * e o modal pai abre o cadastro rápido (`OSRapida.tsx`) por cima de si, sem
+ * perder o que já foi escolhido, e marca a OS criada naquela carga.
  */
 export function AcoplarCargas({
-  ctx, posicao, cargas, osIdTitular, valor, onChange,
+  ctx, posicao, cargas, osIdTitular, valor, onChange, onNovaOS,
 }: {
   ctx: Ctx;
   posicao: Posicao;
@@ -47,6 +51,8 @@ export function AcoplarCargas({
   osIdTitular: number | undefined;
   valor: Acoplamentos;
   onChange: (a: Acoplamentos) => void;
+  /** Pede ao pai o cadastro rápido de uma OS para ir de carona nesta carga. */
+  onNovaOS?: (cargaId: number) => void;
 }) {
   const [aberto, setAberto] = useState(false);
   const [busca, setBusca] = useState("");
@@ -68,22 +74,29 @@ export function AcoplarCargas({
    * Candidatas: abertas, no MESMO setor (uma carga está num lugar só), nem a
    * titular nem já caronas de outra carga. A API recusa as quatro coisas de
    * qualquer forma — aqui é só para não oferecer o que vai dar erro.
+   *
+   * As já marcadas vêm primeiro e escapam à busca e ao corte: uma escolha
+   * feita — sobretudo a OS recém-criada no cadastro rápido — não pode sumir
+   * da tela só porque a busca não bate com ela.
    */
   const candidatas = useMemo(() => {
     const q = busca.trim().toLowerCase();
     const caronas = new Set(ctx.data.cargas.flatMap((c) => c.ordensAcopladas));
-    return ctx.data.ordens
-      .filter((o) =>
-        o.emProcesso &&
-        o.posicao === posicao &&
-        o.id !== osIdTitular &&
-        !caronas.has(o.id))
+    const abertas = ctx.data.ordens.filter((o) =>
+      o.emProcesso &&
+      o.posicao === posicao &&
+      o.id !== osIdTitular &&
+      !caronas.has(o.id));
+    const marcadas = abertas.filter((o) => marcadasAqui.has(o.id));
+    const resto = abertas
+      .filter((o) => !marcadasAqui.has(o.id))
       .filter((o) =>
         q === "" ||
         osNum(o).toLowerCase().includes(q) ||
         o.clienteNome.toLowerCase().includes(q))
       .slice(0, MAX_VISIVEIS);
-  }, [ctx.data.ordens, ctx.data.cargas, posicao, osIdTitular, busca]);
+    return [...marcadas, ...resto];
+  }, [ctx.data.ordens, ctx.data.cargas, posicao, osIdTitular, busca, marcadasAqui]);
 
   function alternar(cargaId: number, osId: number) {
     const atual = valor[cargaId] ?? [];
@@ -177,6 +190,16 @@ export function AcoplarCargas({
                           ? "Nenhuma OS desta posição bate com a busca."
                           : `Nenhuma outra OS aberta em ${posLabel(posicao)}.`}
                       </span>
+                    )}
+                    {onNovaOS && (
+                      <button
+                        className="cgtog"
+                        style={{ borderStyle: "dashed" }}
+                        title="Cadastrar uma OS sem cargas e acoplá-la nesta carga"
+                        onClick={() => onNovaOS(c.id)}
+                      >
+                        + Nova OS
+                      </button>
                     )}
                   </div>
                 </div>

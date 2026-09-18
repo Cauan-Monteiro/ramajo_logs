@@ -48,6 +48,14 @@ public class CargaService {
         buscar(id).setAtivo(false);
     }
 
+    /** Desfaz o soft-delete: a carga volta ao pool. Idempotente. */
+    @Transactional
+    public Carga reativar(Long id) {
+        Carga carga = buscar(id);
+        carga.setAtivo(true);
+        return carga; // dirty checking
+    }
+
     @Transactional(readOnly = true)
     public Carga buscar(Long id) {
         return cargaRepo.findById(id)

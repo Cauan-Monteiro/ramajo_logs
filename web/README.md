@@ -134,7 +134,6 @@ com o motivo no `title`. Os textos estão centralizados em
 | Controle | Falta na API |
 |---|---|
 | **Expedição parcial** (modal Expedir) | Nada — a operação vive na Inspeção final; ver abaixo |
-| **Reativar** carga (Registrar cargas) | `DELETE /api/cargas/{id}` só desativa; não há rota de reativação |
 
 ### Liberar cargas vs. virar o lote
 
@@ -250,6 +249,15 @@ O componente é `modals/AcoplarCargas.tsx`, recolhido por omissão porque a
 esmagadora maioria das cargas não acopla. Ele pede as duas coisas na ordem em
 que existem: primeiro a **carga** (uma linha por carga já selecionada), depois
 as **OS** que vão dentro dela.
+
+Quando a carona **ainda não existe**, cada linha de carga tem um **+ Nova OS**
+(nos três primeiros caminhos da tabela): abre o cadastro rápido
+(`modals/OSRapida.tsx` — Nº e cliente; a posição é a da carga) **por cima** do
+modal de vínculo, cria a OS vazia na hora e volta com ela já marcada naquela
+carga, sem o segundo toque — uma OS recém-criada não tem etapa para encerrar.
+O modal de baixo não é desmontado, então nada do que já foi escolhido se perde.
+A OS nasce no clique: se o vínculo for cancelado depois, ela fica aberta, como
+ficaria criando-a pelo "Criar OS" à parte.
 
 Abrir etapa **não** pergunta nada: `POST /api/ordens/{id}/logs` já não aceita
 lista de acopladas, e o service lê a composição da carga. É o ponto da mudança

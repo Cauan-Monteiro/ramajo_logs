@@ -137,6 +137,10 @@ export const criarCarga = (dto: {
 /** Soft-delete ("Sucatear" na tela): a carga sai do pool, o histórico fica. */
 export const desativarCarga = (id: number) => http.del<void>(`/api/cargas/${id}`);
 
+/** Desfaz o "Sucatear": a carga volta ao pool de disponíveis. */
+export const reativarCarga = (id: number) =>
+  http.post<CargaDTO>(`/api/cargas/${id}/reativar`);
+
 export async function cargaPorTag(tagId: string): Promise<CargaDTO | null> {
   try {
     return await http.get<CargaDTO>(`/api/cargas/por-tag/${encodeURIComponent(tagId)}`);

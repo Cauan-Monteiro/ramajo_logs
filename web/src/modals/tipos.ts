@@ -57,6 +57,4 @@ export const SEM_API = {
     "cargas vinculadas — é o único caminho para o 2º lote. Para liberar " +
     "algumas cargas desta OS sem encerrar o lote, use o hub “Encerrar etapas” " +
     "da home.",
-  reativarCarga:
-    "DELETE /api/cargas/{id} só desativa; não há rota de reativação na API.",
 } as const;

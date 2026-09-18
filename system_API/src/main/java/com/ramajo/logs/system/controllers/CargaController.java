@@ -61,6 +61,11 @@ public class CargaController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    @PostMapping("/{id}/reativar")
+    public CargaDTO reativar(@PathVariable Long id) {
+        return CargaDTO.from(service.reativar(id));
+    }
+
     @DeleteMapping("/{id}") // desativação (soft-delete), não remoção física
     public ResponseEntity<Void> desativar(@PathVariable Long id) {
         service.desativar(id);

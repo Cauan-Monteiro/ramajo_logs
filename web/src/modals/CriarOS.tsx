@@ -6,6 +6,7 @@ import { Corners } from "../components/Blueprint";
 import type { Acoplamentos } from "./AcoplarCargas";
 import { AcoplarCargas, paresDe } from "./AcoplarCargas";
 import { Modal } from "../components/Modal";
+import { OSRapidaModal } from "./OSRapida";
 import { ScanField } from "../components/ScanField";
 import { SEL_CHIP, SEL_SEG } from "../domain/derive";
 import { POSICOES, posLabel } from "../domain/format";
@@ -27,6 +28,8 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
   const [clienteId, setClienteId] = useState<number | null>(null);
   const [sel, setSel] = useState<string[]>([]);
   const [acopladas, setAcopladas] = useState<Acoplamentos>({});
+  /** A carga que espera a OS do cadastro rápido; null com ele fechado. */
+  const [rapidaPara, setRapidaPara] = useState<number | null>(null);
 
   // Debounce da verificação do Nº — o design mostrava um spinner de 4 s.
   useEffect(() => {
@@ -153,9 +156,24 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
     </div>
   );
 
+  /** O cadastro rápido, por cima do passo em que estiver — ver `OSRapida.tsx`. */
+  const rapida = rapidaPara !== null && (
+    <OSRapidaModal
+      ctx={ctx}
+      posicao={posAlvo}
+      nosReservados={existente || !verificado ? [] : [verificado]}
+      onVoltar={() => setRapidaPara(null)}
+      onCriada={(osId) => {
+        setAcopladas((a) => ({ ...a, [rapidaPara]: [...(a[rapidaPara] ?? []), osId] }));
+        setRapidaPara(null);
+      }}
+    />
+  );
+
   /* ── passo 2 ──────────────────────────────────────────────────────────── */
   if (passo === 2) {
     return (
+      <>
       <Modal
         kicker="NOVA OS · CARGAS"
         titulo="Vincular cargas"
@@ -217,13 +235,17 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
           osIdTitular={undefined}
           valor={acopladas}
           onChange={setAcopladas}
+          onNovaOS={setRapidaPara}
         />
       </Modal>
+      {rapida}
+      </>
     );
   }
 
   /* ── passo 1 ──────────────────────────────────────────────────────────── */
   return (
+    <>
     <Modal
       kicker="NOVA OS"
       titulo="Criar Ordem de Serviço"
@@ -341,6 +363,7 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
             osIdTitular={existente.id}
             valor={acopladas}
             onChange={setAcopladas}
+            onNovaOS={setRapidaPara}
           />
         </>
       )}
@@ -387,5 +410,7 @@ export function CriarOSModal({ ctx }: { ctx: Ctx }) {
         </>
       )}
     </Modal>
+    {rapida}
+    </>
   );
 }

@@ -18,6 +18,7 @@ import {
 import { cargasDe, cargasLivres, logsDe } from "../state/useAppData";
 import type { Acoplamentos } from "./AcoplarCargas";
 import { AcoplarCargas } from "./AcoplarCargas";
+import { OSRapidaModal } from "./OSRapida";
 import { SEM_API, type Ctx } from "./tipos";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -583,6 +584,8 @@ export function VincularModal(
   // e uma recarga do `ctx.data` não pode remarcar o que ele desmarcou.
   const [sel, setSel] = useState<string[]>(preSel ?? []);
   const [acopladas, setAcopladas] = useState<Acoplamentos>({});
+  /** A carga que espera a OS do cadastro rápido; null com ele fechado. */
+  const [rapidaPara, setRapidaPara] = useState<number | null>(null);
   const ordem = ctx.data.ordens.find((o) => o.id === osId);
   if (!ordem) return null;
 
@@ -625,6 +628,7 @@ export function VincularModal(
   }
 
   return (
+    <>
     <Modal
       kicker={`OS ${osNum(ordem)} · VINCULAR CARGAS`}
       titulo="Vincular cargas à OS"
@@ -679,8 +683,22 @@ export function VincularModal(
         osIdTitular={osId}
         valor={acopladas}
         onChange={setAcopladas}
+        onNovaOS={setRapidaPara}
       />
     </Modal>
+    {rapidaPara !== null && (
+      <OSRapidaModal
+        ctx={ctx}
+        posicao={ordem.posicao}
+        nosReservados={[]}
+        onVoltar={() => setRapidaPara(null)}
+        onCriada={(novaId) => {
+          setAcopladas((a) => ({ ...a, [rapidaPara]: [...(a[rapidaPara] ?? []), novaId] }));
+          setRapidaPara(null);
+        }}
+      />
+    )}
+    </>
   );
 }
 

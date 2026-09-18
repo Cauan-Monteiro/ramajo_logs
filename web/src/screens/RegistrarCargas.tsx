@@ -1,19 +1,70 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import * as api from "../api/endpoints";
-import type { Posicao, TipoCarga } from "../api/types";
+import type { CargaDTO, OrdemResumoDTO, Posicao, TipoCarga } from "../api/types";
 import { Corners } from "../components/Blueprint";
 import { IconPlus } from "../components/Icons";
+import { OrdenarMenu, useOrdenacao, type ColunaOrd } from "../components/Ordenar";
 import { ScanField } from "../components/ScanField";
 import { SEL_SEG } from "../domain/derive";
 import { POSICOES, osNum, posLabel } from "../domain/format";
 import type { AppData } from "../state/useAppData";
-import { SEM_API, type Ctx } from "../modals/tipos";
+import type { Ctx } from "../modals/tipos";
 
 const TIPOS: TipoCarga[] = ["TAMBOR", "TRAVE", "CESTO"];
 
 /** Como no Dashboard: a lista completa não cabe num ecrã, muito menos táctil. */
 const POR_PAGINA = 30;
 const POR_PAGINA_MOBILE = 10;
+
+/**
+ * A situação não é um campo: sai de `ativo` + `ordemAtualId`. A pílula precisa do
+ * texto e do estilo; a ordenação precisa de um posto estável — e o texto não serve
+ * para isso, porque "OS 1042" ordenaria entre "Disponível" e "Inativa" por acaso
+ * alfabético. Daí os dois saírem da MESMA função: o que a linha mostra e o que a
+ * coluna ordena nunca discordam.
+ */
+const ORDEM_SITUACAO = { disponivel: 0, emUso: 1, inativa: 2 } as const;
+
+function situacaoDe(c: CargaDTO, ordens: OrdemResumoDTO[]) {
+  if (!c.ativo) {
+    return {
+      texto: "Inativa",
+      estilo: { background: "#e7e7ea", color: "#5d5d60" },
+      rank: ORDEM_SITUACAO.inativa,
+    };
+  }
+  if (c.ordemAtualId === null) {
+    return {
+      texto: "Disponível",
+      estilo: { background: "#d6ebff", color: "#2c455d" },
+      rank: ORDEM_SITUACAO.disponivel,
+    };
+  }
+  const ordem = ordens.find((o) => o.id === c.ordemAtualId);
+  return {
+    texto: `OS ${ordem ? osNum(ordem) : c.ordemAtualId}`,
+    estilo: { background: "#eef6ff", color: "#416180" },
+    rank: ORDEM_SITUACAO.emUso,
+  };
+}
+
+/**
+ * As cinco colunas de dado da tabela — a de "Ação" não ordena nada. O mesmo array
+ * serve o cabeçalho clicável (desktop) e o menu `⇅` (telemóvel, onde o `thead`
+ * está escondido).
+ */
+const colunasDe = (ordens: OrdemResumoDTO[]): ColunaOrd<CargaDTO>[] => [
+  // O localeCompare numérico do comparador põe "T-9" antes de "T-10", não depois.
+  { chave: "nome", label: "Nome", ascPadrao: true, valor: (c) => c.nome },
+  { chave: "tipo", label: "Tipo", ascPadrao: true, valor: (c) => c.tipo },
+  { chave: "posicao", label: "Posição", ascPadrao: true, valor: (c) => posLabel(c.posicao) },
+  // Sem tag -> null, e o comparador manda-a para o fim nos dois sentidos.
+  { chave: "tag", label: "Tag", ascPadrao: true, valor: (c) => c.tagId ?? null },
+  {
+    chave: "situacao", label: "Situação", ascPadrao: true,
+    valor: (c) => situacaoDe(c, ordens).rank,
+  },
+];
 
 export function RegistrarCargas({
   data, posicaoAtual, agir, ocupado, isMobile,
@@ -31,10 +82,24 @@ export function RegistrarCargas({
   const [erro, setErro] = useState<string | null>(null);
   const [pagina, setPagina] = useState(0);
 
+  const colunas = useMemo(() => colunasDe(data.ordens), [data.ordens]);
+  /** Abre pelo nome: é por ele que se procura uma carga na prateleira. */
+  const { ord, ordenarPor, ordenar } = useOrdenacao(
+    colunas, { chave: "nome", asc: true }, () => setPagina(0),
+  );
+
+  /** `.slice()` porque `ordenar` usa `sort`, que é in-place: `data.cargas` é o
+      estado partilhado do useAppData, reposto por SSE, e não é nosso para mexer.
+      Desempate pelo id para a ordem não tremer a cada sincronização. */
+  const cargas = useMemo(
+    () => ordenar(data.cargas.slice(), (a, b) => a.id - b.id),
+    [data.cargas, ordenar],
+  );
+
   const porPagina = isMobile ? POR_PAGINA_MOBILE : POR_PAGINA;
-  const totalPaginas = Math.max(1, Math.ceil(data.cargas.length / porPagina));
+  const totalPaginas = Math.max(1, Math.ceil(cargas.length / porPagina));
   const pag = Math.min(pagina, totalPaginas - 1);
-  const linhas = data.cargas.slice(pag * porPagina, pag * porPagina + porPagina);
+  const linhas = cargas.slice(pag * porPagina, pag * porPagina + porPagina);
 
   function cadastrar() {
     const n = nome.trim().toUpperCase();
@@ -70,6 +135,8 @@ export function RegistrarCargas({
       <div className="reg-h" style={{ fontSize: 13 }}>
         Registrar cargas
         <span className="ct">{data.cargas.length} cadastradas</span>
+        {/* No desktop o próprio cabeçalho da tabela ordena; aqui ele está escondido. */}
+        {isMobile && <OrdenarMenu colunas={colunas} ord={ord} ordenarPor={ordenarPor} />}
       </div>
 
       <div className="bp" style={{ padding: "20px 22px", flex: "none" }}>
@@ -158,25 +225,29 @@ export function RegistrarCargas({
           <table className="table">
             <thead>
               <tr>
-                <th>Nome</th>
-                <th>Tipo</th>
-                <th>Posição</th>
-                <th>Tag</th>
-                <th>Situação</th>
+                {colunas.map((c) => (
+                  <th key={c.chave}>
+                    {/* <button> de verdade, e não um <th onClick>: chega-se lá por
+                        teclado. O .clsort herda a tipografia do .table th. */}
+                    <button
+                      type="button"
+                      className="clsort"
+                      aria-label={`Ordenar por ${c.label}`}
+                      onClick={() => ordenarPor(c.chave)}
+                    >
+                      {c.label}
+                      {ord.chave === c.chave && (
+                        <i className="ordseta">{ord.asc ? "↑" : "↓"}</i>
+                      )}
+                    </button>
+                  </th>
+                ))}
                 <th>Ação</th>
               </tr>
             </thead>
             <tbody>
               {linhas.map((c) => {
-                const ordem = data.ordens.find((o) => o.id === c.ordemAtualId);
-                const situacao = !c.ativo
-                  ? { texto: "Inativa", estilo: { background: "#e7e7ea", color: "#5d5d60" } }
-                  : c.ordemAtualId === null
-                    ? { texto: "Disponível", estilo: { background: "#d6ebff", color: "#2c455d" } }
-                    : {
-                        texto: `OS ${ordem ? osNum(ordem) : c.ordemAtualId}`,
-                        estilo: { background: "#eef6ff", color: "#416180" },
-                      };
+                const situacao = situacaoDe(c, data.ordens);
                 return (
                   <tr key={c.id}>
                     <td data-rot="Nome">
@@ -214,11 +285,15 @@ export function RegistrarCargas({
                       ) : (
                         <button
                           className="btn2 cgacao"
-                          disabled
-                          title={SEM_API.reativarCarga}
+                          disabled={ocupado}
+                          onClick={() =>
+                            agir({
+                              fazer: () => api.reativarCarga(c.id),
+                              ok: `Carga ${c.nome} reativada.`,
+                            })
+                          }
                         >
                           Reativar
-                          <span className="na">Indisponível</span>
                         </button>
                       )}
                     </td>
@@ -227,7 +302,7 @@ export function RegistrarCargas({
               })}
             </tbody>
           </table>
-          {data.cargas.length === 0 && <div className="empty">Nenhuma carga cadastrada ainda.</div>}
+          {cargas.length === 0 && <div className="empty">Nenhuma carga cadastrada ainda.</div>}
         </div>
 
         <div className="pager">
