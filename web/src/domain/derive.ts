@@ -6,8 +6,8 @@ import { etapaLabel, posOrdenadas } from "./format";
 
 const ETAPA_BG: Record<Etapa, string> = {
   PRE_TRATAMENTO: "#98989b",
-  TRATAMENTO: "#5980a6",
-  POS_TRATAMENTO: "#416180",
+  TRATAMENTO: "#ED7D31",
+  POS_TRATAMENTO: "#5B9BD5",
 };
 
 export function etapaStyle(e: Etapa | null | undefined): CSSProperties {
