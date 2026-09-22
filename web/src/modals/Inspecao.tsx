@@ -3,7 +3,7 @@ import type { OrdemResumoDTO } from "../api/types";
 import { Corners } from "../components/Blueprint";
 import { Modal, Vazio } from "../components/Modal";
 import { OrdenarMenu, useOrdenacao, type ColunaOrd } from "../components/Ordenar";
-import { cargaCarona, emEspera } from "../domain/derive";
+import { cargaCarona, emEspera, rodaEm } from "../domain/derive";
 import {
   COR_NIVEL, detalhe, emCurso, nivel, porUrgencia, progresso,
 } from "../domain/desidro";
@@ -49,7 +49,7 @@ export function InspecaoModal({ ctx }: { ctx: Ctx }) {
         ctx.data.ordens.filter(
           (o) =>
             o.emProcesso &&
-            o.posicao === ctx.posicao &&
+            rodaEm(o, ctx.posicao) &&
             !ctx.data.cargas.some((c) => c.ordemAtualId === o.id) &&
             // Carga emprestada conta como carga: se as peças desta OS estão
             // dentro do tanque junto com as de outra ordem, ela não está

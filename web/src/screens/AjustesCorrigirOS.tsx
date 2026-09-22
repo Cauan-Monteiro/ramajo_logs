@@ -9,17 +9,26 @@ import { HistoricoAlteracoes } from "../components/HistoricoAlteracoes";
 import { Modal, Vazio } from "../components/Modal";
 import { ScanField } from "../components/ScanField";
 import { SEL_CHIP, SEL_SEG, isAberto, pillOrdemStyle, situacaoOrdem } from "../domain/derive";
-import { diaHora, POSICOES, posLabel } from "../domain/format";
+import { diaHora, POSICOES, posLabels } from "../domain/format";
 import type { AppData } from "../state/useAppData";
-import { cargasDe, cargasLivres, logsDe } from "../state/useAppData";
+import { cargasDe, logsDe } from "../state/useAppData";
 import type { Ctx } from "../modals/tipos";
 
 /** O formulário: os três campos corrigíveis, mais o que a troca de setor pede. */
 type Form = {
   idExterno: string;
   clienteId: number;
-  posicao: Posicao;
+  /** O conjunto FINAL de setores, não um delta — igual ao corpo do PUT. */
+  posicoes: Posicao[];
 };
+
+/**
+ * Os conjuntos de setores diferem? Comparação por conteúdo e não por ordem —
+ * a API devolve na ordem canônica, mas o form monta na ordem em que o ADMIN
+ * tocou nos botões, e essa não significa nada.
+ */
+const mudouPosicoes = (a: Posicao[], b: Posicao[]) =>
+  a.length !== b.length || a.some((p) => !b.includes(p));
 
 /** Uma linha do "antes → depois" do diálogo de confirmação. */
 type Mudanca = { campo: string; antes: string; depois: string };
@@ -55,10 +64,7 @@ export function AjustesCorrigirOS({
   const [revisando, setRevisando] = useState(false);
 
   const n = numero.trim();
-  // idExterno é único na API, então há no máximo uma.
-  const ordem: OrdemResumoDTO | null = n
-    ? data.ordens.find((o) => o.idExterno !== null && String(o.idExterno) === n) ?? null
-    : null;
+  const { homonimas, ordem, escolhida, setEscolhida } = useOrdemPorNumero(data.ordens, n);
 
   // Trocou de OS: o que estava na tela era de outra.
   useEffect(() => {
@@ -87,14 +93,14 @@ export function AjustesCorrigirOS({
   // por sincronização (outro terminal mexeu em qualquer coisa) traz os mesmos
   // valores e não pode apagar o que o ADMIN está a digitar.
   const gravado = detalhe
-    ? `${detalhe.id}|${detalhe.idExterno}|${detalhe.clienteId}|${detalhe.posicao}`
+    ? `${detalhe.id}|${detalhe.idExterno}|${detalhe.clienteId}|${detalhe.posicoes.join()}`
     : "";
   useEffect(() => {
     if (!detalhe) return;
     setForm({
       idExterno: detalhe.idExterno === null ? "" : String(detalhe.idExterno),
       clienteId: detalhe.clienteId,
-      posicao: detalhe.posicao,
+      posicoes: detalhe.posicoes,
     });
     setCargasSel([]);
   }, [gravado]);
@@ -102,7 +108,7 @@ export function AjustesCorrigirOS({
   // As cargas escolhidas são do setor escolhido; trocar de setor as invalida.
   useEffect(() => {
     setCargasSel([]);
-  }, [form?.posicao]);
+  }, [form?.posicoes.join()]);
 
   return (
     <>
@@ -134,11 +140,12 @@ export function AjustesCorrigirOS({
               onChange={(e) => setNumero(e.target.value.replace(/\D/g, ""))}
             />
           </div>
-          {n && !ordem && (
+          {n && homonimas.length === 0 && (
             <div className="os-tv" style={{ marginTop: 10 }}>
               Nenhuma OS com o Nº {n}.
             </div>
           )}
+          <EscolhaIrma homonimas={homonimas} escolhida={escolhida} onEscolher={setEscolhida} />
         </div>
 
         {ordem && (
@@ -203,23 +210,92 @@ export function AjustesCorrigirOS({
                   operadorId: operador.id,
                   idExterno: novoNumero,
                   clienteId: form.clienteId,
-                  posicao: form.posicao,
-                  cargaIds: form.posicao !== detalhe.posicao ? cargasSel : [],
+                  posicoes: form.posicoes,
+                  cargaIds: mudouPosicoes(form.posicoes, detalhe.posicoes) ? cargasSel : [],
                   motivo: motivo.trim(),
                 }),
-              ok: `OS #${novoNumero} corrigida.`,
+              // Com o setor: o Nº sozinho não diz qual das irmãs foi mexida.
+              ok: `OS #${novoNumero} (${posLabels(form.posicoes)}) corrigida.`,
               depois: () => {
                 setRevisando(false);
                 setMotivo("");
                 // Se o Nº mudou, a busca segue a OS para o Nº novo — senão ela
-                // sumiria da tela no instante em que foi corrigida.
+                // sumiria da tela no instante em que foi corrigida. E segue ESTA
+                // OS: se o Nº novo tiver irmãs, não se pergunta o setor de novo.
                 setNumero(String(novoNumero));
+                setEscolhida(detalhe.id);
               },
             });
           }}
         />
       )}
     </>
+  );
+}
+
+/* ── achar a OS pelo Nº ────────────────────────────────────────────────── */
+
+/**
+ * A OS que o ADMIN quer, a partir do Nº que ele digitou. Também usado por
+ * AjustesAvaliarOS, que abre pelo mesmo fluxo.
+ *
+ * O Nº do ERP não identifica uma OS: é único POR SETOR (V20), e a mesma ordem
+ * partida entre dois setores vira duas OS com o mesmo Nº e o mesmo cliente. Um
+ * `.find()` aqui carregaria calado a primeira irmã — e a correção, ou a
+ * avaliação, iria parar na OS do outro setor sem ninguém perceber.
+ *
+ * Por isso: uma homônima só -> é ela; várias -> nenhuma até o ADMIN escolher
+ * (ver EscolhaIrma). A escolha é por id e não precisa ser limpa ao trocar de
+ * Nº: um id que não esteja entre as homônimas do Nº atual simplesmente não
+ * casa.
+ */
+export function useOrdemPorNumero(ordens: OrdemResumoDTO[], n: string) {
+  const [escolhida, setEscolhida] = useState<number | null>(null);
+
+  const homonimas = n
+    ? ordens.filter((o) => o.idExterno !== null && String(o.idExterno) === n)
+    : [];
+
+  const ordem: OrdemResumoDTO | null = homonimas.length === 1
+    ? homonimas[0]
+    : homonimas.find((o) => o.id === escolhida) ?? null;
+
+  return { homonimas, ordem, escolhida, setEscolhida };
+}
+
+/**
+ * Pergunta qual das irmãs, quando o Nº tem mais de uma. Mesmo Nº e mesmo
+ * cliente — o setor é o que as distingue, e é o que o botão mostra. Uma OS
+ * multi-setor aparece como um botão só ("Pendurado + Automática").
+ */
+export function EscolhaIrma({
+  homonimas, escolhida, onEscolher,
+}: {
+  homonimas: OrdemResumoDTO[];
+  escolhida: number | null;
+  onEscolher: (osId: number) => void;
+}) {
+  if (homonimas.length < 2) return null;
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <span className="lbl">
+        O Nº {homonimas[0].idExterno} está em {homonimas.length} setores · qual?
+      </span>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {homonimas.map((o) => (
+          <button
+            key={o.id}
+            className="seg-b"
+            style={escolhida === o.id ? SEL_SEG : undefined}
+            onClick={() => onEscolher(o.id)}
+          >
+            {posLabels(o.posicoes)}
+            {!o.emProcesso && " · encerrada"}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -248,8 +324,8 @@ export function CartaoOrdem({
           <div className="os-cli" style={{ fontSize: 18 }}>{ordem.clienteNome}</div>
         </div>
         <div>
-          <div className="os-tv">Posição</div>
-          <div className="os-cli" style={{ fontSize: 16 }}>{posLabel(ordem.posicao)}</div>
+          <div className="os-tv">{ordem.posicoes.length > 1 ? "Posições" : "Posição"}</div>
+          <div className="os-cli" style={{ fontSize: 16 }}>{posLabels(ordem.posicoes)}</div>
         </div>
         <div style={{ maxWidth: 220 }}>
           <div className="os-tv">Cargas na OS</div>
@@ -279,12 +355,22 @@ export function CartaoOrdem({
 
 /* ── o formulário ──────────────────────────────────────────────────────── */
 
-/** O Nº digitado, se já pertence a OUTRA OS — a API recusaria com 409. */
+/**
+ * O Nº digitado, se já pertence a OUTRA OS QUE RODA EM ALGUM DOS SETORES
+ * pedidos — a API recusaria com 409.
+ *
+ * A colisão é por setor, não pelo número: o Nº do ERP é único por posição
+ * (V20), então a 42 da Automática convive com a 42 da Oxidação. Por isso a
+ * checagem lê `form.posicoes`, e não só `form.idExterno`: acrescentar um setor
+ * pode levar esta OS para dentro do setor onde a irmã já roda.
+ */
 function numeroDeOutra(data: AppData, form: Form, osId: number): OrdemResumoDTO | null {
   const v = form.idExterno.trim();
   if (!v) return null;
-  return data.ordens.find((o) => o.id !== osId && o.idExterno !== null && String(o.idExterno) === v)
-    ?? null;
+  return data.ordens.find(
+    (o) => o.id !== osId && o.idExterno !== null && String(o.idExterno) === v
+      && o.posicoes.some((p) => form.posicoes.includes(p)),
+  ) ?? null;
 }
 
 function FormCorrecao({
@@ -306,24 +392,37 @@ function FormCorrecao({
 }) {
   const mudaNumero = form.idExterno !== "" && Number(form.idExterno) !== detalhe.idExterno;
   const mudaCliente = form.clienteId !== detalhe.clienteId;
-  const mudaPosicao = form.posicao !== detalhe.posicao;
+  const mudaPosicao = mudouPosicoes(form.posicoes, detalhe.posicoes);
+  // Os setores que SAEM: é deles que o aviso fala, e só as cargas deles são
+  // soltas. Os que ficam continuam a produzir sem interrupção.
+  const removidas = detalhe.posicoes.filter((p) => !form.posicoes.includes(p));
+  const acrescentadas = form.posicoes.filter((p) => !detalhe.posicoes.includes(p));
   const algumaMudanca = mudaNumero || mudaCliente || mudaPosicao;
 
   const outra = numeroDeOutra(data, form, ordem.id);
   const problema = !form.idExterno
     ? "Informe o Nº da OS — ele não pode ficar em branco."
     : outra
-      ? `O Nº ${form.idExterno} já é de outra OS (${outra.clienteNome}).`
+      ? `O Nº ${form.idExterno} já é de outra OS em ${posLabels(outra.posicoes)}`
+        + ` (${outra.clienteNome}).`
       : null;
 
   const podeRevisar = algumaMudanca && !problema && motivo.trim().length > 0;
 
-  // O que a troca de setor leva junto. Só os passos em que esta OS é a titular:
-  // os de carona são da carga de outra OS, e a API não os toca.
+  // O que a remoção de setor leva junto — e SÓ ela: acrescentar não desfaz
+  // nada. Só os passos em que esta OS é a titular: os de carona são da carga de
+  // outra OS, e a API não os toca.
   const cargasAtuais = cargasDe(data, ordem.id);
-  const passosAbertos = logsDe(data, ordem.id)
-    .filter((l) => isAberto(l) && l.ordemServicoId === ordem.id);
-  const livres = cargasLivres(data, form.posicao);
+  const cargasSaindo = cargasAtuais.filter((c) => removidas.includes(c.posicao));
+  const nomesSaindo = new Set(cargasSaindo.map((c) => c.nome));
+  const passosSaindo = logsDe(data, ordem.id).filter(
+    (l) => isAberto(l) && l.ordemServicoId === ordem.id && nomesSaindo.has(l.cargaNome),
+  );
+  // As cargas a vincular são dos setores ACRESCENTADOS — nos que já existiam a
+  // OS já tem as suas, e nos removidos não faria sentido entrar carga nova.
+  const livres = data.cargas.filter(
+    (c) => c.ativo && c.ordemAtualId === null && acrescentadas.includes(c.posicao),
+  );
 
   function lerCarga(tag: string) {
     agir({
@@ -331,7 +430,7 @@ function FormCorrecao({
         const c = await api.cargaPorTag(tag);
         if (!c) throw new Error(`Nenhuma carga com a tag "${tag}".`);
         if (!livres.some((l) => l.id === c.id)) {
-          throw new Error(`A carga ${c.nome} não está livre em ${posLabel(form.posicao)}.`);
+          throw new Error(`A carga ${c.nome} não está livre em ${posLabels(acrescentadas)}.`);
         }
         onCargasSel((s) => (s.includes(c.id) ? s : [...s, c.id]));
       },
@@ -361,18 +460,37 @@ function FormCorrecao({
         <div style={{ marginBottom: 18 }} />
       )}
 
-      <span className="lbl">Posição / setor</span>
-      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
-        {POSICOES.map((p) => (
-          <button
-            key={p.key}
-            className="seg-b"
-            style={form.posicao === p.key ? SEL_SEG : undefined}
-            onClick={() => onForm({ ...form, posicao: p.key })}
-          >
-            {p.label}
-          </button>
-        ))}
+      <span className="lbl">Posições / setores</span>
+      <div style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+        {POSICOES.map((p) => {
+          const ligada = form.posicoes.includes(p.key);
+          // Desligar a última é recusado pela API (CORRECAO_SEM_POSICAO) e pela
+          // trigger do banco: uma OS sem setor não roda em lugar nenhum.
+          const ultima = ligada && form.posicoes.length === 1;
+          return (
+            <button
+              key={p.key}
+              className="seg-b"
+              style={ligada ? SEL_SEG : undefined}
+              disabled={ultima}
+              title={ultima ? "A OS precisa de pelo menos um setor" : undefined}
+              onClick={() =>
+                onForm({
+                  ...form,
+                  posicoes: ligada
+                    ? form.posicoes.filter((k) => k !== p.key)
+                    : [...form.posicoes, p.key],
+                })
+              }
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="os-tv" style={{ fontSize: 13, marginBottom: 18 }}>
+        Quase toda OS roda num setor só. Marcar dois é a exceção: as peças ficam
+        partidas entre os dois, produzem em paralelo, e a OS expede uma vez só.
       </div>
 
       {mudaPosicao && (
@@ -386,19 +504,28 @@ function FormCorrecao({
         >
           <Corners />
           <div style={{ font: "600 16px 'Barlow Condensed'", color: "#8f3421", marginBottom: 6 }}>
-            Trocar de {posLabel(detalhe.posicao)} para {posLabel(form.posicao)}
+            {removidas.length > 0
+              ? `Retirar ${posLabels(removidas)}`
+              : `Acrescentar ${posLabels(acrescentadas)}`}
+            {removidas.length > 0 && acrescentadas.length > 0
+              && ` e acrescentar ${posLabels(acrescentadas)}`}
           </div>
           <div className="os-tv" style={{ fontSize: 14 }}>
-            {cargasAtuais.length > 0 ? (
+            {removidas.length === 0 ? (
+              <>Nada sai: acrescentar um setor não solta carga nem cancela etapa</>
+            ) : cargasSaindo.length > 0 ? (
               <>
-                As cargas <b>{cargasAtuais.map((c) => c.nome).join(", ")}</b> voltam a ficar
-                livres em {posLabel(detalhe.posicao)}
+                As cargas <b>{cargasSaindo.map((c) => c.nome).join(", ")}</b> voltam a ficar
+                livres em {posLabels(removidas)}
               </>
             ) : (
-              <>A OS não tem cargas em {posLabel(detalhe.posicao)}</>
+              <>A OS não tem cargas em {posLabels(removidas)}</>
             )}
-            {passosAbertos.length > 0 && (
-              <> e <b>{passosAbertos.length} etapa(s) em andamento</b> serão marcadas como canceladas</>
+            {passosSaindo.length > 0 && (
+              <> e <b>{passosSaindo.length} etapa(s) em andamento</b> serão marcadas como canceladas</>
+            )}
+            {removidas.length > 0 && form.posicoes.length > 0 && (
+              <> — o que corre em {posLabels(form.posicoes)} não é tocado</>
             )}
             . Se a OS ia de carona na carga de outra OS, sai dela. Etapas já encerradas
             continuam no histórico.
@@ -406,7 +533,7 @@ function FormCorrecao({
 
           <div className="scanhd" style={{ marginTop: 14 }}>
             <span className="lbl">
-              Cargas livres em {posLabel(form.posicao)} para vincular (opcional)
+              Cargas livres em {posLabels(acrescentadas)} para vincular (opcional)
             </span>
             <ScanField
               rotulo="Ler carga"
@@ -433,12 +560,12 @@ function FormCorrecao({
               );
             })}
             {livres.length === 0 && (
-              <span className="os-tv">Sem cargas livres em {posLabel(form.posicao)}.</span>
+              <span className="os-tv">Sem cargas livres em {posLabels(acrescentadas)}.</span>
             )}
           </div>
           <div className="os-tv" style={{ marginTop: 10 }}>
             {cargasSel.length} carga(s) selecionada(s) · cada uma abre etapa no processo
-            inicial de {posLabel(form.posicao)}
+            inicial do setor dela
           </div>
         </div>
       )}
@@ -517,8 +644,12 @@ function ConfirmarCorrecaoModal({
       depois: nomeCliente(form.clienteId),
     });
   }
-  if (form.posicao !== detalhe.posicao) {
-    mudancas.push({ campo: "Posição", antes: posLabel(detalhe.posicao), depois: posLabel(form.posicao) });
+  if (mudouPosicoes(form.posicoes, detalhe.posicoes)) {
+    mudancas.push({
+      campo: detalhe.posicoes.length > 1 || form.posicoes.length > 1 ? "Posições" : "Posição",
+      antes: posLabels(detalhe.posicoes),
+      depois: posLabels(form.posicoes),
+    });
     mudancas.push({
       campo: "Cargas",
       antes: nomesCargas(cargasDe(data, ordem.id).map((c) => c.nome)),

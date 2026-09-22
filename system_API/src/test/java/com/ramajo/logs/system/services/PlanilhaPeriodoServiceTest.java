@@ -76,6 +76,7 @@ class PlanilhaPeriodoServiceTest {
 
     /** Índices na tabela de OSs (ver CABECALHO do service). */
     private static final int COL_ID_EXTERNO = 0;
+    private static final int COL_POSICAO = 2;
     private static final int COL_FINALIZADA_EM = 6;
     private static final int COL_DURACAO = 8;
     private static final int COL_TRABALHADO = 9;
@@ -95,15 +96,16 @@ class PlanilhaPeriodoServiceTest {
 
     /** Índices na aba Etapas (ver CABECALHO_ETAPAS). */
     private static final int ET_OS = 0;
-    private static final int ET_OS_INICIO_DATA = 2;
-    private static final int ET_OS_INICIO_HORA = 3;
-    private static final int ET_OS_FIM_DATA = 4;
-    private static final int ET_OS_FIM_HORA = 5;
-    private static final int ET_ETAPA = 9;
-    private static final int ET_FIM = 12;
-    private static final int ET_DURACAO = 13;
-    private static final int ET_SITUACAO = 14;
-    private static final int ET_ACOPLADA = 15;
+    private static final int ET_POSICAO = 2;
+    private static final int ET_OS_INICIO_DATA = 3;
+    private static final int ET_OS_INICIO_HORA = 4;
+    private static final int ET_OS_FIM_DATA = 5;
+    private static final int ET_OS_FIM_HORA = 6;
+    private static final int ET_ETAPA = 10;
+    private static final int ET_FIM = 13;
+    private static final int ET_DURACAO = 14;
+    private static final int ET_SITUACAO = 15;
+    private static final int ET_ACOPLADA = 16;
 
     @Mock private OrdemServicoRepository osRepo;
     @Mock private LogRepository logRepo;
@@ -220,6 +222,9 @@ class PlanilhaPeriodoServiceTest {
             assertThat(abaEtapas.getRow(1).getCell(ET_OS).getStringCellValue()).isEqualTo("90010");
             assertThat(abaEtapas.getRow(1).getCell(ET_ETAPA).getStringCellValue())
                     .isEqualTo(Etapa.PRE_TRATAMENTO.name());
+            // o setor da carga ao lado do Nº: é o que separa as irmãs (V20)
+            assertThat(cabecalho(abaEtapas, ET_POSICAO)).isEqualTo("Posição");
+            assertThat(abaEtapas.getRow(1).getCell(ET_POSICAO).getStringCellValue()).isNotBlank();
 
             // os carimbos da OS, com dia e hora em colunas separadas. T0 é
             // 10:00Z, que no fuso da fábrica (UTC-3) é 07:00 do dia 01/08.
@@ -478,4 +483,128 @@ class PlanilhaPeriodoServiceTest {
         f.setAccessible(true);
         f.set(alvo, valor);
     }
+
+    /**
+     * A OS que roda em DOIS setores (V19) rende DUAS linhas, uma por setor, com
+     * os passos de cada um contados à parte.
+     *
+     * O que este caso vigia, e que é a armadilha da mudança: os campos da ORDEM
+     * INTEIRA — duração total, forno, acopladas — só podem ser escritos UMA
+     * vez. Repeti-los na segunda linha faria o SUM(I) da aba contar a mesma
+     * ordem duas vezes, e o relatório passaria a inflar sozinho conforme o chão
+     * de fábrica usasse a exceção.
+     */
+    @Test
+    void ordemDeDoisSetoresRendeUmaLinhaPorSetorSemInflarOsTotais() throws Exception {
+        OrdemServico dupla = ordem(10L, 0, 8, false);
+        dupla.getPosicoes().add(Posicao.PENDURADO);
+
+        Operador joao = new Operador("João", Permissao.FUNCIONARIO, "T1");
+        Carga daOxidacao = carga(1L, "TAMBOR-01", TipoCarga.TAMBOR);
+        Carga doPendurado = cargaEm(2L, "TRAVE-07", TipoCarga.TRAVE, Posicao.PENDURADO);
+        Processo desengraxe = processo(1L, "Desengraxe", Etapa.PRE_TRATAMENTO);
+        Processo banho = processo(2L, "Banho ácido", Etapa.TRATAMENTO);
+
+        List<Log> etapas = List.of(
+                // 3h na OXIDACAO (2h + 1h), numa carga só
+                log(dupla, joao, daOxidacao, desengraxe, 0, 2, false),
+                log(dupla, joao, daOxidacao, banho, 2, 3, false),
+                // 4h no PENDURADO, noutra carga
+                log(dupla, joao, doPendurado, desengraxe, 0, 4, false));
+
+        when(osRepo.buscarParaRelatorioPorPeriodo(
+                DataHoraBr.inicioDoDia(INICIO), DataHoraBr.inicioDoDiaSeguinte(FIM)))
+                .thenReturn(List.of(dupla));
+        when(logRepo.buscarParaRelatorioDeOrdens(List.of(10L))).thenReturn(etapas);
+        when(desidroRepo.buscarDeOrdens(List.of(10L)))
+                .thenReturn(List.of(desidro(dupla, joao, 120)));
+
+        byte[] bytes = service.gerar(INICIO, FIM);
+
+        try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+            List<Row> linhas = linhasDeDados(wb.getSheetAt(0));
+
+            // uma linha por setor, na ordem canônica do enum
+            assertThat(linhas).hasSize(2);
+            assertThat(linhas).extracting(r -> r.getCell(COL_POSICAO).getStringCellValue())
+                    .containsExactly("OXIDACAO", "PENDURADO");
+            // as duas descrevem a MESMA ordem: o Nº repete, é rótulo
+            assertThat(linhas).extracting(r -> r.getCell(COL_ID_EXTERNO).getStringCellValue())
+                    .containsExactly("90010", "90010");
+
+            Row oxidacao = linhas.get(0);
+            Row pendurado = linhas.get(1);
+
+            // --- os passos foram PARTICIONADOS, não duplicados
+            assertThat(oxidacao.getCell(COL_ETAPAS).getNumericCellValue()).isEqualTo(2);
+            assertThat(pendurado.getCell(COL_ETAPAS).getNumericCellValue()).isEqualTo(1);
+            assertThat(oxidacao.getCell(COL_CARGAS).getNumericCellValue()).isEqualTo(1);
+            assertThat(pendurado.getCell(COL_CARGAS).getNumericCellValue()).isEqualTo(1);
+
+            // --- tempo trabalhado é POR SETOR: cada linha tem o seu
+            assertThat(oxidacao.getCell(COL_TRABALHADO).getNumericCellValue())
+                    .isCloseTo(horas(3), PRECISAO);
+            assertThat(pendurado.getCell(COL_TRABALHADO).getNumericCellValue())
+                    .isCloseTo(horas(4), PRECISAO);
+
+            // --- e a duração TOTAL da ordem só na primeira linha
+            assertThat(oxidacao.getCell(COL_DURACAO).getNumericCellValue())
+                    .isCloseTo(horas(8), PRECISAO);
+            assertThat(vazia(pendurado.getCell(COL_DURACAO)))
+                    .as("duração total repetida infla o SUM(I) da aba")
+                    .isTrue();
+
+            // --- o forno corre no nível da ORDEM: idem
+            assertThat(oxidacao.getCell(COL_DESIDROS).getNumericCellValue()).isEqualTo(1);
+            assertThat(pendurado.getCell(COL_DESIDROS).getNumericCellValue()).isEqualTo(0);
+            assertThat(oxidacao.getCell(COL_TEMPO_FORNO).getNumericCellValue())
+                    .isCloseTo(horas(2), PRECISAO);
+            assertThat(vazia(pendurado.getCell(COL_TEMPO_FORNO))).isTrue();
+        }
+    }
+
+    /**
+     * A OS de UM setor — o caso normal — continua a render exatamente uma linha,
+     * com a duração total no lugar de sempre. É o teste de não-regressão da
+     * quebra por setor: se ela mudasse o caso comum, a mudança estaria errada.
+     */
+    @Test
+    void ordemDeUmSetorContinuaNumaLinhaSo() throws Exception {
+        OrdemServico simples = ordem(10L, 0, 8, false);
+        Operador joao = new Operador("João", Permissao.FUNCIONARIO, "T1");
+        Carga tambor = carga(1L, "TAMBOR-01", TipoCarga.TAMBOR);
+        Processo desengraxe = processo(1L, "Desengraxe", Etapa.PRE_TRATAMENTO);
+
+        when(osRepo.buscarParaRelatorioPorPeriodo(
+                DataHoraBr.inicioDoDia(INICIO), DataHoraBr.inicioDoDiaSeguinte(FIM)))
+                .thenReturn(List.of(simples));
+        when(logRepo.buscarParaRelatorioDeOrdens(List.of(10L)))
+                .thenReturn(List.of(log(simples, joao, tambor, desengraxe, 0, 2, false)));
+
+        byte[] bytes = service.gerar(INICIO, FIM);
+
+        try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+            List<Row> linhas = linhasDeDados(wb.getSheetAt(0));
+            assertThat(linhas).hasSize(1);
+            assertThat(linhas.get(0).getCell(COL_POSICAO).getStringCellValue())
+                    .isEqualTo("OXIDACAO");
+            assertThat(linhas.get(0).getCell(COL_DURACAO).getNumericCellValue())
+                    .isCloseTo(horas(8), PRECISAO);
+            assertThat(linhas.get(0).getCell(COL_TRABALHADO).getNumericCellValue())
+                    .isCloseTo(horas(2), PRECISAO);
+        }
+    }
+
+    /** Célula sem valor — o que as somas do Excel ignoram. */
+    private boolean vazia(Cell c) {
+        return c == null || c.getCellType() == CellType.BLANK;
+    }
+
+    private Carga cargaEm(Long id, String nome, TipoCarga tipo, Posicao posicao)
+            throws Exception {
+        Carga c = new Carga(nome, tipo, posicao);
+        set(c, "id", id);
+        return c;
+    }
+
 }

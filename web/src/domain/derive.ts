@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
-import type { CargaDTO, Etapa, LogDTO, OrdemResumoDTO, ProcessoDTO } from "../api/types";
-import { etapaLabel } from "./format";
+import type { CargaDTO, Etapa, LogDTO, OrdemResumoDTO, Posicao, ProcessoDTO } from "../api/types";
+import { etapaLabel, posOrdenadas } from "./format";
 
 /* ── cores por etapa (dot()/etpStyle do design) ─────────────────────────── */
 
@@ -114,6 +114,29 @@ export const emEspera = (o: OrdemResumoDTO, cargas: CargaDTO[], logs: LogDTO[]) 
   !cargas.some((c) => c.ordemAtualId === o.id) &&
   !cargaCarona(cargas, o.id) &&
   logs.length === 0;
+
+/* ── setores da OS ──────────────────────────────────────────────────────── */
+
+/**
+ * Esta OS está autorizada a rodar neste setor?
+ *
+ * Substitui o antigo `o.posicao === posicao` em toda filtragem por aba: uma OS
+ * de dois setores aparece nas duas. O que cada aba MOSTRA continua a sair das
+ * cargas, que são de um setor só — logo a aba do Pendurado não passa a ver o
+ * trabalho da Automática, só a ordem a que ele pertence.
+ */
+export const rodaEm = (o: { posicoes: Posicao[] }, p: Posicao) => o.posicoes.includes(p);
+
+/** A OS roda em mais de um setor — a exceção, que a UI sinaliza. */
+export const multiPosicao = (o: { posicoes: Posicao[] }) => o.posicoes.length > 1;
+
+/**
+ * Os OUTROS setores desta OS, vistos de uma aba. Vazio no caso normal; é o que
+ * alimenta o selo "também em ..." — quem está a decidir expedir precisa de
+ * saber que há trabalho desta ordem noutro sítio.
+ */
+export const tambemEm = (o: { posicoes: Posicao[] }, p: Posicao): Posicao[] =>
+  posOrdenadas(o.posicoes.filter((x) => x !== p));
 
 /* ── agregados de OS ────────────────────────────────────────────────────── */
 

@@ -510,6 +510,128 @@ class OrdemServicoServiceAcoplamentoTest {
         assertThat(propria.getOrdemAtual()).isNull();
     }
 
+
+    /* -- multi-setor (V19) ------------------------------------------------ */
+
+    /**
+     * A carona roda em DOIS setores e acopla-se numa carga de um deles.
+     *
+     * O que vale é o setor da CARGA estar entre os dela — não os conjuntos
+     * serem iguais. A titular aqui roda só na AUTOMATICA; a carona, nos dois.
+     */
+    @Test
+    void caronaDeDoisSetoresAcoplaNaCargaDeUmDeles() throws Exception {
+        OrdemServico titular = ordem(1L, Posicao.AUTOMATICA);
+        OrdemServico carona = ordem(2L, Posicao.PENDURADO);
+        carona.getPosicoes().add(Posicao.AUTOMATICA);
+        Carga carga = carga(10L, titular);
+
+        when(cargaRepo.findById(10L)).thenReturn(Optional.of(carga));
+        when(osRepo.findById(2L)).thenReturn(Optional.of(carona));
+        when(cargaRepo.buscarAcoplamentosDe(2L)).thenReturn(List.of());
+        when(logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(2L)).thenReturn(List.of());
+        when(logRepo.findByCargaIdAndFinalizadoEmIsNull(10L)).thenReturn(Optional.empty());
+
+        service.acoplarNaCarga(10L, 2L);
+
+        assertThat(carga.getOrdensAcopladas()).containsExactly(2L);
+    }
+
+    /** A carona não roda no setor da carga: as peças dela não podem estar lá. */
+    @Test
+    void recusaCaronaQueNaoRodaNoSetorDaCarga() throws Exception {
+        OrdemServico titular = ordem(1L, Posicao.PENDURADO);
+        OrdemServico carona = ordem(2L, Posicao.OXIDACAO);
+        carona.getPosicoes().add(Posicao.AUTOMATICA);   // nenhum deles é PENDURADO
+        Carga carga = carga(10L, titular);
+
+        when(cargaRepo.findById(10L)).thenReturn(Optional.of(carga));
+        when(osRepo.findById(2L)).thenReturn(Optional.of(carona));
+
+        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L))
+                .isInstanceOf(AcoplamentoInvalidoException.class)
+                .extracting("codigo").isEqualTo("ACOPLAMENTO_POSICAO_INCOMPATIVEL");
+        assertThat(carga.getOrdensAcopladas()).isEmpty();
+    }
+
+    /**
+     * "Peças num tanque só" passou a valer POR SETOR: uma OS de dois setores
+     * tem mesmo peças em dois tanques, um de cada lado da fábrica, e recusar o
+     * segundo seria recusar o facto.
+     */
+    @Test
+    void caronaDeDoisSetoresPodeEstarNumaCargaDeCadaSetor() throws Exception {
+        OrdemServico titular = ordem(1L, Posicao.AUTOMATICA);
+        OrdemServico carona = ordem(2L, Posicao.PENDURADO);
+        carona.getPosicoes().add(Posicao.AUTOMATICA);
+
+        Carga naAutomatica = carga(10L, titular);
+        // já pega carona numa carga do OUTRO setor
+        Carga noPendurado = carga(11L, null, Posicao.PENDURADO);
+
+        when(cargaRepo.findById(10L)).thenReturn(Optional.of(naAutomatica));
+        when(osRepo.findById(2L)).thenReturn(Optional.of(carona));
+        when(cargaRepo.buscarAcoplamentosDe(2L)).thenReturn(List.of(noPendurado));
+        when(logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(2L)).thenReturn(List.of());
+        when(logRepo.findByCargaIdAndFinalizadoEmIsNull(10L)).thenReturn(Optional.empty());
+
+        service.acoplarNaCarga(10L, 2L);
+
+        assertThat(naAutomatica.getOrdensAcopladas()).containsExactly(2L);
+    }
+
+    /** Mas duas cargas do MESMO setor continuam a ser incompatíveis. */
+    @Test
+    void recusaCaronaJaEmOutraCargaDoMesmoSetor() throws Exception {
+        OrdemServico titular = ordem(1L, Posicao.AUTOMATICA);
+        OrdemServico carona = ordem(2L, Posicao.PENDURADO);
+        carona.getPosicoes().add(Posicao.AUTOMATICA);
+
+        Carga alvo = carga(10L, titular);
+        Carga outraDaAutomatica = carga(11L, null, Posicao.AUTOMATICA);
+
+        when(cargaRepo.findById(10L)).thenReturn(Optional.of(alvo));
+        when(osRepo.findById(2L)).thenReturn(Optional.of(carona));
+        when(cargaRepo.buscarAcoplamentosDe(2L)).thenReturn(List.of(outraDaAutomatica));
+
+        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L))
+                .isInstanceOf(AcoplamentoInvalidoException.class)
+                .extracting("codigo").isEqualTo("ACOPLAMENTO_EM_OUTRA_CARGA");
+        assertThat(alvo.getOrdensAcopladas()).isEmpty();
+    }
+
+    /**
+     * Acoplar fecha os passos da carona NAQUELE setor — e só neles. O que ela
+     * tem a correr do outro lado da fábrica não foi tocado por este
+     * acoplamento e continua aberto.
+     *
+     * Sem o filtro, acoplar na automática pararia a produção do pendurado.
+     */
+    @Test
+    void acoplarFechaSoOsPassosDoSetorDaCarga() throws Exception {
+        OrdemServico titular = ordem(1L, Posicao.AUTOMATICA);
+        OrdemServico carona = ordem(2L, Posicao.PENDURADO);
+        carona.getPosicoes().add(Posicao.AUTOMATICA);
+        Carga carga = carga(10L, titular);
+
+        Log noMesmoSetor = log(carona, carga(20L, carona, Posicao.AUTOMATICA), "Desengraxe");
+        Log noOutroSetor = log(carona, carga(21L, carona, Posicao.PENDURADO), "Banho ácido");
+
+        when(cargaRepo.findById(10L)).thenReturn(Optional.of(carga));
+        when(osRepo.findById(2L)).thenReturn(Optional.of(carona));
+        when(cargaRepo.buscarAcoplamentosDe(2L)).thenReturn(List.of());
+        when(logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(2L))
+                .thenReturn(List.of(noMesmoSetor, noOutroSetor));
+        when(logRepo.findByCargaIdAndFinalizadoEmIsNull(10L)).thenReturn(Optional.empty());
+
+        service.acoplarNaCarga(10L, 2L);
+
+        assertThat(noMesmoSetor.getFinalizadoEm())
+                .as("as peças saíram da carga deste setor").isNotNull();
+        assertThat(noOutroSetor.getFinalizadoEm())
+                .as("o outro setor não foi tocado por este acoplamento").isNull();
+    }
+
     /* -- fixtures --------------------------------------------------------- */
 
     /**
@@ -519,7 +641,8 @@ class OrdemServicoServiceAcoplamentoTest {
     private Log prepararAberturaDePasso(OrdemServico titular, OrdemServico carona, Carga carga)
             throws Exception {
         Processo processo = new Processo("Banho ácido", Etapa.TRATAMENTO);
-        processo.getPosicoes().add(titular.getPosicao());
+        // O processo tem de rodar onde a CARGA está — é dela que abrirLog lê.
+        processo.getPosicoes().add(carga.getPosicao());
         Operador op = new Operador("João", Permissao.FUNCIONARIO, "T1");
 
         when(osRepo.findById(1L)).thenReturn(Optional.of(titular));
@@ -540,8 +663,16 @@ class OrdemServicoServiceAcoplamentoTest {
         return os;
     }
 
+    /** Carga no primeiro setor da titular — o único, nas OS de sempre. */
     private Carga carga(Long id, OrdemServico titular) throws Exception {
-        Posicao posicao = titular != null ? titular.getPosicao() : Posicao.OXIDACAO;
+        Posicao posicao = titular != null
+                ? titular.getPosicoesOrdenadas().get(0)
+                : Posicao.OXIDACAO;
+        return carga(id, titular, posicao);
+    }
+
+    /** Carga num setor ESCOLHIDO: para a titular que roda em mais de um. */
+    private Carga carga(Long id, OrdemServico titular, Posicao posicao) throws Exception {
         Carga c = new Carga("TAMBOR-" + id, TipoCarga.TAMBOR, posicao);
         set(c, "id", id);
         c.setOrdemAtual(titular);

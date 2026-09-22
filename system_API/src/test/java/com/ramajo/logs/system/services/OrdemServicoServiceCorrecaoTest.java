@@ -22,6 +22,7 @@ import com.ramajo.logs.system.enums.Posicao;
 import com.ramajo.logs.system.enums.TipoCarga;
 import com.ramajo.logs.system.exceptions.CorrecaoInvalidaException;
 import com.ramajo.logs.system.exceptions.OperacaoRestritaException;
+import com.ramajo.logs.system.exceptions.OrdemClienteDivergenteException;
 import com.ramajo.logs.system.exceptions.OrdemForaDeCirculacaoException;
 import com.ramajo.logs.system.exceptions.OrdemIdExternoExistente;
 import com.ramajo.logs.system.exceptions.PosicaoIncompativelException;
@@ -39,6 +40,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -83,10 +85,10 @@ class OrdemServicoServiceCorrecaoTest {
 
         when(osRepo.findById(1L)).thenReturn(Optional.of(os));
         when(operadorRepo.findById(10L)).thenReturn(Optional.of(admin()));
-        when(osRepo.findByIdExterno(200L)).thenReturn(Optional.empty());
+        when(osRepo.findAllByIdExterno(200L)).thenReturn(List.of());
         when(clienteRepo.findById(2L)).thenReturn(Optional.of(beta));
 
-        service.corrigir(1L, 10L, 200L, 2L, Posicao.OXIDACAO, List.of(), "  Nº digitado errado ");
+        service.corrigir(1L, 10L, 200L, 2L, Set.of(Posicao.OXIDACAO), List.of(), "  Nº digitado errado ");
 
         assertThat(os.getIdExterno()).isEqualTo(200L);
         assertThat(os.getCliente()).isSameAs(beta);
@@ -106,17 +108,82 @@ class OrdemServicoServiceCorrecaoTest {
     }
 
     @Test
-    void recusaNumeroDeOutraOs() throws Exception {
+    void recusaNumeroDeOutraOsNoMesmoSetor() throws Exception {
         OrdemServico os = ordem(1L, 100L, Posicao.OXIDACAO);
         when(osRepo.findById(1L)).thenReturn(Optional.of(os));
         when(operadorRepo.findById(10L)).thenReturn(Optional.of(admin()));
-        when(osRepo.findByIdExterno(200L)).thenReturn(Optional.of(ordem(5L, 200L, Posicao.OXIDACAO)));
+        when(osRepo.findAllByIdExterno(200L))
+                .thenReturn(List.of(ordem(5L, 200L, Posicao.OXIDACAO)));
 
         assertThatThrownBy(() ->
-                service.corrigir(1L, 10L, 200L, 1L, Posicao.OXIDACAO, List.of(), "motivo"))
+                service.corrigir(1L, 10L, 200L, 1L, Set.of(Posicao.OXIDACAO), List.of(), "motivo"))
                 .isInstanceOf(OrdemIdExternoExistente.class);
 
         assertThat(os.getIdExterno()).isEqualTo(100L);
+        verify(alteracaoRepo, never()).saveAll(any());
+    }
+
+    /**
+     * Desde a V20 o Nº só é único POR SETOR: a 200 da Automática não impede
+     * esta OS de ser a 200 da Oxidação. São a mesma ordem do ERP partida entre
+     * dois setores — o caso que a V19 abriu.
+     */
+    @Test
+    void aceitaNumeroDeOutraOsQueRodaEmOutroSetor() throws Exception {
+        OrdemServico os = ordem(1L, 100L, Posicao.OXIDACAO);
+        when(osRepo.findById(1L)).thenReturn(Optional.of(os));
+        when(operadorRepo.findById(10L)).thenReturn(Optional.of(admin()));
+        when(osRepo.findAllByIdExterno(200L))
+                .thenReturn(List.of(ordem(5L, 200L, Posicao.AUTOMATICA)));
+
+        service.corrigir(1L, 10L, 200L, 1L, Set.of(Posicao.OXIDACAO), List.of(), "motivo");
+
+        assertThat(os.getIdExterno()).isEqualTo(200L);
+    }
+
+    /**
+     * A mesma regra de criar(): o Nº é de um cliente só. Aqui ela importa ainda
+     * mais, porque a correção é a única rota que consegue MUDAR o cliente — sem
+     * esta recusa, ela seria a porta dos fundos para o estado que a criação não
+     * deixa nascer.
+     */
+    @Test
+    void recusaNumeroDeOutroClienteAindaQueEmOutroSetor() throws Exception {
+        OrdemServico os = ordem(1L, 100L, Posicao.OXIDACAO);
+        OrdemServico daBeta = new OrdemServico(200L, new Cliente(2L, "BETA SA"),
+                Posicao.AUTOMATICA);
+        set(daBeta, "id", 5L);
+        set(daBeta, "iniciadaEm", T0);
+
+        when(osRepo.findById(1L)).thenReturn(Optional.of(os));
+        when(operadorRepo.findById(10L)).thenReturn(Optional.of(admin()));
+        when(osRepo.findAllByIdExterno(200L)).thenReturn(List.of(daBeta));
+
+        assertThatThrownBy(() ->
+                service.corrigir(1L, 10L, 200L, 1L, Set.of(Posicao.OXIDACAO), List.of(), "motivo"))
+                .isInstanceOf(OrdemClienteDivergenteException.class);
+
+        assertThat(os.getIdExterno()).isEqualTo(100L);
+        verify(alteracaoRepo, never()).saveAll(any());
+    }
+
+    /**
+     * A colisão não depende só de mudar o Nº: ACRESCENTAR um setor pode levar a
+     * OS para dentro do setor onde a irmã de mesmo Nº já roda.
+     */
+    @Test
+    void recusaAcrescentarSetorOndeAIrmaDeMesmoNumeroJaRoda() throws Exception {
+        OrdemServico os = ordem(1L, 100L, Posicao.OXIDACAO);
+        when(osRepo.findById(1L)).thenReturn(Optional.of(os));
+        when(operadorRepo.findById(10L)).thenReturn(Optional.of(admin()));
+        when(osRepo.findAllByIdExterno(100L))
+                .thenReturn(List.of(os, ordem(5L, 100L, Posicao.AUTOMATICA)));
+
+        assertThatThrownBy(() -> service.corrigir(1L, 10L, 100L, 1L,
+                Set.of(Posicao.OXIDACAO, Posicao.AUTOMATICA), List.of(), "motivo"))
+                .isInstanceOf(OrdemIdExternoExistente.class);
+
+        assertThat(os.getPosicoes()).containsExactly(Posicao.OXIDACAO);
         verify(alteracaoRepo, never()).saveAll(any());
     }
 
@@ -129,7 +196,7 @@ class OrdemServicoServiceCorrecaoTest {
                 .thenReturn(Optional.of(new Operador("João", Permissao.FUNCIONARIO, "T1")));
 
         assertThatThrownBy(() ->
-                service.corrigir(1L, 10L, 200L, 1L, Posicao.OXIDACAO, List.of(), "motivo"))
+                service.corrigir(1L, 10L, 200L, 1L, Set.of(Posicao.OXIDACAO), List.of(), "motivo"))
                 .isInstanceOf(OperacaoRestritaException.class);
 
         verify(alteracaoRepo, never()).saveAll(any());
@@ -143,7 +210,7 @@ class OrdemServicoServiceCorrecaoTest {
         when(osRepo.findById(1L)).thenReturn(Optional.of(os));
 
         assertThatThrownBy(() ->
-                service.corrigir(1L, 10L, 200L, 1L, Posicao.OXIDACAO, List.of(), "motivo"))
+                service.corrigir(1L, 10L, 200L, 1L, Set.of(Posicao.OXIDACAO), List.of(), "motivo"))
                 .isInstanceOf(OrdemForaDeCirculacaoException.class);
     }
 
@@ -153,7 +220,7 @@ class OrdemServicoServiceCorrecaoTest {
         when(operadorRepo.findById(10L)).thenReturn(Optional.of(admin()));
 
         assertThatThrownBy(() ->
-                service.corrigir(1L, 10L, 100L, 1L, Posicao.OXIDACAO, List.of(), "motivo"))
+                service.corrigir(1L, 10L, 100L, 1L, Set.of(Posicao.OXIDACAO), List.of(), "motivo"))
                 .isInstanceOf(CorrecaoInvalidaException.class);
 
         verify(alteracaoRepo, never()).saveAll(any());
@@ -192,7 +259,7 @@ class OrdemServicoServiceCorrecaoTest {
         when(logRepo.findByCargaIdAndFinalizadoEmIsNull(20L)).thenReturn(Optional.empty());
         when(logRepo.save(any(Log.class))).thenAnswer(i -> i.getArgument(0));
 
-        service.corrigir(1L, 10L, 100L, 1L, Posicao.AUTOMATICA, List.of(20L), "Setor errado");
+        service.corrigir(1L, 10L, 100L, 1L, Set.of(Posicao.AUTOMATICA), List.of(20L), "Setor errado");
 
         // O setor antigo: passo cancelado e fechado, carga livre, carona desfeita.
         assertThat(aberto.isCancelado()).isTrue();
@@ -202,7 +269,7 @@ class OrdemServicoServiceCorrecaoTest {
 
         // O setor novo: a carga entra pelo processo inicial dele, no nome de
         // quem abriu a OS — não do ADMIN que corrigiu.
-        assertThat(os.getPosicao()).isEqualTo(Posicao.AUTOMATICA);
+        assertThat(os.getPosicoes()).containsExactly(Posicao.AUTOMATICA);
         assertThat(nova.getOrdemAtual()).isSameAs(os);
         assertThat(os.getCargas()).containsExactly(nova);
 
@@ -232,11 +299,142 @@ class OrdemServicoServiceCorrecaoTest {
         when(cargaRepo.findById(30L)).thenReturn(Optional.of(doSetorAntigo));
 
         assertThatThrownBy(() ->
-                service.corrigir(1L, 10L, 100L, 1L, Posicao.AUTOMATICA, List.of(30L), "motivo"))
+                service.corrigir(1L, 10L, 100L, 1L, Set.of(Posicao.AUTOMATICA), List.of(30L), "motivo"))
                 .isInstanceOf(PosicaoIncompativelException.class);
 
         // O resto é rollback da transação; aqui basta que o histórico não saia.
         assertThat(doSetorAntigo.getOrdemAtual()).isNull();
+        verify(alteracaoRepo, never()).saveAll(any());
+    }
+
+
+    /* -- multi-setor (V19) ------------------------------------------------- */
+
+    /**
+     * O caso que a V19 existe para suportar, e a armadilha da implementação:
+     * retirar UM dos dois setores de uma OS desfaz só o que era dele.
+     *
+     * A versão ingénua soltaria TODAS as cargas e cancelaria TODOS os passos —
+     * pararia a produção do setor que ficou, que não tem nada a ver com a
+     * correção. É por isso que este caso verifica o que NÃO foi tocado.
+     */
+    @Test
+    void retirarUmSetorNaoTocaNoTrabalhoDoOutro() throws Exception {
+        Operador joao = new Operador("João", Permissao.FUNCIONARIO, "T1");
+        OrdemServico os = ordem(1L, 100L, Posicao.PENDURADO);
+        os.getPosicoes().add(Posicao.AUTOMATICA);
+        os.setIniciadaPor(joao);
+
+        Carga noPendurado = carga(10L, "C-10", Posicao.PENDURADO);
+        noPendurado.setOrdemAtual(os);
+        Carga naAutomatica = carga(20L, "C-20", Posicao.AUTOMATICA);
+        naAutomatica.setOrdemAtual(os);
+        set(os, "cargas", new ArrayList<>(List.of(noPendurado, naAutomatica)));
+
+        Log abertoPendurado = new Log(os, joao, noPendurado, processo("Desengraxe", Posicao.PENDURADO));
+        set(abertoPendurado, "iniciadoEm", T0);
+        Log abertoAutomatica = new Log(os, joao, naAutomatica, processo("Linha AUT", Posicao.AUTOMATICA));
+        set(abertoAutomatica, "iniciadoEm", T0);
+
+        // Carona em cada setor: só a do setor retirado sai.
+        Carga alheiaPendurado = carga(11L, "C-11", Posicao.PENDURADO);
+        alheiaPendurado.getOrdensAcopladas().add(1L);
+        Carga alheiaAutomatica = carga(21L, "C-21", Posicao.AUTOMATICA);
+        alheiaAutomatica.getOrdensAcopladas().add(1L);
+
+        when(osRepo.findById(1L)).thenReturn(Optional.of(os));
+        when(operadorRepo.findById(10L)).thenReturn(Optional.of(admin()));
+        when(logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(1L))
+                .thenReturn(List.of(abertoPendurado, abertoAutomatica));
+        when(cargaRepo.buscarAcoplamentosDe(1L))
+                .thenReturn(List.of(alheiaPendurado, alheiaAutomatica));
+
+        service.corrigir(1L, 10L, 100L, 1L, Set.of(Posicao.PENDURADO), List.of(),
+                "A automática não era desta OS");
+
+        // --- o setor RETIRADO foi desfeito
+        assertThat(abertoAutomatica.isCancelado()).isTrue();
+        assertThat(abertoAutomatica.getFinalizadoEm()).isNotNull();
+        assertThat(naAutomatica.getOrdemAtual()).isNull();
+        assertThat(alheiaAutomatica.getOrdensAcopladas()).doesNotContain(1L);
+
+        // --- e o que FICOU continua a produzir, intacto
+        assertThat(abertoPendurado.isCancelado())
+                .as("o passo do setor que ficou não pode ser cancelado").isFalse();
+        assertThat(abertoPendurado.getFinalizadoEm())
+                .as("nem fechado").isNull();
+        assertThat(noPendurado.getOrdemAtual())
+                .as("nem a carga dele solta").isSameAs(os);
+        assertThat(alheiaPendurado.getOrdensAcopladas())
+                .as("nem a carona dele desfeita").contains(1L);
+
+        assertThat(os.getPosicoes()).containsExactly(Posicao.PENDURADO);
+        assertThat(os.getCargas()).containsExactly(noPendurado);
+    }
+
+    /** Acrescentar um setor pela correção não desfaz nada. */
+    @Test
+    void acrescentarSetorPelaCorrecaoNaoSoltaCargaNenhuma() throws Exception {
+        Operador joao = new Operador("João", Permissao.FUNCIONARIO, "T1");
+        OrdemServico os = ordem(1L, 100L, Posicao.PENDURADO);
+        os.setIniciadaPor(joao);
+
+        Carga daCasa = carga(10L, "C-10", Posicao.PENDURADO);
+        daCasa.setOrdemAtual(os);
+        set(os, "cargas", new ArrayList<>(List.of(daCasa)));
+
+        Log aberto = new Log(os, joao, daCasa, processo("Desengraxe", Posicao.PENDURADO));
+        set(aberto, "iniciadoEm", T0);
+
+        when(osRepo.findById(1L)).thenReturn(Optional.of(os));
+        when(operadorRepo.findById(10L)).thenReturn(Optional.of(admin()));
+        when(logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(1L)).thenReturn(List.of(aberto));
+        when(cargaRepo.buscarAcoplamentosDe(1L)).thenReturn(List.of());
+
+        service.corrigir(1L, 10L, 100L, 1L,
+                Set.of(Posicao.PENDURADO, Posicao.AUTOMATICA), List.of(), "Peças foram para a AUT");
+
+        assertThat(os.getPosicoes()).containsExactlyInAnyOrder(
+                Posicao.PENDURADO, Posicao.AUTOMATICA);
+        assertThat(aberto.isCancelado()).isFalse();
+        assertThat(daCasa.getOrdemAtual()).isSameAs(os);
+    }
+
+    /** A linha de histórico grava os conjuntos na ordem canônica do enum. */
+    @Test
+    void historicoGravaOsConjuntosNaOrdemCanonica() throws Exception {
+        OrdemServico os = ordem(1L, 100L, Posicao.PENDURADO);
+
+        when(osRepo.findById(1L)).thenReturn(Optional.of(os));
+        when(operadorRepo.findById(10L)).thenReturn(Optional.of(admin()));
+        when(logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(1L)).thenReturn(List.of());
+        when(cargaRepo.buscarAcoplamentosDe(1L)).thenReturn(List.of());
+
+        // Enviado fora de ordem de propósito: o que se grava é a ordem do enum.
+        service.corrigir(1L, 10L, 100L, 1L,
+                Set.of(Posicao.PENDURADO, Posicao.AUTOMATICA), List.of(), "motivo");
+
+        OrdemAlteracao linha = salvas().stream()
+                .filter(l -> l.getCampo() == CampoAlterado.POSICAO)
+                .findFirst().orElseThrow();
+        assertThat(linha.getValorAnterior()).isEqualTo("PENDURADO");
+        assertThat(linha.getValorNovo()).isEqualTo("AUTOMATICA, PENDURADO");
+    }
+
+    /** Uma OS sem setor nenhum não roda em lugar nenhum. */
+    @Test
+    void recusaCorrecaoQueDeixariaAOsSemSetor() throws Exception {
+        OrdemServico os = ordem(1L, 100L, Posicao.PENDURADO);
+
+        when(osRepo.findById(1L)).thenReturn(Optional.of(os));
+        when(operadorRepo.findById(10L)).thenReturn(Optional.of(admin()));
+
+        assertThatThrownBy(() ->
+                service.corrigir(1L, 10L, 100L, 1L, Set.of(), List.of(), "motivo"))
+                .isInstanceOf(CorrecaoInvalidaException.class)
+                .extracting("codigo").isEqualTo("CORRECAO_SEM_POSICAO");
+
+        assertThat(os.getPosicoes()).containsExactly(Posicao.PENDURADO);
         verify(alteracaoRepo, never()).saveAll(any());
     }
 

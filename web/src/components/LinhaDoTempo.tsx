@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Barra, Evento, Grupo } from "../domain/auditoria";
 import { ROTULO_EVENTO, fracao, horasDaJanela } from "../domain/auditoria";
 import { etapaStyle, pillOrdemStyle, pillStyle, situacaoOrdem } from "../domain/derive";
-import { diaHora, duracao, etapaLabel, hhmm, osNum, posLabel } from "../domain/format";
+import { diaHora, duracao, etapaLabel, hhmm, osNum, posLabels } from "../domain/format";
 import { Corners } from "./Blueprint";
 import { Vazio } from "./Modal";
 
@@ -94,7 +94,7 @@ export function LinhaDoTempo({
               <div className="aud-oshd">
                 <span className="os-num">{osNum(g.ordem)}</span>
                 <span className="os-cli">{g.ordem.clienteNome}</span>
-                <span className="os-tv">{posLabel(g.ordem.posicao)}</span>
+                <span className="os-tv">{posLabels(g.ordem.posicoes)}</span>
                 <span className="lote-pill" style={pillOrdemStyle(g.ordem)}>
                   {situacaoOrdem(g.ordem)}
                 </span>

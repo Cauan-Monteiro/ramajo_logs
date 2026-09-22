@@ -1,5 +1,5 @@
 import type { DesidroEmAndamentoDTO } from "../api/types";
-import { hhmm, osNum } from "./format";
+import { hhmm, osNum, posLabels } from "./format";
 
 /**
  * A escala do indicativo de desidrogenização da barra do Dashboard.
@@ -164,7 +164,8 @@ export function detalhe(ds: DesidroEmAndamentoDTO[], agora: number): string {
         ? "RETIRAR DO FORNO"
         : `${Math.round(pct * 100)}% · termina ${hhmm(d.finalizadaEm)}`;
       const os = osNum({ id: d.ordemServicoId, idExterno: d.ordemIdExterno });
-      return `OS ${os} · ${d.nome} · ${situacao}`;
+      // Com o setor: duas irmãs (mesmo Nº) podem estar no forno ao mesmo tempo.
+      return `OS ${os} (${posLabels(d.posicoes)}) · ${d.nome} · ${situacao}`;
     })
     .join("\n");
 }

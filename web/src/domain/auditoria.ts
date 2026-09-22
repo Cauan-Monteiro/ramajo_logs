@@ -53,7 +53,8 @@ export interface Evento {
   osId: number;
   osLabel: string;
   clienteNome: string;
-  posicao: Posicao;
+  /** Os setores da OS a que este evento pertence (ver rodaEm). */
+  posicoes: Posicao[];
   cargaNome: string | null;
   processoDescricao: string | null;
   etapa: Etapa | null;
@@ -174,7 +175,7 @@ export function eventosDoDia(f: FonteDia): Evento[] {
       osId: o.id,
       osLabel: osNum(o),
       clienteNome: o.clienteNome,
-      posicao: o.posicao,
+      posicoes: o.posicoes,
       cargaNome: null,
       processoDescricao: null,
       etapa: null,
@@ -457,7 +458,15 @@ export function porOperador(eventos: Evento[]): ResumoOperador[] {
 }
 
 export interface ResumoOrdem {
+  /**
+   * A identidade do cartão. Não o `osLabel`: o Nº é único só POR SETOR (V20),
+   * e duas irmãs ativas no mesmo dia dariam dois cartões com o mesmo rótulo —
+   * a mesma key no React, que então embaralha os dois.
+   */
+  osId: number;
   osLabel: string;
+  /** O que distingue as irmãs no cartão: mesmo Nº, mesmo cliente, outro setor. */
+  posicoes: Posicao[];
   /** Nº de entradas de carga nesta OS no dia — ver `entradasDaFaixa`. */
   total: number;
   /**
@@ -469,9 +478,22 @@ export interface ResumoOrdem {
   etapas: Etapa[];
 }
 
-/** Descrição do processo de entrada de um setor; `null` quando não configurado. */
-function entradaDaPosicao(pos: Posicao, iniciais: ProcessoInicialDTO[]): string | null {
-  return iniciais.find((pi) => pi.posicao === pos)?.processoDescricao ?? null;
+/**
+ * Os processos de entrada dos setores de uma OS — um por setor configurado.
+ *
+ * É uma LISTA e não um valor porque a OS pode rodar em mais de um setor, e cada
+ * um tem o seu primeiro tanque. Cada carga está num setor só, então na prática
+ * uma faixa só casa com a entrada do setor dela; aceitar todas é o que faz a
+ * contagem valer para os dois lados sem a faixa precisar de saber onde está.
+ *
+ * Vazia quando nenhum dos setores tem entrada configurada — ver entradasDaFaixa.
+ */
+function entradasDasPosicoes(
+  posicoes: Posicao[], iniciais: ProcessoInicialDTO[],
+): string[] {
+  return posicoes
+    .map((pos) => iniciais.find((pi) => pi.posicao === pos)?.processoDescricao)
+    .filter((d): d is string => !!d);
 }
 
 /**
@@ -493,10 +515,12 @@ function entradaDaPosicao(pos: Posicao, iniciais: ProcessoInicialDTO[]): string 
  *
  * `barras` tem de vir na ordem do tempo — é como `faixasDoDia` as devolve.
  */
-export function entradasDaFaixa(barras: Barra[], entrada: string | null): number {
-  if (entrada === null) return 1;
-  const n = barras.filter((b) => b.processoDescricao === entrada).length;
-  return Math.max(1, barras[0]?.processoDescricao === entrada ? n : n + 1);
+export function entradasDaFaixa(barras: Barra[], entradas: string[]): number {
+  if (entradas.length === 0) return 1;
+  const ehEntrada = (b: Barra | undefined) =>
+    !!b && entradas.includes(b.processoDescricao);
+  const n = barras.filter(ehEntrada).length;
+  return Math.max(1, ehEntrada(barras[0]) ? n : n + 1);
 }
 
 /**
@@ -527,10 +551,12 @@ export function porOrdem(
           if (b.etapa && !etapas.includes(b.etapa)) etapas.push(b.etapa);
         }
       }
-      const entrada = entradaDaPosicao(g.ordem.posicao, processosIniciais);
+      const entrada = entradasDasPosicoes(g.ordem.posicoes, processosIniciais);
       const vezes = g.faixas.map((f) => entradasDaFaixa(f.barras, entrada));
       return {
+        osId: g.ordem.id,
         osLabel: osNum(g.ordem),
+        posicoes: g.ordem.posicoes,
         total: vezes.reduce((s, n) => s + n, 0),
         cargaNomes: g.faixas.map(
           (f, i) => (vezes[i] > 1 ? `${f.cargaNome} ×${vezes[i]}` : f.cargaNome),
@@ -541,7 +567,10 @@ export function porOrdem(
     .sort(
       (a, b) =>
         b.total - a.total
-        || a.osLabel.localeCompare(b.osLabel, "pt-BR", { numeric: true }),
+        || a.osLabel.localeCompare(b.osLabel, "pt-BR", { numeric: true })
+        // Irmãs empatam no rótulo; o id desempata e mantém a ordem estável
+        // entre sincronizações.
+        || a.osId - b.osId,
     );
 }
 
@@ -614,7 +643,7 @@ export function atividadeDoOperador(
 
   for (const g of grupos) {
     const faixas: Faixa[] = [];
-    const entrada = entradaDaPosicao(g.ordem.posicao, processosIniciais);
+    const entrada = entradasDasPosicoes(g.ordem.posicoes, processosIniciais);
     for (const f of g.faixas) {
       const barras = f.barras.filter((b) => b.responsavelNome === nome);
       if (barras.length === 0) continue;

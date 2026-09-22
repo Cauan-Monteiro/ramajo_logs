@@ -3,7 +3,7 @@ import { Modal, Vazio } from "../components/Modal";
 import { Corners } from "../components/Blueprint";
 import { pillOrdemStyle, situacaoOrdem } from "../domain/derive";
 import { COR_NIVEL, emCurso, nivel, progresso } from "../domain/desidro";
-import { diaHora, osNum, posLabel } from "../domain/format";
+import { diaHora, osNum, posLabels } from "../domain/format";
 import { useAgora } from "../state/useAgora";
 import type { Ctx } from "./tipos";
 
@@ -85,7 +85,7 @@ export function BuscarOSModal({ ctx }: { ctx: Ctx }) {
             <span className="os-num" style={{ minWidth: 74 }}>{osNum(o)}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="os-cli">{o.clienteNome}</div>
-              <div className="os-tv">{posLabel(o.posicao)} · aberta {diaHora(o.iniciadaEm)}</div>
+              <div className="os-tv">{posLabels(o.posicoes)} · aberta {diaHora(o.iniciadaEm)}</div>
             </div>
             {noForno.has(o.id) && (
               <span

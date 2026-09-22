@@ -1,6 +1,8 @@
 package com.ramajo.logs.system.exceptions;
 
 import com.ramajo.logs.system.enums.Posicao;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * A posição (setor) não bate entre os participantes do trabalho: uma carga de
@@ -9,12 +11,20 @@ import com.ramajo.logs.system.enums.Posicao;
  */
 public class PosicaoIncompativelException extends DominioException {
 
-    /** Vínculo de carga: a carga roda em outro setor. */
+    /**
+     * Vínculo de carga: o setor da carga não está entre os autorizados da OS.
+     *
+     * A lista chega já na ordem canônica (OrdemServico.getPosicoesOrdenadas) —
+     * a mensagem é lida por gente, e "roda em PENDURADO, AUTOMATICA" só ajuda
+     * se disser sempre a mesma coisa.
+     */
     public PosicaoIncompativelException(Long cargaId, Posicao cargaPosicao,
-                                        Long osId, Posicao osPosicao) {
+                                        Long osId, List<Posicao> osPosicoes) {
         super("POSICAO_INCOMPATIVEL",
                 "Carga " + cargaId + " é da posição " + cargaPosicao
-                        + " e a OS " + osId + " roda em " + osPosicao + ".");
+                        + " e a OS " + osId + " roda em "
+                        + osPosicoes.stream().map(Enum::name).collect(Collectors.joining(", "))
+                        + ".");
     }
 
     /** Abertura de passo: o processo existe, mas não naquele setor. */

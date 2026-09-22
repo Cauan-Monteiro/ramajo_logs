@@ -10,9 +10,9 @@ import {
   FECHA, ROTULO_EVENTO, eventosDoDia, faixasDoDia, janelaVisivel, porOperador, porOrdem,
   type Evento, type ResumoOrdem, type TipoEvento,
 } from "../domain/auditoria";
-import { SEL_SEG, dotStyle, etapaStyle, pillStyle } from "../domain/derive";
+import { SEL_SEG, dotStyle, etapaStyle, pillStyle, rodaEm } from "../domain/derive";
 import {
-  POSICOES, duracao, etapaLabel, hm, iniciais, iso, posLabel,
+  POSICOES, duracao, etapaLabel, hm, iniciais, iso, posLabels,
 } from "../domain/format";
 import { useAgora } from "../state/useAgora";
 import { useAuditoriaDia } from "../state/useAuditoriaDia";
@@ -38,7 +38,7 @@ export function Auditoria({ data, onErro }: { data: AppData; onErro: (e: unknown
   const { detalhes, logs, carregando } = useAuditoriaDia(data, dia, onErro);
 
   const ordens = useMemo(
-    () => data.ordens.filter((o) => posicao === "TODAS" || o.posicao === posicao),
+    () => data.ordens.filter((o) => posicao === "TODAS" || rodaEm(o, posicao)),
     [data.ordens, posicao],
   );
 
@@ -146,7 +146,7 @@ function OrdensDoDia({ eventos }: { eventos: Evento[] }) {
           <span className="aud-hh">{hm(e.em)}</span>
           <span className="os-num" style={{ fontSize: 17 }}>{e.osLabel}</span>
           <span className="aud-el">{e.clienteNome}</span>
-          <span className="os-tv">{posLabel(e.posicao)}</span>
+          <span className="os-tv">{posLabels(e.posicoes)}</span>
           <Autor nome={e.autor} />
         </div>
       ))}
@@ -157,6 +157,9 @@ function OrdensDoDia({ eventos }: { eventos: Evento[] }) {
         <div key={e.id} className="aud-linha">
           <span className="aud-hh">{hm(e.em)}</span>
           <span className="os-num" style={{ fontSize: 17 }}>{e.osLabel}</span>
+          {/* O setor ao lado do Nº, como nas Abertas: duas irmãs podem fechar no
+              mesmo dia, e o Nº sozinho não diz qual. */}
+          <span className="os-tv">{posLabels(e.posicoes)}</span>
           <span className="lote-pill" style={pillStyle(e.tipo !== "LOTE_FECHADO")}>
             {ROTULO_EVENTO[e.tipo]}
           </span>
@@ -226,7 +229,8 @@ function CargasDoDia({ cargas }: { cargas: ResumoOrdem[] }) {
       <Corners />
       <div className="aud-card-h">Cargas processadas · {entradas}</div>
       {cargas.map((c) => (
-        <div key={c.osLabel} className="aud-op">
+        // osId e não osLabel: irmãs (mesmo Nº, outro setor) partilham o rótulo.
+        <div key={c.osId} className="aud-op">
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
               {c.etapas.map((e) => (
@@ -238,6 +242,7 @@ function CargasDoDia({ cargas }: { cargas: ResumoOrdem[] }) {
                 />
               ))}
               <span className="os-num" style={{ fontSize: 17 }}>{c.osLabel}</span>
+              <span className="os-tv">{posLabels(c.posicoes)}</span>
             </div>
             {/* O title guarda a lista inteira: .aud-el trunca numa linha só. */}
             <div className="os-tv aud-el" title={c.cargaNomes.join(" · ")}>
@@ -339,7 +344,10 @@ function Feed({ eventos }: { eventos: Evento[] }) {
                     {ROTULO_EVENTO[e.tipo]}
                   </span>
                 </td>
-                <td style={{ font: "600 16px 'Barlow Condensed'" }}>{e.osLabel}</td>
+                <td style={{ font: "600 16px 'Barlow Condensed'" }}>
+                  {e.osLabel}
+                  <div className="os-tv">{posLabels(e.posicoes)}</div>
+                </td>
                 <td>{e.cargaNome ?? "—"}</td>
                 <td>
                   {e.processoDescricao ? (

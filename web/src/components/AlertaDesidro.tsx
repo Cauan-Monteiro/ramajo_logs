@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import type { DesidroEmAndamentoDTO } from "../api/types";
-import { hhmm, minutos, osNum, posLabel } from "../domain/format";
+import { hhmm, minutos, osNum, posLabels } from "../domain/format";
 import { useAgora } from "../state/useAgora";
 import { SILENCIO_MS } from "../state/useAlertaDesidro";
 
@@ -83,7 +83,7 @@ export function AlertaDesidro({
               OS {osNum({ id: d.ordemServicoId, idExterno: d.ordemIdExterno })}
             </span>
             <span className="ad-tx">
-              {d.nome} · {posLabel(d.posicao)} · terminou {hhmm(d.finalizadaEm)}
+              {d.nome} · {posLabels(d.posicoes)} · terminou {hhmm(d.finalizadaEm)}
               {" "}(há {minutos((agora - new Date(d.finalizadaEm).getTime()) / 60000)})
             </span>
             <button type="button" className="ad-b" onClick={() => onVerOS(d)}>

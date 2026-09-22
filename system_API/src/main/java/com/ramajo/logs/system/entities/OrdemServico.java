@@ -19,6 +19,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -33,8 +34,11 @@ import org.hibernate.generator.EventType;
  * Ordem de Serviço: o agregado que amarra o trabalho.
  *
  * Criada neste app (id gerado pelo Postgres); `idExterno` guarda o número
- * correspondente no sistema principal, para conciliação. Roda por UMA posição
- * (setor).
+ * correspondente no sistema principal, para conciliação.
+ *
+ * Roda por UMA posição (setor) no caso normal, e excepcionalmente por mais de
+ * uma — ver `posicoes`. Em qualquer dos casos é UMA ordem: um conjunto de
+ * lotes, uma avaliação, uma expedição, uma entrega.
  */
 @Entity
 @Table(name = "ordens_servico")
@@ -44,7 +48,10 @@ public class OrdemServico {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Número no sistema principal. Único quando presente (índice na migration).
+    // Número no sistema principal. NÃO identifica uma OS sozinho: desde a V20 é
+    // único POR SETOR — a mesma ordem partida entre dois setores vira duas OS
+    // com este mesmo número (e o mesmo cliente). Quem garante a regra é
+    // OrdemServicoService.criar/corrigir; o banco só indexa, não trava.
     @Setter
     @Column(name = "id_externo")
     private Long idExterno;
@@ -54,10 +61,29 @@ public class OrdemServico {
     @JoinColumn(name = "cliente_id")
     private Cliente cliente;
 
-    @Setter
+    /**
+     * Os setores em que esta OS está AUTORIZADA a rodar — não onde o trabalho
+     * acontece. Onde ele acontece é a carga que diz (`Carga.posicao`), e é
+     * dela que o service lê para escolher o processo inicial, autorizar o
+     * processo de um passo e validar um acoplamento.
+     *
+     * Quase sempre tem um elemento só. O caso de dois é a exceção que motivou
+     * a V19: as peças de uma mesma OS partidas entre dois setores, produzindo
+     * em paralelo. Mesmo assim a OS expede e entrega UMA vez — a produção é
+     * que é independente, não o fecho.
+     *
+     * Mesmo molde de Processo.posicoes. @BatchSize pela mesma razão de `lotes`:
+     * listarParaResumo devolve o histórico inteiro, e sem ele seria um SELECT
+     * por ordem.
+     */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+            name = "ordem_posicoes",
+            joinColumns = @JoinColumn(name = "ordem_servico_id"))
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private Posicao posicao;
+    @Column(name = "posicao", nullable = false, length = 20)
+    @BatchSize(size = 100)
+    private Set<Posicao> posicoes = new HashSet<>();
 
     // Carimbo gerado pelo RELÓGIO DO POSTGRES (clock_timestamp), não pelo
     // processo Java — imune a relógio dessincronizado do cliente. @Generated faz
@@ -155,10 +181,16 @@ public class OrdemServico {
     protected OrdemServico() {
     }
 
+    /**
+     * A OS nasce sempre num setor só. O segundo, quando é preciso, entra
+     * depois com a ordem já em produção (OrdemServicoService.adicionarPosicao)
+     * — é assim que a exceção aparece no chão de fábrica: não se sabe dela na
+     * abertura.
+     */
     public OrdemServico(Long idExterno, Cliente cliente, Posicao posicao) {
         this.idExterno = idExterno;
         this.cliente = cliente;
-        this.posicao = posicao;
+        this.posicoes.add(posicao);
     }
 
     @Transient
@@ -201,8 +233,25 @@ public class OrdemServico {
         return cliente;
     }
 
-    public Posicao getPosicao() {
-        return posicao;
+    public Set<Posicao> getPosicoes() {
+        return posicoes;
+    }
+
+    /** Esta OS está autorizada a rodar neste setor? */
+    @Transient
+    public boolean rodaEm(Posicao posicao) {
+        return posicoes.contains(posicao);
+    }
+
+    /**
+     * As posições na ordem canônica do enum — a mesma que o front usa para
+     * rotular e que o histórico de alterações grava. Uma coleção sem ordem
+     * daria texto diferente a cada leitura, e o histórico ficaria a registar
+     * mudanças que não houve.
+     */
+    @Transient
+    public List<Posicao> getPosicoesOrdenadas() {
+        return posicoes.stream().sorted(Comparator.comparing(Enum::ordinal)).toList();
     }
 
     public Instant getIniciadaEm() {

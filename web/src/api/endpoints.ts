@@ -299,15 +299,36 @@ export const cancelarOrdem = (osId: number, operadorId: number) =>
  * histórico com o `motivo`. Recusa com 403 quem não é ADMIN, 409 uma OS fora de
  * produção ou um Nº de outra OS, 422 um pedido sem alteração.
  *
- * Trocar a `posicao` solta as cargas do setor antigo (passos abertos são
- * cancelados) e vincula `cargaIds` — livres do setor novo — no processo
- * inicial dele, tudo na mesma transação. Sem troca de posição, `cargaIds` é
- * ignorado.
+ * `posicoes` vai INTEIRO: é o conjunto final, não um delta. O que SAI dele
+ * solta as cargas daquele setor e cancela os passos abertos nelas; os setores
+ * que ficam não são tocados. Vazio é recusado (CORRECAO_SEM_POSICAO).
+ *
+ * `cargaIds` são cargas livres dos setores acrescentados, vinculadas no
+ * processo inicial de cada uma, tudo na mesma transação. Sem mudança de
+ * conjunto, `cargaIds` é ignorado.
+ *
+ * Esta é a única rota que REMOVE um setor, e por isso é de ADMIN e exige
+ * motivo. Para só acrescentar, ver `adicionarPosicaoOrdem`.
  */
 export const corrigirOrdem = (osId: number, dto: {
-  operadorId: number; idExterno: number; clienteId: number; posicao: Posicao;
+  operadorId: number; idExterno: number; clienteId: number; posicoes: Posicao[];
   cargaIds: number[]; motivo: string;
 }) => http.put<OrdemDetalheDTO>(`/api/ordens/${osId}`, dto);
+
+/**
+ * A OS passa a rodar TAMBÉM neste setor — a exceção das peças partidas entre
+ * dois sítios da fábrica.
+ *
+ * Sem gate de ADMIN e sem motivo: acrescentar não desfaz nada (nenhuma carga
+ * sai, nenhum passo é cancelado), é trabalho de chão como vincular carga. E
+ * não vincula nada: o vínculo continua a ser `vincularCarga`, que a partir
+ * daqui aceita as cargas do setor novo.
+ *
+ * Idempotente — repetir devolve a OS como está.
+ */
+export const adicionarPosicaoOrdem = (
+  osId: number, dto: { operadorId: number; posicao: Posicao },
+) => http.post<OrdemDetalheDTO>(`/api/ordens/${osId}/posicoes`, dto);
 
 export const alteracoesOrdem = (osId: number) =>
   http.get<OrdemAlteracaoDTO[]>(`/api/ordens/${osId}/alteracoes`);

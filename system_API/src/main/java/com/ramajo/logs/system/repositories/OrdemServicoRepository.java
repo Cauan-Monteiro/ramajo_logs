@@ -7,11 +7,14 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 
 public interface OrdemServicoRepository extends JpaRepository<OrdemServico, Long> {
     List<OrdemServico> findByEmProcessoTrue();
-    Optional<OrdemServico> findByIdExterno(Long idExterno);
+
+    // Lista, e não Optional: desde a V20 o Nº do ERP é único POR POSIÇÃO, então
+    // o mesmo número pode devolver uma OS por setor. Quem escolhe entre elas é
+    // o service, filtrando por rodaEm() — ver criar() e corrigir().
+    List<OrdemServico> findAllByIdExterno(Long idExterno);
 
     // Referências a um operador nas duas pontas da OS (quem abriu, quem fechou);
     // ver countByResponsavelId em LogRepository. Os dois parâmetros são o mesmo

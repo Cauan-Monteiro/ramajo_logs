@@ -23,7 +23,7 @@ export function ExpedirParcialModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
   const ordem = ctx.data.ordens.find((o) => o.id === osId);
   if (!ordem) return null;
 
-  const livres = cargasLivres(ctx.data, ordem.posicao);
+  const livres = cargasLivres(ctx.data, ctx.posicao);
   // O lote aberto é sempre o último da OS — ver o ciclo de vida em Lote.java.
   const loteAtual = ordem.totalLotes;
 
@@ -33,7 +33,7 @@ export function ExpedirParcialModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
         const c = await api.cargaPorTag(tag);
         if (!c) throw new Error(`Nenhuma carga com a tag "${tag}".`);
         if (!livres.some((l) => l.id === c.id)) {
-          throw new Error(`A carga ${c.nome} não está livre em ${posLabel(ordem!.posicao)}.`);
+          throw new Error(`A carga ${c.nome} não está livre em ${posLabel(ctx.posicao)}.`);
         }
         setSel((s) => (s.includes(c.nome) ? s : [...s, c.nome]));
       },
@@ -112,7 +112,7 @@ export function ExpedirParcialModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
 
       <div className="scanhd">
         <span className="lbl">
-          Cargas para o lote {loteAtual + 1} — opcional · livres em {posLabel(ordem.posicao)}
+          Cargas para o lote {loteAtual + 1} — opcional · livres em {posLabel(ctx.posicao)}
         </span>
         <ScanField
           rotulo="Ler carga"

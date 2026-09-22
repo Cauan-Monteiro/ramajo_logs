@@ -12,6 +12,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 public final class DesidrogenizacaoDtos {
 
@@ -66,7 +67,7 @@ public final class DesidrogenizacaoDtos {
      * só para esta tela pioraria as duas rotas que o servem.
      */
     public record DesidroEmAndamentoDTO(
-            Long id, Long ordemServicoId, Long ordemIdExterno, Posicao posicao,
+            Long id, Long ordemServicoId, Long ordemIdExterno, List<Posicao> posicoes,
             String nome, Instant iniciadaEm, Instant finalizadaEm) {
 
         /** Toca os proxies LAZY aqui, com a sessão ainda aberta. */
@@ -77,7 +78,7 @@ public final class DesidrogenizacaoDtos {
                     // O número que o operador conhece é o externo; o interno é
                     // o fallback (osNum() no front faz a mesma escolha).
                     od.getOrdemServico().getIdExterno(),
-                    od.getOrdemServico().getPosicao(),
+                    od.getOrdemServico().getPosicoesOrdenadas(),
                     od.getDesidrogenizacao().getNome(),
                     od.getIniciadaEm(),
                     od.getFinalizadaEm());

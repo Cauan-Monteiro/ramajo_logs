@@ -5,7 +5,7 @@ import { AlertaDesidro } from "./components/AlertaDesidro";
 import { AppNav } from "./components/AppNav";
 import { Toast, type Aviso } from "./components/Toast";
 import { aguardandoEntrega } from "./domain/derive";
-import { POSICOES } from "./domain/format";
+import { POSICOES, posOrdenadas } from "./domain/format";
 import { Ajustes } from "./screens/Ajustes";
 import { Auditoria } from "./screens/Auditoria";
 import { Dashboard } from "./screens/Dashboard";
@@ -59,12 +59,19 @@ export function App() {
    * "Ver OS" da faixa. O modal de detalhe pertence ao Dashboard, então o App
    * troca para a aba da posição da OS e deixa o pedido; o Dashboard abre o
    * modal e o consome — senão uma troca de aba posterior reabriria a mesma OS.
+   *
+   * A OS pode rodar em mais de um setor. Se já estamos numa aba que é dela,
+   * ficamos: quem toca "ver OS" a partir do Pendurado quer vê-la no Pendurado.
+   * Senão vai para o primeiro setor — a escolha é arbitrária, mas o modal abre
+   * na mesma OS de qualquer forma, e de lá dá para trocar de aba.
    */
   const [osPedida, setOsPedida] = useState<number | null>(null);
   const verOS = useCallback((d: DesidroEmAndamentoDTO) => {
-    setAba(d.posicao);
+    if (!d.posicoes.some((p) => p === aba)) {
+      setAba(posOrdenadas(d.posicoes)[0]);
+    }
     setOsPedida(d.ordemServicoId);
-  }, [setAba]);
+  }, [aba, setAba]);
   const pedidoAtendido = useCallback(() => setOsPedida(null), []);
 
   // Mantém este terminal no mesmo ponto que os demais, sem F5.

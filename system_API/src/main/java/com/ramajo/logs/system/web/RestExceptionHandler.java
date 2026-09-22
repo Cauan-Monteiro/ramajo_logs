@@ -1,5 +1,6 @@
 package com.ramajo.logs.system.web;
 
+import com.ramajo.logs.system.exceptions.CargaEmUsoException;
 import com.ramajo.logs.system.exceptions.CargaIndisponivelException;
 import com.ramajo.logs.system.exceptions.CargaInativaException;
 import com.ramajo.logs.system.exceptions.CargaNaoVinculadaException;
@@ -10,6 +11,7 @@ import com.ramajo.logs.system.exceptions.OperadorEmUsoException;
 import com.ramajo.logs.system.exceptions.OperacaoRestritaException;
 import com.ramajo.logs.system.exceptions.OperadorInativoException;
 import com.ramajo.logs.system.exceptions.OrdemForaDeCirculacaoException;
+import com.ramajo.logs.system.exceptions.OrdemClienteDivergenteException;
 import com.ramajo.logs.system.exceptions.OrdemIdExternoExistente;
 import com.ramajo.logs.system.exceptions.PassoJaFinalizadoException;
 import com.ramajo.logs.system.exceptions.PeriodoInvalidoException;
@@ -38,8 +40,11 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  *   - recurso inexistente ...................... 404 NOT FOUND
  *   - operação de ADMIN pedida por não-admin ... 403 FORBIDDEN
  *   - conflito de ESTADO (já finalizada, carga
- *     em outra OS, passo já fechado, corrida
- *     de lote no índice único, processo ainda
+ *     em outra OS, carga vinculada a mudar de
+ *     setor, passo já fechado, corrida
+ *     de lote no índice único, Nº do ERP já usado
+ *     naquele setor — ou usado lá por outro
+ *     cliente, processo ainda
  *     configurado como entrada de setor, operador
  *     com histórico ou último admin) ........... 409 CONFLICT
  *   - requisição semanticamente inválida
@@ -71,9 +76,11 @@ public class RestExceptionHandler {
     @ExceptionHandler({
             OrdemForaDeCirculacaoException.class,
             OrdemIdExternoExistente.class,
+            OrdemClienteDivergenteException.class,
             ReaberturaInvalidaException.class,
             EntregaInvalidaException.class,
             CargaIndisponivelException.class,
+            CargaEmUsoException.class,
             PassoJaFinalizadoException.class,
             ProcessoEmUsoException.class,
             OperadorEmUsoException.class})

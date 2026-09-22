@@ -38,10 +38,15 @@ export function OSRapidaModal({
   const conflito = useMemo(() => {
     if (!v) return null;
     if (nosReservados.includes(v)) return "Este Nº é o da OS que você está criando.";
+    // Só colide no MESMO setor: o Nº do ERP é único por posição (V20), e o
+    // cadastro rápido quer uma OS nova aqui — não vincular-se à que já existe.
     const aberta = ctx.data.ordens.find(
-      (o) => o.idExterno !== null && String(o.idExterno) === v && o.emProcesso);
-    return aberta ? `Já existe uma OS aberta com o Nº ${v} (${aberta.clienteNome}).` : null;
-  }, [v, nosReservados, ctx.data.ordens]);
+      (o) => o.idExterno !== null && String(o.idExterno) === v
+        && o.posicoes.includes(posicao) && o.emProcesso);
+    return aberta
+      ? `Já existe uma OS aberta com o Nº ${v} em ${posLabel(posicao)} (${aberta.clienteNome}).`
+      : null;
+  }, [v, nosReservados, ctx.data.ordens, posicao]);
 
   function criar() {
     if (clienteId === null || conflito) return;

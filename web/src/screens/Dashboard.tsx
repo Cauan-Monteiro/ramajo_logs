@@ -10,12 +10,12 @@ import {
 } from "../components/Icons";
 import {
   cargaCarona, emEspera, emSegundoLote, etapaDoLog, etapaStyle, labelEtapaDoLog,
-  logAbertoDaCarga,
+  logAbertoDaCarga, multiPosicao, rodaEm, tambemEm,
 } from "../domain/derive";
 import {
   COR_INATIVO, COR_NIVEL, ROTULO_NIVEL, detalhe as detalheDesidro, emCurso, piorNivel,
 } from "../domain/desidro";
-import { ETAPAS, duracao, hhmm, osNum, posLabel } from "../domain/format";
+import { ETAPAS, duracao, hhmm, osNum, posLabel, posLabels } from "../domain/format";
 import { useAgora } from "../state/useAgora";
 import { cargasLivres, logsDe, type AppData } from "../state/useAppData";
 import { EncerrarLoteModal } from "../modals/EncerrarLote";
@@ -145,7 +145,7 @@ export function Dashboard({
   const corDesidro = temDesidro ? COR_NIVEL[nivelDesidro] : COR_INATIVO;
 
   const label = posLabel(posicao);
-  const naPos = data.ordens.filter((o) => o.emProcesso && o.posicao === posicao);
+  const naPos = data.ordens.filter((o) => o.emProcesso && rodaEm(o, posicao));
   const emProducao = naPos.filter((o) => !emSegundoLote(o));
   const emLote = naPos.filter(emSegundoLote);
   const livres = cargasLivres(data, posicao);
@@ -426,6 +426,18 @@ export function Dashboard({
                           title={`Carga acoplada: mais ${c.ordensAcopladas.length} OS dentro dela`}
                         >
                           +{c.ordensAcopladas.length}
+                        </span>
+                      )}
+                      {/* A OS também roda noutro setor: esta aba mostra só o
+                          que é daqui, e quem vai expedir precisa de saber que
+                          há trabalho dela do outro lado. */}
+                      {ordem && multiPosicao(ordem) && (
+                        <span
+                          className="tp"
+                          title={`OS ${osNum(ordem)} também roda em `
+                            + `${posLabels(tambemEm(ordem, posicao))}`}
+                        >
+                          ⇄
                         </span>
                       )}
                     </span>

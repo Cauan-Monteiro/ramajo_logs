@@ -1,6 +1,8 @@
 package com.ramajo.logs.system.exceptions;
 
 import com.ramajo.logs.system.enums.Posicao;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * A composição de uma carga não fecha. Acoplar é dizer "peças destas OS estão
@@ -19,15 +21,22 @@ public class AcoplamentoInvalidoException extends DominioException {
     }
 
     /**
-     * Setores diferentes: uma carga está fisicamente num setor só, então OS de
-     * posições distintas não podem estar a dividi-la.
+     * A carona não está autorizada no setor da CARGA. Uma carga está
+     * fisicamente num setor só; uma OS que não roda nesse setor não tem como
+     * ter peças lá dentro.
+     *
+     * O setor comparado é o da carga, não o da titular: é a carga que descreve
+     * o lugar. Para a titular dão no mesmo (a carga só está vinculada porque
+     * o setor dela é autorizado), mas a titular pode rodar em mais de um setor
+     * e só um deles é o desta carga.
      */
-    public static AcoplamentoInvalidoException posicaoDiferente(Long acopladaId, Posicao acoplada,
-                                                                Long titularId, Posicao titular) {
+    public static AcoplamentoInvalidoException posicaoDiferente(
+            Long acopladaId, List<Posicao> acoplada, Long titularId, Posicao daCarga) {
         return new AcoplamentoInvalidoException("ACOPLAMENTO_POSICAO_INCOMPATIVEL",
-                "OS " + acopladaId + " roda em " + acoplada + " e a OS " + titularId
-                        + " (titular da carga) em " + titular
-                        + "; a mesma carga não está nos dois setores.");
+                "OS " + acopladaId + " roda em "
+                        + acoplada.stream().map(Enum::name).collect(Collectors.joining(", "))
+                        + " e a carga da OS " + titularId + " (titular) está em " + daCarga
+                        + "; as peças dela não podem estar nesse tanque.");
     }
 
     /**

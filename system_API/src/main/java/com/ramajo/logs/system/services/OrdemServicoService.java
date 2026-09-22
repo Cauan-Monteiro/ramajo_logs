@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 
 @Service
@@ -46,12 +47,23 @@ public class OrdemServicoService {
     // acoplarNaCarga.
     private static final int MAX_OS_ACOPLADAS = 5;
 
+    // O `motivo` da linha de histórico de adicionarPosicao. A coluna é NOT NULL
+    // (V14) e a rota não pede motivo ao operador — acrescentar setor é fato do
+    // chão, não correção de engano. Texto fixo para o histórico dizer QUAL das
+    // duas origens escreveu a linha.
+    private static final String MOTIVO_SETOR_ACRESCENTADO = "Setor acrescentado na operação.";
+
     /**
      * OS recém-criada mais os passos que nasceram com ela — o controller
      * precisa dos dois para montar a resposta, e devolver a lista explícita
      * evita depender do estado da coleção `logs` da OS.
+     *
+     * `vinculada` distingue os dois desfechos de criar(): a OS é nova (false)
+     * ou é uma que já existia com aquele Nº naquele setor, à qual as cargas
+     * foram apenas vinculadas (true). O controller lê isto para responder 201
+     * ou 200 — ver criar().
      */
-    public record OrdemCriada(OrdemServico ordem, List<Log> logsIniciados) {
+    public record OrdemCriada(OrdemServico ordem, List<Log> logsIniciados, boolean vinculada) {
     }
 
     /**
@@ -75,6 +87,25 @@ public class OrdemServicoService {
      * nela: as peças delas entram no mesmo tanque. Aplicado no fim, quando
      * todo vínculo existe — e dentro da mesma transação, então um par inválido
      * derruba a OS inteira, como já acontece com uma carga inválida.
+     *
+     * O Nº do ERP (`idExterno`) NÃO é mais único em absoluto (V20): é único
+     * por POSIÇÃO. Daí as três vias desta rota, decididas aqui e não no front:
+     *
+     *  - Nº já existe NESTE setor  -> nada nasce; as cargas são vinculadas
+     *    àquela OS, como faria POST /ordens/{id}/cargas. É o Nº 42 voltando
+     *    com mais peças para o mesmo sítio.
+     *  - Nº já existe em OUTRO setor -> nasce uma OS nova. São duas ordens
+     *    paralelas que só partilham o número — a V19 admitiu a ordem partida
+     *    entre setores, e esta é a porta por onde ela entra.
+     *  - Nº livre (ou nulo) -> nasce uma OS nova, como sempre.
+     *
+     * Atravessando as três: o Nº é de UM cliente. Qualquer homônima de outro
+     * dono derruba a rota, seja qual for o setor — as irmãs são a mesma ordem
+     * do ERP partida, não ordens distintas que calharam no mesmo número.
+     *
+     * Note o que a primeira via implica: o Nº nunca é REUTILIZADO. Se a OS 42
+     * daquele setor já foi expedida ou cancelada, criar 42 ali de novo cai em
+     * carregarAberta() e é recusado — não vira OS nova.
      */
     @Transactional
     public OrdemCriada criar(Long clienteId, Long operadorId, Long idExterno, Posicao posicao,
@@ -90,12 +121,38 @@ public class OrdemServicoService {
             throw new OperadorInativoException(operadorId);
         }
 
+        // As homônimas: tudo o que já usa este Nº, em qualquer setor. Antes de
+        // qualquer mutação, como o resto do service. Nº nulo (OS sem
+        // conciliação com o ERP) nunca tem homônima — várias delas convivem.
+        List<OrdemServico> mesmoNumero = idExterno == null
+                ? List.of()
+                : osRepo.findAllByIdExterno(idExterno);
+
+        // O Nº do ERP é de UMA ordem, e uma ordem é de UM cliente — a V20
+        // partiu a ordem por SETOR, não por cliente. As irmãs são a mesma
+        // ordem com as peças em sítios diferentes, logo o mesmo dono. Esta
+        // recusa vale para as três vias, e é por isso que está aqui em cima e
+        // não dentro do vínculo.
+        mesmoNumero.stream()
+                .filter(outra -> !outra.getCliente().getId().equals(cliente.getId()))
+                .findFirst()
+                .ifPresent(outra -> {
+                    throw new OrdemClienteDivergenteException(idExterno,
+                            outra.getPosicoesOrdenadas(),
+                            descrever(outra.getCliente()), descrever(cliente));
+                });
+
+        OrdemServico irma = mesmoNumero.stream()
+                .filter(outra -> outra.rodaEm(posicao))
+                .findFirst()
+                .orElse(null);
+
+        if (irma != null){
+            return vincularNaIrma(irma, operador, cargaIds, acopladasPorCarga);
+        }
+
         OrdemServico os = new OrdemServico(idExterno ,cliente, posicao);
         os.setIniciadaPor(operador);
-
-        if (osRepo.findByIdExterno(idExterno).isPresent()) {
-            throw new OrdemIdExternoExistente(idExterno);
-        }
 
         OrdemServico salva = osRepo.save(os);
 
@@ -111,10 +168,8 @@ public class OrdemServicoService {
         salva.getLotes().add(primeiro);
 
         if (cargaIds == null || cargaIds.isEmpty()){
-            return new OrdemCriada(salva, List.of());
+            return new OrdemCriada(salva, List.of(), false);
         }
-
-        Processo inicial = processoInicial(salva.getPosicao());
 
         List<Log> logs = new ArrayList<>();
 
@@ -133,7 +188,7 @@ public class OrdemServicoService {
             if (carga.getOrdemAtual() != null){
                 throw new CargaIndisponivelException(cargaId, carga.getOrdemAtual().getId());
             }
-            exigirMesmaPosicao(carga, salva);
+            exigirPosicaoAutorizada(carga, salva);
 
             carga.setOrdemAtual(salva);
 
@@ -142,9 +197,15 @@ public class OrdemServicoService {
             // zero cargas. Não gera insert nenhum.
             salva.getCargas().add(carga);
 
+            // O processo inicial é o DO SETOR DA CARGA, resolvido por carga e
+            // não uma vez para a OS toda: é na carga que o trabalho acontece.
+            // Hoje dá no mesmo — exigirPosicaoAutorizada acabou de garantir que os
+            // dois setores são o mesmo —, mas é a leitura que continua certa
+            // quando uma OS puder rodar em mais de um setor.
+            //
             // abrirLog revalida vínculo/carga ativa/operador ativo. A checagem
             // de vínculo enxerga o setOrdemAtual acima porque é a mesma sessão.
-            logs.add(abrirLog(salva, carga, inicial, operador));
+            logs.add(abrirLog(salva, carga, processoInicial(carga.getPosicao()), operador));
         }
 
         // Depois do laço, não dentro dele: acoplarNaCarga exige a carga já
@@ -152,8 +213,44 @@ public class OrdemServicoService {
         // carga que não está nesta OS é recusada lá com CARGA_NAO_VINCULADA.
         aplicarAcoplamentos(acopladasPorCarga);
 
-        return new OrdemCriada(salva, logs);
+        return new OrdemCriada(salva, logs, false);
 
+    }
+
+    /**
+     * A via do Nº que já existe NESTE setor: nada nasce — nem OS, nem lote. As
+     * cargas entram na ordem que já estava lá e o resultado é indistinguível de
+     * ter chamado vincularCarga() uma vez por carga.
+     *
+     * Por isso usa vincularNaOs() e não o laço de criar(): aquele recusa
+     * qualquer carga já vinculada, porque uma OS recém-nascida não pode ter
+     * cargas; aqui a OS é velha, e uma carga que já está nela é repetição
+     * inofensiva do operador, não conflito.
+     *
+     * carregarAberta() é o que recusa o Nº de uma OS já expedida ou cancelada:
+     * ele não volta a ser criável neste setor.
+     *
+     * O cliente do corpo não é conferido aqui: criar() já recusou qualquer
+     * homônima de outro dono antes de escolher a irmã, e esta é uma delas.
+     */
+    private OrdemCriada vincularNaIrma(OrdemServico irma, Operador operador,
+                                       List<Long> cargaIds,
+                                       Map<Long, List<Long>> acopladasPorCarga){
+        OrdemServico os = carregarAberta(irma.getId());
+
+        List<Log> logs = new ArrayList<>();
+
+        if (cargaIds != null){
+            // LinkedHashSet pela mesma razão de criar(): id repetido no corpo
+            // não pode abrir dois passos para a mesma carga.
+            for (Long cargaId : new LinkedHashSet<>(cargaIds)){
+                logs.add(vincularNaOs(os, cargaId, operador));
+            }
+        }
+
+        aplicarAcoplamentos(acopladasPorCarga);
+
+        return new OrdemCriada(os, logs, true);
     }
 
     /**
@@ -343,7 +440,7 @@ public class OrdemServicoService {
         if(carga.getOrdemAtual() != null && !carga.getOrdemAtual().getId().equals(os.getId())){
             throw new CargaIndisponivelException(cargaId, carga.getOrdemAtual().getId());
         }
-        exigirMesmaPosicao(carga, os);
+        exigirPosicaoAutorizada(carga, os);
 
         // Defesa, não regra: soltarCarga() esvazia as caronas, então uma carga
         // do pool já chega aqui sem nenhuma. Sobra para linha legada gravada
@@ -353,9 +450,11 @@ public class OrdemServicoService {
 
         carga.setOrdemAtual(os);
 
+        // O processo inicial é o DO SETOR DA CARGA — mesma leitura de criar().
+        //
         // abrirLog revalida vínculo/carga ativa/operador ativo e enxerga o
         // setOrdemAtual acima porque é a mesma sessão.
-        return abrirLog(os, carga, processoInicial(os.getPosicao()), operador);
+        return abrirLog(os, carga, processoInicial(carga.getPosicao()), operador);
     }
 
     // CORREÇÃO (ADMIN)  ======================================================
@@ -372,17 +471,21 @@ public class OrdemServicoService {
      * Só OS em processo: expedida ou cancelada já está nos relatórios como
      * foi, e quem precisa mexer nela reabre primeiro.
      *
-     * Trocar a POSIÇÃO não é só trocar a coluna: as cargas vinculadas e os
-     * passos abertos são do setor antigo. Ver trocarPosicao(). `cargaIds` são
-     * as cargas do setor novo a vincular nessa mesma transação, e só contam
-     * quando a posição muda.
+     * Mexer nas POSIÇÕES não é só trocar linhas: as cargas vinculadas e os
+     * passos abertos dos setores que SAEM são desfeitos. Ver trocarPosicoes().
+     * `cargaIds` são as cargas a vincular nessa mesma transação, e só contam
+     * quando o conjunto muda.
+     *
+     * Esta é a única rota que REMOVE um setor, e é por isso que é de ADMIN e
+     * exige motivo: remover apaga trabalho em curso. Acrescentar um setor não
+     * apaga nada e por isso tem rota própria, sem gate — ver adicionarPosicao().
      *
      * Tudo numa transação: carga inválida, Nº repetido ou cliente inexistente
      * derrubam a correção inteira, histórico incluído.
      */
     @Transactional
     public OrdemServico corrigir(Long osId, Long operadorId, Long idExterno, Long clienteId,
-                                 Posicao posicao, List<Long> cargaIds, String motivo){
+                                 Set<Posicao> posicoes, List<Long> cargaIds, String motivo){
         OrdemServico os = carregarAberta(osId);
 
         Operador admin = exigirOperadorAtivo(operadorId);
@@ -390,9 +493,15 @@ public class OrdemServicoService {
             throw new OperacaoRestritaException(operadorId);
         }
 
+        // Uma OS sem setor não roda em lugar nenhum. A trigger da V19 garante
+        // o mesmo no banco; aqui é para a recusa ter mensagem legível.
+        if (posicoes == null || posicoes.isEmpty()){
+            throw CorrecaoInvalidaException.semPosicao(osId);
+        }
+
         boolean mudaNumero = !idExterno.equals(os.getIdExterno());
         boolean mudaCliente = !clienteId.equals(os.getCliente().getId());
-        boolean mudaPosicao = posicao != os.getPosicao();
+        boolean mudaPosicao = !posicoes.equals(os.getPosicoes());
 
         if (!mudaNumero && !mudaCliente && !mudaPosicao){
             throw CorrecaoInvalidaException.semAlteracao(osId);
@@ -403,15 +512,43 @@ public class OrdemServicoService {
         // Todas as recusas que não dependem das cargas ANTES de qualquer
         // mutação, pela disciplina de sempre. As das cargas novas só aparecem
         // no vínculo, e aí quem desfaz é o rollback.
-        if (mudaNumero){
-            osRepo.findByIdExterno(idExterno)
-                    .filter(outra -> !outra.getId().equals(osId))
-                    .ifPresent(outra -> { throw new OrdemIdExternoExistente(idExterno); });
-        }
         Cliente novoCliente = mudaCliente
                 ? clienteRepo.findById(clienteId)
                         .orElseThrow(() -> new RecursoNaoEncontradoException("Cliente", clienteId))
                 : null;
+
+        // As homônimas depois da correção: as três mudanças mexem na relação
+        // Nº <-> cliente <-> setor, então qualquer uma delas obriga a reler.
+        if (mudaNumero || mudaCliente || mudaPosicao){
+            Cliente dono = mudaCliente ? novoCliente : os.getCliente();
+
+            List<OrdemServico> homonimas = osRepo.findAllByIdExterno(idExterno).stream()
+                    .filter(outra -> !outra.getId().equals(osId))
+                    .toList();
+
+            // Mesma regra de criar(): o Nº é de um cliente só. Sem isto a
+            // correção seria a porta dos fundos para o estado que a criação
+            // recusa — e é ela, não a criação, que consegue mudar o cliente.
+            homonimas.stream()
+                    .filter(outra -> !outra.getCliente().getId().equals(dono.getId()))
+                    .findFirst()
+                    .ifPresent(outra -> {
+                        throw new OrdemClienteDivergenteException(idExterno,
+                                outra.getPosicoesOrdenadas(),
+                                descrever(outra.getCliente()), descrever(dono));
+                    });
+
+            // Desde a V20 o Nº só colide por SETOR: outra OS com o mesmo número
+            // em Automática não impede esta de ser a 42 de Oxidação. E por isso
+            // a checagem não depende só do Nº — ACRESCENTAR um setor também
+            // pode esbarrar na irmã que já roda nele.
+            homonimas.stream()
+                    .filter(outra -> outra.getPosicoes().stream().anyMatch(posicoes::contains))
+                    .findFirst()
+                    .ifPresent(outra -> {
+                        throw new OrdemIdExternoExistente(idExterno, outra.getPosicoesOrdenadas());
+                    });
+        }
 
         List<OrdemAlteracao> alteracoes = new ArrayList<>();
 
@@ -429,7 +566,7 @@ public class OrdemServicoService {
         }
 
         if (mudaPosicao){
-            alteracoes.addAll(trocarPosicao(os, posicao, cargaIds, admin, porque));
+            alteracoes.addAll(trocarPosicoes(os, posicoes, cargaIds, admin, porque));
         }
 
         alteracaoRepo.saveAll(alteracoes);
@@ -437,31 +574,86 @@ public class OrdemServicoService {
     }
 
     /**
-     * A OS muda de setor. O que era do setor antigo sai, e o que o ADMIN
-     * escolheu do novo entra:
+     * A OS passa a rodar TAMBÉM neste setor. É a exceção que a V19 existe para
+     * suportar: as peças de uma mesma ordem partidas entre dois setores,
+     * produzindo em paralelo.
      *
-     * 1. Passos abertos da OS são CANCELADOS, não só fechados — foram
-     *    registrados na OS errada, e `cancelado` é o que os tira da duração
-     *    nos relatórios. Mesma regra de cancelar(). Passos já fechados ficam
-     *    como estão: `logs` é append-only.
-     * 2. As cargas voltam ao pool, com as caronas delas (regra de liberar():
-     *    as peças das outras OS continuam no tanque).
-     * 3. A OS deixa de ser carona em qualquer carga — as cargas em que ela ia
-     *    são do setor antigo. Mesma limpeza de cancelar().
-     * 4. As cargas novas entram pelo processo inicial do setor NOVO. O passo
+     * Sem gate de ADMIN e sem motivo, ao contrário de corrigir(): acrescentar
+     * um setor não desfaz nada. Nenhuma carga é solta, nenhum passo é
+     * cancelado, nenhum lote é tocado — a OS só passa a aceitar cargas de mais
+     * um sítio. É trabalho de chão, como vincular carga ou entregar, e quem
+     * descobre a necessidade é quem está na linha.
+     *
+     * Também não vincula carga nenhuma: o vínculo continua a ser a rota de
+     * sempre, que a partir daqui aceita as cargas do setor novo. Separar as
+     * duas coisas é o que mantém a rota trivial de desfazer — uma posição
+     * acrescentada por engano sai pela correção, sem ter deixado rasto no
+     * chão de fábrica.
+     *
+     * Idempotente: a OS que já roda no setor volta como está. Dois terminais
+     * podem tocar o botão ao mesmo tempo, como em acoplarNaCarga.
+     *
+     * Grava a linha de histórico mesmo não sendo correção de ADMIN. Sem ela, a
+     * remoção deste setor mais tarde apareceria no histórico como a saída de
+     * algo que nunca entrou.
+     */
+    @Transactional
+    public OrdemServico adicionarPosicao(Long osId, Posicao nova, Long operadorId){
+        OrdemServico os = carregarAberta(osId);
+        Operador operador = exigirOperadorAtivo(operadorId);
+
+        if (os.rodaEm(nova)){
+            return os;
+        }
+
+        List<Posicao> antes = os.getPosicoesOrdenadas();
+        os.getPosicoes().add(nova);
+
+        alteracaoRepo.save(new OrdemAlteracao(os, CampoAlterado.POSICAO,
+                rotulo(antes), rotulo(os.getPosicoesOrdenadas()),
+                MOTIVO_SETOR_ACRESCENTADO, operador));
+
+        return os;
+    }
+
+    /**
+     * O conjunto de setores da OS muda. O que desfaz trabalho é a REMOÇÃO, e
+     * ela é cirúrgica: só o que pertence aos setores que saíram.
+     *
+     * 1. Passos abertos EM CARGA DE SETOR REMOVIDO são CANCELADOS, não só
+     *    fechados — foram registrados num setor onde a OS não devia estar, e
+     *    `cancelado` é o que os tira da duração nos relatórios. Mesma regra de
+     *    cancelar(). Passos já fechados ficam como estão: `logs` é append-only.
+     * 2. As cargas DOS SETORES REMOVIDOS voltam ao pool, com as caronas delas
+     *    (regra de liberar(): as peças das outras OS continuam no tanque).
+     * 3. A OS deixa de ser carona nas cargas DOS SETORES REMOVIDOS. As cargas
+     *    dos setores que ficam não são tocadas.
+     * 4. As cargas novas entram pelo processo inicial do setor DELAS. O passo
      *    fica no nome de quem abriu a OS (quem de fato trabalha nela); sem
      *    ele, ou inativo, no do ADMIN.
      *
-     * Devolve as linhas de histórico da troca: POSICAO e, se alguma carga saiu
-     * ou entrou, CARGAS.
+     * O ponto 1-3 é a diferença que importa numa OS de dois setores: tirar a
+     * AUTOMATICA não pode parar o que está a correr no PENDURADO. Numa OS de um
+     * setor só — o caso normal — "removidas" é o conjunto inteiro e o efeito é
+     * exatamente o de antes.
+     *
+     * Devolve as linhas de histórico: POSICAO e, se alguma carga saiu ou
+     * entrou, CARGAS.
      */
-    private List<OrdemAlteracao> trocarPosicao(OrdemServico os, Posicao nova, List<Long> cargaIds,
-                                               Operador admin, String motivo){
+    private List<OrdemAlteracao> trocarPosicoes(OrdemServico os, Set<Posicao> novas,
+                                                List<Long> cargaIds, Operador admin,
+                                                String motivo){
         Long osId = os.getId();
-        Posicao antiga = os.getPosicao();
+        List<Posicao> antigas = os.getPosicoesOrdenadas();
         Instant at = Instant.now();
 
+        // Os setores que SAEM. É este conjunto que autoriza cada desfazimento
+        // abaixo — nada fora dele é tocado.
+        Set<Posicao> removidas = new LinkedHashSet<>(os.getPosicoes());
+        removidas.removeAll(novas);
+
         for (Log aberto : logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(osId)){
+            if (!removidas.contains(aberto.getCarga().getPosicao())) continue;
             aberto.setCancelado(true);
             fecharPasso(aberto, at);
         }
@@ -470,18 +662,25 @@ public class OrdemServicoService {
         // nenhum índice colide, mas é a mesma ordem de finalizarLote/abrirLog.
         logRepo.flush();
 
-        List<Carga> soltas = new ArrayList<>(os.getCargas());
+        List<Carga> soltas = os.getCargas().stream()
+                .filter(c -> removidas.contains(c.getPosicao()))
+                .toList();
         for (Carga c : soltas){
             soltarCarga(c);
         }
         // Lado inverso da relação: não gera SQL, só mantém a resposta do PUT
-        // coerente com o que ficou gravado.
-        os.getCargas().clear();
+        // coerente com o que ficou gravado. removeAll e não clear(): as cargas
+        // dos setores que ficam continuam vinculadas.
+        os.getCargas().removeAll(soltas);
 
-        cargaRepo.buscarAcoplamentosDe(osId)
+        cargaRepo.buscarAcoplamentosDe(osId).stream()
+                .filter(c -> removidas.contains(c.getPosicao()))
                 .forEach(c -> c.getOrdensAcopladas().remove(osId));
 
-        os.setPosicao(nova);
+        // retainAll + addAll, e não clear + addAll: preserva as linhas dos
+        // setores que ficam em vez de as apagar e reinserir iguais.
+        os.getPosicoes().retainAll(novas);
+        os.getPosicoes().addAll(novas);
 
         Operador iniciou = os.getIniciadaPor();
         Operador responsavel = iniciou != null && iniciou.isAtivo() ? iniciou : admin;
@@ -497,7 +696,7 @@ public class OrdemServicoService {
 
         List<OrdemAlteracao> linhas = new ArrayList<>();
         linhas.add(new OrdemAlteracao(os, CampoAlterado.POSICAO,
-                antiga.name(), nova.name(), motivo, admin));
+                rotulo(antigas), rotulo(os.getPosicoesOrdenadas()), motivo, admin));
         if (!soltas.isEmpty() || !vinculadas.isEmpty()){
             linhas.add(new OrdemAlteracao(os, CampoAlterado.CARGAS,
                     nomes(soltas), nomes(vinculadas), motivo, admin));
@@ -508,6 +707,16 @@ public class OrdemServicoService {
     /** "#12 ACME LTDA": o id é o que o ERP conhece, o nome é o que se lê. */
     private static String descrever(Cliente cliente){
         return "#" + cliente.getId() + " " + cliente.getNome();
+    }
+
+    /**
+     * As posições como o histórico as grava: ordem canônica, separadas por
+     * vírgula ("PENDURADO, AUTOMATICA"). Ordem fixa porque a linha de
+     * histórico é comparada com a anterior por texto — um conjunto que se
+     * imprime em ordem variável registaria mudanças que não houve.
+     */
+    private static String rotulo(List<Posicao> posicoes){
+        return posicoes.stream().map(Posicao::name).collect(Collectors.joining(", "));
     }
 
     /** Nomes por ordem alfabética; lista vazia é null — "nenhuma", não "". */
@@ -602,9 +811,14 @@ public class OrdemServicoService {
         if (processo.getPosicoes().isEmpty()){
             throw new PosicaoIncompativelException(processo.getId(), processo.getDescricao());
         }
-        if (!processo.getPosicoes().contains(os.getPosicao())){
+        // O processo tem de rodar onde a CARGA está, que é onde o passo vai de
+        // facto acontecer — e não onde a OS está registada. Hoje é a mesma
+        // coisa (o vínculo da carga exigiu setores iguais), mas ler da carga é
+        // o que continua correto quando a OS rodar em mais de um setor: aí o
+        // passo será legítimo se o processo servir o setor DAQUELA carga.
+        if (!processo.getPosicoes().contains(carga.getPosicao())){
             throw new PosicaoIncompativelException(
-                    processo.getId(), processo.getDescricao(), os.getPosicao());
+                    processo.getId(), processo.getDescricao(), carga.getPosicao());
         }
 
         // Resolvido ANTES do auto-fechamento abaixo, junto das demais
@@ -667,7 +881,7 @@ public class OrdemServicoService {
             if (acoplada == null
                     || acoplada.isFinalizada()
                     || acoplada.isCancelada()
-                    || acoplada.getPosicao() != carga.getPosicao()){
+                    || !acoplada.rodaEm(carga.getPosicao())){
                 ids.remove(id);
                 continue;
             }
@@ -681,8 +895,13 @@ public class OrdemServicoService {
      * As recusas de coerência física de UMA carona, no momento em que ela é
      * declarada. Uma de cada vez: acoplar é sempre uma OS que acabou de entrar
      * no tanque, nunca uma lista.
+     *
+     * O setor comparado é o da CARGA — o tanque físico onde as peças das duas
+     * OS se encontram —, e não o da titular. Hoje são o mesmo valor (a carga só
+     * está vinculada porque exigirPosicaoAutorizada a deixou entrar), mas é a carga
+     * que descreve o lugar, e é essa leitura que sobrevive à OS multi-setor.
      */
-    private void validarAcoplada(OrdemServico titular, Long id){
+    private void validarAcoplada(Carga carga, OrdemServico titular, Long id){
         if (id.equals(titular.getId())){
             throw AcoplamentoInvalidoException.aSiMesma(id);
         }
@@ -691,10 +910,10 @@ public class OrdemServicoService {
         // 409 se já foi expedida ou cancelada.
         OrdemServico acoplada = carregarAberta(id);
 
-        if (acoplada.getPosicao() != titular.getPosicao()){
+        if (!acoplada.rodaEm(carga.getPosicao())){
             throw AcoplamentoInvalidoException.posicaoDiferente(
-                    acoplada.getId(), acoplada.getPosicao(),
-                    titular.getId(), titular.getPosicao());
+                    acoplada.getId(), acoplada.getPosicoesOrdenadas(),
+                    titular.getId(), carga.getPosicao());
         }
     }
 
@@ -741,11 +960,20 @@ public class OrdemServicoService {
                                         + processoInicialId + ")")));
     }
 
-    /** A carga tem que rodar no mesmo setor da OS — senão o passo é impossível. */
-    private void exigirMesmaPosicao(Carga carga, OrdemServico os){
-        if (carga.getPosicao() != os.getPosicao()){
+    /**
+     * O setor da carga tem que estar entre os AUTORIZADOS da OS — senão o
+     * passo é impossível: não há processo inicial daquele setor configurado
+     * para esta ordem, e nada do que ela faça ali seria legítimo.
+     *
+     * É a única regra que liga a OS a um setor. Todo o resto (qual processo
+     * inicial, que processo pode abrir passo, com quem se pode acoplar) lê a
+     * posição da CARGA, porque é a carga que está fisicamente no sítio.
+     */
+    private void exigirPosicaoAutorizada(Carga carga, OrdemServico os){
+        if (!os.rodaEm(carga.getPosicao())){
             throw new PosicaoIncompativelException(
-                    carga.getId(), carga.getPosicao(), os.getId(), os.getPosicao());
+                    carga.getId(), carga.getPosicao(),
+                    os.getId(), os.getPosicoesOrdenadas());
         }
     }
 
@@ -822,24 +1050,42 @@ public class OrdemServicoService {
         }
 
         OrdemServico titular = carga.getOrdemAtual();
-        validarAcoplada(titular, osId);
+        validarAcoplada(carga, titular, osId);
 
         int total = carga.getOrdensAcopladas().size() + 1;
         if (total > MAX_OS_ACOPLADAS){
             throw AcoplamentoInvalidoException.demais(total, MAX_OS_ACOPLADAS);
         }
 
-        // Peças num tanque só: se ela já pega carona noutra carga, o pedido
-        // descreve duas coisas incompatíveis.
-        cargaRepo.buscarAcoplamentosDe(osId).stream().findFirst().ifPresent(outra -> {
-            throw AcoplamentoInvalidoException.jaEmOutraCarga(osId, outra.getId());
-        });
+        // Peças num tanque só POR SETOR: se ela já pega carona noutra carga do
+        // MESMO setor, o pedido descreve duas coisas incompatíveis — as peças
+        // não estão em dois tanques do mesmo sítio ao mesmo tempo.
+        //
+        // O filtro por posição não muda nada hoje (uma OS roda num setor só,
+        // logo todas as cargas em que ela pega carona são desse setor). Ele
+        // existe para que a regra continue a dizer o que quer dizer quando uma
+        // OS rodar em dois setores: aí ela TEM peças em dois tanques, um em
+        // cada lado da fábrica, e recusar o segundo seria recusar o facto.
+        cargaRepo.buscarAcoplamentosDe(osId).stream()
+                .filter(outra -> outra.getPosicao() == carga.getPosicao())
+                .findFirst()
+                .ifPresent(outra -> {
+                    throw AcoplamentoInvalidoException.jaEmOutraCarga(osId, outra.getId());
+                });
 
         // Só DEPOIS de todas as recusas — mesma disciplina de abrirLog: um
         // acoplamento que vai ser rejeitado não pode custar à carona o passo
         // que ela tem em curso.
+        //
+        // Fecham só os passos abertos da carona NO SETOR desta carga: as peças
+        // dela saíram da carga própria daquele setor para entrarem nesta. O que
+        // ela tenha a correr noutro setor não foi tocado por este acoplamento e
+        // continua a correr. Hoje o filtro não exclui nada — a carona roda num
+        // setor só —, mas sem ele uma OS de dois setores veria o passo do lado
+        // de lá fechar sozinho ao acoplar deste lado.
         Instant at = Instant.now();
-        logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(osId)
+        logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(osId).stream()
+                .filter(aberto -> aberto.getCarga().getPosicao() == carga.getPosicao())
                 .forEach(aberto -> fecharPasso(aberto, at));
 
         carga.getOrdensAcopladas().add(osId);
@@ -1085,7 +1331,7 @@ public class OrdemServicoService {
             if (carga == null
                     || !carga.isAtivo()
                     || carga.getOrdemAtual() != null
-                    || carga.getPosicao() != os.getPosicao()){
+                    || !os.rodaEm(carga.getPosicao())){
                 continue;
             }
             sugeridas.add(carga);

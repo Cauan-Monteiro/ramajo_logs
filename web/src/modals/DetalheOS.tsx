@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import * as api from "../api/endpoints";
 import type {
   AvaliacaoDTO, CargaDTO, LogDTO, OrdemAlteracaoDTO, OrdemDesidrogenizacaoDTO, OrdemDetalheDTO,
+  Posicao,
 } from "../api/types";
 import { Corners } from "../components/Blueprint";
 import { HistoricoAlteracoes } from "../components/HistoricoAlteracoes";
@@ -10,10 +11,10 @@ import { ResumoAvaliacao } from "../components/ResumoAvaliacao";
 import { ScanField } from "../components/ScanField";
 import {
   SEL_CHIP, SEL_PICK, cargaCarona, caronasDa, dotStyle, ehAcoplada, etapaStyle, etapaDoLog,
-  isAberto, labelEtapaDoLog, logSub, pillOrdemStyle, situacaoOrdem,
+  isAberto, labelEtapaDoLog, logSub, pillOrdemStyle, rodaEm, situacaoOrdem,
 } from "../domain/derive";
 import {
-  ETAPAS, diaHora, duracao, hhmm, iniciais, minutos, osNum, posLabel,
+  ETAPAS, POSICOES, diaHora, duracao, hhmm, iniciais, minutos, osNum, posLabel, posLabels,
 } from "../domain/format";
 import { cargasDe, cargasLivres, logsDe } from "../state/useAppData";
 import type { Acoplamentos } from "./AcoplarCargas";
@@ -83,7 +84,22 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
     });
   }
 
+  /**
+   * A OS passa a rodar também neste setor. Não vincula carga nem abre passo —
+   * só abre a ordem para o setor novo; o vínculo é o de sempre, agora aceitando
+   * as cargas de lá. Por isso é reversível sem custo: nada do chão foi tocado.
+   */
+  function acrescentarSetor(p: Posicao) {
+    ctx.agir({
+      fazer: () =>
+        api.adicionarPosicaoOrdem(osId, { operadorId: ctx.operador.id, posicao: p }),
+      ok: `OS passa a rodar também em ${posLabel(p)}.`,
+    });
+  }
+
   if (!ordem) return null;
+  // Os setores em que esta OS ainda NÃO roda — o que o botão "+" oferece.
+  const faltam = POSICOES.map((p) => p.key).filter((k) => !ordem.posicoes.includes(k));
   const todos = ordem.emProcesso ? logs : extra ?? [];
   const abertos = todos.filter(isAberto);
   const fechados = todos.filter((l) => l.finalizadoEm);
@@ -168,10 +184,32 @@ export function DetalheOSModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
           </div>
         </div>
         <div>
-          <div className="os-tv">Posição</div>
-          <div className="os-cli" style={{ fontSize: 16 }}>
-            {posLabel(ordem.posicao)}
+          <div className="os-tv">
+            {ordem.posicoes.length > 1 ? "Posições" : "Posição"}
           </div>
+          <div className="os-cli" style={{ fontSize: 16 }}>
+            {posLabels(ordem.posicoes)}
+          </div>
+          {/* A exceção: esta OS também tem peças noutro setor. Só com a OS em
+              produção — numa expedida não há o que acrescentar. Retirar é
+              outra coisa: desfaz trabalho, e vive em Ajustes > Corrigir OS,
+              com motivo registrado. */}
+          {ordem.emProcesso && faltam.length > 0 && (
+            <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+              {faltam.map((p) => (
+                <button
+                  key={p}
+                  className="cgtog"
+                  disabled={ctx.ocupado}
+                  title={`Esta OS passa a rodar também em ${posLabel(p)}:`
+                    + " aceita cargas de lá, sem mexer no que já corre aqui"}
+                  onClick={() => acrescentarSetor(p)}
+                >
+                  + {posLabel(p)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div style={{ maxWidth: 220 }}>
           <div className="os-tv">Cargas na OS</div>
@@ -356,7 +394,7 @@ function Acoplamento({ ctx, osId, cargas }: { ctx: Ctx; osId: number; cargas: Ca
     ctx.data.ordens.filter(
       (o) =>
         o.emProcesso &&
-        o.posicao === ordem.posicao &&
+        rodaEm(o, carga.posicao) &&
         o.id !== osId &&
         o.id !== carga.ordemAtualId &&
         !jaCaronas.has(o.id),
@@ -370,7 +408,7 @@ function Acoplamento({ ctx, osId, cargas }: { ctx: Ctx; osId: number; cargas: Ca
   const cargasComTitular = ctx.data.cargas.filter(
     (c) =>
       c.ativo &&
-      c.posicao === ordem.posicao &&
+      c.posicao === ctx.posicao &&
       c.ordemAtualId !== null &&
       c.ordemAtualId !== osId &&
       c.ordensAcopladas.length < MAX_ACOPLADAS,
@@ -474,7 +512,7 @@ function Acoplamento({ ctx, osId, cargas }: { ctx: Ctx; osId: number; cargas: Ca
                   })}
                   {oferecer.length === 0 && (
                     <span className="os-tv">
-                      Nenhuma outra OS aberta em {posLabel(ordem.posicao)} disponível.
+                      Nenhuma outra OS aberta em {posLabel(ctx.posicao)} disponível.
                     </span>
                   )}
                 </div>
@@ -560,7 +598,7 @@ function Acoplamento({ ctx, osId, cargas }: { ctx: Ctx; osId: number; cargas: Ca
               })}
               {cargasComTitular.length === 0 && (
                 <span className="os-tv">
-                  Nenhuma carga de {posLabel(ordem.posicao)} com OS titular e espaço livre —
+                  Nenhuma carga de {posLabel(ctx.posicao)} com OS titular e espaço livre —
                   uma carga só dá boleia enquanto estiver vinculada a alguma OS.
                 </span>
               )}
@@ -589,7 +627,7 @@ export function VincularModal(
   const ordem = ctx.data.ordens.find((o) => o.id === osId);
   if (!ordem) return null;
 
-  const livres = cargasLivres(ctx.data, ordem.posicao);
+  const livres = cargasLivres(ctx.data, ctx.posicao);
   const jaNaOS = cargasDe(ctx.data, osId);
   const cargasSel = livres.filter((c) => sel.includes(c.nome));
 
@@ -608,7 +646,7 @@ export function VincularModal(
         const c = await api.cargaPorTag(tag);
         if (!c) throw new Error(`Nenhuma carga com a tag "${tag}".`);
         if (!livres.some((l) => l.id === c.id)) {
-          throw new Error(`A carga ${c.nome} não está livre em ${posLabel(ordem!.posicao)}.`);
+          throw new Error(`A carga ${c.nome} não está livre em ${posLabel(ctx.posicao)}.`);
         }
         setSel((s) => (s.includes(c.nome) ? s : [...s, c.nome]));
       },
@@ -650,7 +688,7 @@ export function VincularModal(
     >
       <div className="scanhd">
         <span className="lbl">
-          Cargas livres na posição {posLabel(ordem.posicao)} (toque para vincular)
+          Cargas livres na posição {posLabel(ctx.posicao)} (toque para vincular)
         </span>
         <ScanField
           rotulo="Ler carga"
@@ -678,7 +716,7 @@ export function VincularModal(
       </div>
       <AcoplarCargas
         ctx={ctx}
-        posicao={ordem.posicao}
+        posicao={ctx.posicao}
         cargas={cargasSel}
         osIdTitular={osId}
         valor={acopladas}
@@ -689,7 +727,7 @@ export function VincularModal(
     {rapidaPara !== null && (
       <OSRapidaModal
         ctx={ctx}
-        posicao={ordem.posicao}
+        posicao={ctx.posicao}
         nosReservados={[]}
         onVoltar={() => setRapidaPara(null)}
         onCriada={(novaId) => {
@@ -796,7 +834,7 @@ export function PassoModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
 
   const cargas = cargasDe(ctx.data, osId);
   const permitidos = ctx.data.processos.filter(
-    (p) => p.ativo && p.posicoes.includes(ordem.posicao),
+    (p) => p.ativo && p.posicoes.includes(ctx.posicao),
   );
   const grupos = ETAPAS.map((g) => ({ ...g, itens: permitidos.filter((p) => p.etapa === g.key) }))
     .filter((g) => g.itens.length > 0);
@@ -888,7 +926,7 @@ export function PassoModal({ ctx, osId }: { ctx: Ctx; osId: number }) {
           </div>
         ))}
         {grupos.length === 0 && (
-          <span className="os-tv">Nenhum processo habilitado para {posLabel(ordem.posicao)}.</span>
+          <span className="os-tv">Nenhum processo habilitado para {posLabel(ctx.posicao)}.</span>
         )}
       </div>
 

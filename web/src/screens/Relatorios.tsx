@@ -17,7 +17,7 @@ import {
 } from "../domain/derive";
 import {
   diaHora, duracao, etapaLabel, hhmm, hm, horasEntre, iniciais, iso, minutos, osNum,
-  posLabel,
+  posLabels,
 } from "../domain/format";
 import { useAgora } from "../state/useAgora";
 import { useAuditoriaDia } from "../state/useAuditoriaDia";
@@ -148,7 +148,9 @@ function HistoricoOS({ data, onErro }: { data: AppData; onErro: (e: unknown) => 
             style={osId === o.id ? { background: "#eef6ff", borderColor: "#5980a6" } : undefined}
             onClick={() => setOsId(o.id)}
           >
-            {osNum(o)} · {o.clienteNome}
+            {/* Com o setor: as irmãs têm Nº e cliente iguais, e sem ele seriam
+                dois botões idênticos. */}
+            {osNum(o)} · {o.clienteNome} · {posLabels(o.posicoes)}
           </button>
         ))}
         {data.ordens.length === 0 && <span className="os-tv">Nenhuma OS cadastrada.</span>}
@@ -175,7 +177,7 @@ function HistoricoOS({ data, onErro }: { data: AppData; onErro: (e: unknown) => 
             </button>
           </div>
           <div className="os-tv" style={{ marginBottom: 16 }}>
-            Aberta {diaHora(ordem.iniciadaEm)} · {posLabel(ordem.posicao)} ·{" "}
+            Aberta {diaHora(ordem.iniciadaEm)} · {posLabels(ordem.posicoes)} ·{" "}
             {situacaoOrdem(ordem).toLowerCase()}
           </div>
           {passos.map((p) =>
@@ -282,7 +284,7 @@ function OSPorCliente({ data }: { data: AppData }) {
               {linhas.map((o) => (
                 <tr key={o.id}>
                   <td style={{ paddingLeft: 18, font: "600 17px 'Barlow Condensed'" }}>{osNum(o)}</td>
-                  <td>{posLabel(o.posicao)}</td>
+                  <td>{posLabels(o.posicoes)}</td>
                   <td>{diaHora(o.iniciadaEm)}</td>
                   <td>
                     <span className="lote-pill" style={pillOrdemStyle(o)}>
@@ -377,6 +379,7 @@ function TempoMedio({ data, onErro }: { data: AppData; onErro: (e: unknown) => v
                   <tr>
                     <th style={{ paddingLeft: 18 }}>OS</th>
                     <th>Cliente</th>
+                    <th>Posição</th>
                     <th>Aberta</th>
                     <th style={{ paddingRight: 18 }}>Concluída em</th>
                   </tr>
@@ -388,6 +391,7 @@ function TempoMedio({ data, onErro }: { data: AppData; onErro: (e: unknown) => v
                         {osNum(o)}
                       </td>
                       <td>{o.clienteNome}</td>
+                      <td>{posLabels(o.posicoes)}</td>
                       <td>{diaHora(o.iniciadaEm)}</td>
                       <td style={{ paddingRight: 18 }}>
                         {diaHora(o.finalizadaEm)} (
@@ -743,7 +747,10 @@ function FeedOperador({ eventos }: { eventos: Evento[] }) {
                     {ROTULO_EVENTO[e.tipo]}
                   </span>
                 </td>
-                <td style={{ font: "600 16px 'Barlow Condensed'" }}>{e.osLabel}</td>
+                <td style={{ font: "600 16px 'Barlow Condensed'" }}>
+                  {e.osLabel}
+                  <div className="os-tv">{posLabels(e.posicoes)}</div>
+                </td>
                 <td>{e.cargaNome ?? "—"}</td>
                 <td>
                   {e.processoDescricao ? (

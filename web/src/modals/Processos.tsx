@@ -1,5 +1,5 @@
 import { Modal, Vazio } from "../components/Modal";
-import { etapaStyle, isAberto, labelEtapaDoLog } from "../domain/derive";
+import { etapaStyle, isAberto, labelEtapaDoLog, rodaEm } from "../domain/derive";
 import { hhmm, posLabel } from "../domain/format";
 import { logsDe } from "../state/useAppData";
 import type { LogDTO, OrdemResumoDTO } from "../api/types";
@@ -8,7 +8,7 @@ import type { Ctx } from "./tipos";
 /** OS com passo em andamento nesta posição, agrupadas por processo. */
 export function ProcessosModal({ ctx }: { ctx: Ctx }) {
   const label = posLabel(ctx.posicao);
-  const naPos = ctx.data.ordens.filter((o) => o.emProcesso && o.posicao === ctx.posicao);
+  const naPos = ctx.data.ordens.filter((o) => o.emProcesso && rodaEm(o, ctx.posicao));
 
   const grupos = new Map<string, { ordem: OrdemResumoDTO; log: LogDTO }[]>();
   for (const o of naPos) {

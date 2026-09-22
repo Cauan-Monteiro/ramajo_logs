@@ -95,7 +95,7 @@ export interface DesidroEmAndamentoDTO {
   id: number;
   ordemServicoId: number;
   ordemIdExterno: number | null;
-  posicao: Posicao;
+  posicoes: Posicao[];
   nome: string;
   iniciadaEm: string;
   finalizadaEm: string;
@@ -131,8 +131,10 @@ export interface CargaDTO {
 export interface OrdemResumoDTO {
   id: number;
   idExterno: number | null;
+  /** O Nº do ERP determina o cliente — ver `donoDoNumero` em CriarOS.tsx. */
+  clienteId: number;
   clienteNome: string;
-  posicao: Posicao;
+  posicoes: Posicao[];
   emProcesso: boolean;
   iniciadaEm: string;
   finalizadaEm: string | null;
@@ -195,7 +197,7 @@ export interface OrdemDetalheDTO {
   idExterno: number | null;
   clienteId: number;
   clienteNome: string;
-  posicao: Posicao;
+  posicoes: Posicao[];
   iniciadaEm: string;
   finalizadaEm: string | null;
   cancelada: boolean;

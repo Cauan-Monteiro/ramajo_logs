@@ -12,6 +12,7 @@ import java.io.InputStream;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.stream.Collectors;
 import javax.imageio.ImageIO;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.ClientAnchor;
@@ -175,6 +176,20 @@ final class EscritorPlanilha {
 
     static String nome(Operador operador) {
         return operador == null ? "" : operador.getNome();
+    }
+
+    /**
+     * Os setores da OS numa célula: "PENDURADO" no caso normal, "PENDURADO,
+     * AUTOMATICA" na OS que roda em dois (V19).
+     *
+     * Ordem canônica do enum, a mesma do histórico de alterações e do front —
+     * duas leituras da mesma OS têm de dar o mesmo texto, senão um relatório
+     * gerado hoje não confere com o de ontem.
+     */
+    static String posicoes(OrdemServico os) {
+        return os.getPosicoesOrdenadas().stream()
+                .map(Enum::name)
+                .collect(Collectors.joining(", "));
     }
 
     /** Cancelada vence finalizada: uma OS cancelada depois de fechada não é "Finalizada". */

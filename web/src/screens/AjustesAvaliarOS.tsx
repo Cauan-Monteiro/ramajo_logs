@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import * as api from "../api/endpoints";
-import type { AvaliacaoDTO, OperadorDTO, OrdemDetalheDTO, OrdemResumoDTO } from "../api/types";
+import type { AvaliacaoDTO, OperadorDTO, OrdemDetalheDTO } from "../api/types";
 import { Corners } from "../components/Blueprint";
 import {
   FormAvaliacao, formDe, paraInput, type FormAvaliacaoState,
 } from "../components/FormAvaliacao";
-import { diaHora } from "../domain/format";
+import { diaHora, posLabels } from "../domain/format";
 import type { AppData } from "../state/useAppData";
 import type { Ctx } from "../modals/tipos";
-import { CartaoOrdem } from "./AjustesCorrigirOS";
+import { CartaoOrdem, EscolhaIrma, useOrdemPorNumero } from "./AjustesCorrigirOS";
 
 /**
  * Avaliação da inspeção final feita pelo ADMIN, fora da expedição.
@@ -33,9 +33,9 @@ export function AjustesAvaliarOS({
   const [form, setForm] = useState<FormAvaliacaoState | null>(null);
 
   const n = numero.trim();
-  const ordem: OrdemResumoDTO | null = n
-    ? data.ordens.find((o) => o.idExterno !== null && String(o.idExterno) === n) ?? null
-    : null;
+  // Não um .find(): o Nº pode ter uma OS por setor, e avaliar a irmã errada
+  // substitui a avaliação dela sem histórico. Ver useOrdemPorNumero.
+  const { homonimas, ordem, escolhida, setEscolhida } = useOrdemPorNumero(data.ordens, n);
 
   // Trocou de OS: o que estava na tela era de outra.
   useEffect(() => {
@@ -71,7 +71,7 @@ export function AjustesAvaliarOS({
         setGravada(a);
         setForm(formDe(a));
       },
-      ok: `Avaliação da OS #${ordem.idExterno} salva.`,
+      ok: `Avaliação da OS #${ordem.idExterno} (${posLabels(ordem.posicoes)}) salva.`,
     });
   }
 
@@ -105,11 +105,12 @@ export function AjustesAvaliarOS({
               onChange={(e) => setNumero(e.target.value.replace(/\D/g, ""))}
             />
           </div>
-          {n && !ordem && (
+          {n && homonimas.length === 0 && (
             <div className="os-tv" style={{ marginTop: 10 }}>
               Nenhuma OS com o Nº {n}.
             </div>
           )}
+          <EscolhaIrma homonimas={homonimas} escolhida={escolhida} onEscolher={setEscolhida} />
         </div>
 
         {ordem && <CartaoOrdem ordem={ordem} detalhe={detalhe} data={data} />}

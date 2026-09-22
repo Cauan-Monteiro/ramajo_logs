@@ -4,6 +4,7 @@ import com.ramajo.logs.system.dtos.CargaDtos.CargaDTO;
 import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.AplicarDesidrogenizacaoDTO;
 import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.OrdemDesidrogenizacaoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.AcoplamentoDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.AdicionarPosicaoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.AvaliacaoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.SalvarAvaliacaoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.CancelarOrdemDTO;
@@ -81,14 +82,26 @@ public class OrdemServicoController {
         this.avaliacaoService = avaliacaoService;
     }
 
+    /**
+     * Nem sempre cria: se o Nº já for de uma OS daquele mesmo setor, o service
+     * vincula as cargas a ela em vez de abrir outra (ver criar()). O corpo é o
+     * mesmo nos dois casos — muda o status, 201 com Location para a OS nova e
+     * 200 para a que já existia, porque nada foi criado.
+     */
     @PostMapping
     public ResponseEntity<OrdemDetalheDTO> criar(@Valid @RequestBody CriarOrdemDTO dto) {
         OrdemServicoService.OrdemCriada criada = service.criar(
                 dto.clienteId(), dto.operadorId(), dto.idExterno(), dto.posicao(),
                 dto.cargaIds(), acopladasPorCarga(dto.acoplamentos()));
+
+        OrdemDetalheDTO corpo = OrdemDetalheDTO.from(criada.ordem(), criada.logsIniciados());
+
+        if (criada.vinculada()) {
+            return ResponseEntity.ok(corpo);
+        }
         return ResponseEntity
                 .created(URI.create("/api/ordens/" + criada.ordem().getId()))
-                .body(OrdemDetalheDTO.from(criada.ordem(), criada.logsIniciados()));
+                .body(corpo);
     }
 
     /**
@@ -119,13 +132,31 @@ public class OrdemServicoController {
         return OrdemDetalheDTO.from(service.buscar(id));
     }
 
-    // Correção pelo ADMIN (Nº, cliente, posição). PUT porque o corpo traz os
+    // Correção pelo ADMIN (Nº, cliente, setores). PUT porque o corpo traz os
     // três campos inteiros; cada um que muda vira linha no histórico abaixo.
+    // É por aqui que um setor é REMOVIDO — o que solta as cargas dele e
+    // cancela os passos abertos nelas; acrescentar tem rota própria.
     @PutMapping("/{id}")
     public OrdemDetalheDTO corrigir(@PathVariable Long id, @Valid @RequestBody CorrigirOrdemDTO dto) {
         return OrdemDetalheDTO.from(service.corrigir(
-                id, dto.operadorId(), dto.idExterno(), dto.clienteId(), dto.posicao(),
+                id, dto.operadorId(), dto.idExterno(), dto.clienteId(), dto.posicoes(),
                 dto.cargaIds(), dto.motivo()));
+    }
+
+    /**
+     * A OS passa a rodar TAMBÉM neste setor — a exceção das peças partidas
+     * entre dois setores.
+     *
+     * POST e não PUT: acrescenta um elemento, não substitui o conjunto (quem
+     * substitui é a correção acima). Sem gate de ADMIN de propósito — é
+     * trabalho de chão, como vincular carga, e não desfaz nada. Idempotente,
+     * daí 200 e não 201: repetir devolve a OS como está.
+     */
+    @PostMapping("/{id}/posicoes")
+    public OrdemDetalheDTO adicionarPosicao(
+            @PathVariable Long id, @Valid @RequestBody AdicionarPosicaoDTO dto) {
+        return OrdemDetalheDTO.from(
+                service.adicionarPosicao(id, dto.posicao(), dto.operadorId()));
     }
 
     @GetMapping("/{id}/alteracoes")

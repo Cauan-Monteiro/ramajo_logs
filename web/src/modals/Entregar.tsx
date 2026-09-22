@@ -1,7 +1,7 @@
 import * as api from "../api/endpoints";
 import { Corners } from "../components/Blueprint";
 import { Modal } from "../components/Modal";
-import { diaHora, osNum, posLabel } from "../domain/format";
+import { diaHora, osNum, posLabels } from "../domain/format";
 import type { Ctx } from "./tipos";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -64,8 +64,8 @@ export function EntregarModal(
             <div className="os-cli" style={{ fontSize: 20 }}>{ordem.clienteNome}</div>
           </div>
           <div>
-            <div className="os-tv">Posição</div>
-            <div className="os-cli" style={{ fontSize: 16 }}>{posLabel(ordem.posicao)}</div>
+            <div className="os-tv">{ordem.posicoes.length > 1 ? "Posições" : "Posição"}</div>
+            <div className="os-cli" style={{ fontSize: 16 }}>{posLabels(ordem.posicoes)}</div>
           </div>
           <div>
             <div className="os-tv">Expedida em</div>

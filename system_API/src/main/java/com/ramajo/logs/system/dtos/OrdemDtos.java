@@ -20,6 +20,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -162,19 +163,38 @@ public final class OrdemDtos {
     /**
      * Correção de OS pelo ADMIN. Os três campos vão inteiros — o que difere do
      * atual é o que muda —, e `idExterno` é obrigatório: a tela de correção
-     * acha a OS por ele, e esvaziá-lo a tiraria de lá.
+     * acha a OS por ele, e esvaziá-lo a tiraria de lá. (Acha pelo Nº e, havendo
+     * irmãs em outros setores, pergunta qual — o Nº sozinho não identifica.)
      *
-     * `cargaIds` são cargas LIVRES do setor novo, e só contam quando `posicao`
-     * muda: aí as cargas antigas saem e estas entram, na mesma transação.
-     * Ausente ou vazio, a OS fica sem carga no setor novo.
+     * `posicoes` vai INTEIRO, como os demais campos: é o conjunto final, não um
+     * delta. O que sair dele é removido — e remover solta as cargas daquele
+     * setor e cancela os passos abertos nelas. Vazio é recusado: uma OS sem
+     * setor não roda em lugar nenhum.
+     *
+     * `cargaIds` são cargas LIVRES a vincular, e só contam quando o conjunto
+     * muda: as dos setores removidos saem e estas entram, na mesma transação.
+     * Ausente ou vazio, a OS fica sem carga nos setores acrescentados.
      */
     public record CorrigirOrdemDTO(
             @NotNull Long operadorId,
             @NotNull Long idExterno,
             @NotNull Long clienteId,
-            @NotNull Posicao posicao,
+            @NotEmpty Set<@NotNull Posicao> posicoes,
             List<@NotNull Long> cargaIds,
             @NotBlank @Size(max = 500) String motivo) {
+    }
+
+    /**
+     * A OS passa a rodar TAMBÉM neste setor.
+     *
+     * Só o setor e quem o declarou: não há motivo a pedir, porque acrescentar
+     * não é corrigir um engano — é registrar que as peças desta ordem também
+     * estão do outro lado da fábrica. Quem remove é a correção de ADMIN, que
+     * aí sim exige motivo.
+     */
+    public record AdicionarPosicaoDTO(
+            @NotNull Long operadorId,
+            @NotNull Posicao posicao) {
     }
 
     /**
@@ -202,18 +222,24 @@ public final class OrdemDtos {
      *
      * `entreguePorNome` obriga a tocar a relação LAZY `entreguePor`; quem lista
      * traz o fetch resolvido (OrdemServicoRepository.listarParaResumo).
+     *
+     * `clienteId` além do nome: o Nº do ERP determina o cliente (ver
+     * OrdemServicoService.criar), e a tela de criação precisa do ID para montar
+     * o pedido a partir de uma OS homônima que já está na lista. O cliente já
+     * vem no fetch — não custa query nenhuma.
      */
     public record OrdemResumoDTO(
-            Long id, Long idExterno, String clienteNome,
-            Posicao posicao, boolean emProcesso, Instant iniciadaEm,
+            Long id, Long idExterno, Long clienteId, String clienteNome,
+            List<Posicao> posicoes, boolean emProcesso, Instant iniciadaEm,
             Instant finalizadaEm, boolean cancelada,
             Instant entregueEm, String entreguePorNome,
             int totalLotes, long lotesFinalizados) {
 
         public static OrdemResumoDTO from(OrdemServico os) {
             return new OrdemResumoDTO(
-                    os.getId(), os.getIdExterno(), os.getCliente().getNome(),
-                    os.getPosicao(), os.isEmProcesso(), os.getIniciadaEm(),
+                    os.getId(), os.getIdExterno(),
+                    os.getCliente().getId(), os.getCliente().getNome(),
+                    os.getPosicoesOrdenadas(), os.isEmProcesso(), os.getIniciadaEm(),
                     os.getFinalizadaEm(), os.isCancelada(),
                     os.getEntregueEm(),
                     os.getEntreguePor() != null ? os.getEntreguePor().getNome() : null,
@@ -223,7 +249,7 @@ public final class OrdemDtos {
 
     public record OrdemDetalheDTO(
             Long id, Long idExterno, Long clienteId, String clienteNome,
-            Posicao posicao, Instant iniciadaEm, Instant finalizadaEm,
+            List<Posicao> posicoes, Instant iniciadaEm, Instant finalizadaEm,
             boolean cancelada, boolean emProcesso,
             String iniciadaPorNome, String finalizadaPorNome,
             Instant entregueEm, String entreguePorNome,
@@ -245,7 +271,7 @@ public final class OrdemDtos {
             return new OrdemDetalheDTO(
                     os.getId(), os.getIdExterno(),
                     os.getCliente().getId(), os.getCliente().getNome(),
-                    os.getPosicao(), os.getIniciadaEm(), os.getFinalizadaEm(),
+                    os.getPosicoesOrdenadas(), os.getIniciadaEm(), os.getFinalizadaEm(),
                     os.isCancelada(), os.isEmProcesso(),
                     os.getIniciadaPor() != null ? os.getIniciadaPor().getNome() : null,
                     os.getFinalizadaPor() != null ? os.getFinalizadaPor().getNome() : null,

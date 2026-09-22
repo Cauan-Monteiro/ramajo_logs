@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { CargaDTO, OrdemResumoDTO, Posicao } from "../api/types";
-import { SEL_CHIP } from "../domain/derive";
+import { SEL_CHIP, rodaEm } from "../domain/derive";
 import { osNum, posLabel } from "../domain/format";
 import type { Ctx } from "./tipos";
 
@@ -84,7 +84,7 @@ export function AcoplarCargas({
     const caronas = new Set(ctx.data.cargas.flatMap((c) => c.ordensAcopladas));
     const abertas = ctx.data.ordens.filter((o) =>
       o.emProcesso &&
-      o.posicao === posicao &&
+      rodaEm(o, posicao) &&
       o.id !== osIdTitular &&
       !caronas.has(o.id));
     const marcadas = abertas.filter((o) => marcadasAqui.has(o.id));

@@ -2,8 +2,8 @@ import { useMemo, useState } from "react";
 import type { OperadorDTO, OrdemResumoDTO, Posicao } from "../api/types";
 import { Corners } from "../components/Blueprint";
 import { OrdenarMenu, useOrdenacao, type ColunaOrd } from "../components/Ordenar";
-import { SEL_SEG, aguardandoEntrega, foiEntregue, pillOrdemStyle } from "../domain/derive";
-import { POSICOES, diaHora, osNum, posLabel } from "../domain/format";
+import { SEL_SEG, aguardandoEntrega, foiEntregue, pillOrdemStyle, rodaEm } from "../domain/derive";
+import { POSICOES, diaHora, osNum, posLabels, posOrdenadas } from "../domain/format";
 import { Modais } from "../modals/Modais";
 import type { Ctx, ModalState } from "../modals/tipos";
 import type { AppData } from "../state/useAppData";
@@ -58,7 +58,7 @@ const COLUNAS: ColunaOrd<OrdemResumoDTO>[] = [
     valor: (o) => o.idExterno ?? o.id,
   },
   { chave: "cliente", label: "Cliente", ascPadrao: true, valor: (o) => o.clienteNome },
-  { chave: "posicao", label: "Posição", ascPadrao: true, valor: (o) => posLabel(o.posicao) },
+  { chave: "posicao", label: "Posição", ascPadrao: true, valor: (o) => posLabels(o.posicoes) },
   {
     chave: "expedida", label: "Expedida em", ascPadrao: false,  // mais recente primeiro
     valor: (o) => ms(o.finalizadaEm),
@@ -126,7 +126,7 @@ export function Entregas({
     const base = modo === "fila" ? fila : entregues;
     return ordenar(
       base.filter((o) => {
-        if (posicao !== "todas" && o.posicao !== posicao) return false;
+        if (posicao !== "todas" && !rodaEm(o, posicao)) return false;
         // Os dois campos CRUZAM-SE (E, não OU): quem carrega o caminhão tem em
         // mãos dois dados independentes — o Nº da OS e o cliente —, e o que
         // procura é a linha onde eles se encontram. Campo vazio não filtra.
@@ -164,7 +164,10 @@ export function Entregas({
 
   const ctx: Ctx = {
     data,
-    posicao: osAberta?.posicao ?? POSICOES[0].key,
+    posicao:
+      (posicao !== "todas" && osAberta && rodaEm(osAberta, posicao) ? posicao : null)
+      ?? (osAberta && posOrdenadas(osAberta.posicoes)[0])
+      ?? POSICOES[0].key,
     operador,
     isAdmin,
     ocupado,
@@ -269,7 +272,7 @@ export function Entregas({
             >
               <span className="os-num e-os">{osNum(o)}</span>
               <span className="os-cli e-cli">{o.clienteNome}</span>
-              <span className="os-tv e-pos">{posLabel(o.posicao)}</span>
+              <span className="os-tv e-pos">{posLabels(o.posicoes)}</span>
               <span className="os-tv e-exp">{diaHora(o.finalizadaEm)}</span>
               {modo === "entregues" ? (
                 <>

@@ -7,6 +7,7 @@ import java.util.Optional;
 import com.ramajo.logs.system.entities.Carga;
 import com.ramajo.logs.system.enums.Posicao;
 import com.ramajo.logs.system.enums.TipoCarga;
+import com.ramajo.logs.system.exceptions.CargaEmUsoException;
 import com.ramajo.logs.system.exceptions.RecursoNaoEncontradoException;
 import com.ramajo.logs.system.repositories.CargaRepository;
 import org.springframework.stereotype.Service;
@@ -32,9 +33,28 @@ public class CargaService {
         return cargaRepo.save(carga);
     }
 
+    /**
+     * Nome, tipo e tag mudam a qualquer momento — são rótulo. O SETOR não:
+     * é ele que escolhe o processo inicial no vínculo e que autoriza o processo
+     * de cada passo (OrdemServicoService.abrirLog). Trocá-lo com a carga
+     * vinculada moveria o chão debaixo de um passo já aberto, que continuaria
+     * a apontar para um processo do setor antigo sem que nenhuma validação
+     * voltasse a correr.
+     *
+     * Só recusa quando o setor REALMENTE muda: reenviar o mesmo valor é o que
+     * esta rota faz sempre (o corpo traz os campos inteiros, como em
+     * OrdemServicoService.corrigir), e recusá-lo impediria de corrigir o nome
+     * de uma carga em uso.
+     */
     @Transactional
     public Carga atualizar(Long id, String nome, TipoCarga tipo, Posicao posicao, String tagId) {
         Carga carga = buscar(id);
+
+        if (posicao != carga.getPosicao() && carga.getOrdemAtual() != null) {
+            throw new CargaEmUsoException(
+                    id, carga.getOrdemAtual().getId(), carga.getPosicao(), posicao);
+        }
+
         carga.setNome(nome);
         carga.setTipo(tipo);
         carga.setPosicao(posicao);

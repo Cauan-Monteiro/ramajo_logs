@@ -7,6 +7,7 @@ import static com.ramajo.logs.system.services.EscritorPlanilha.duracao;
 import static com.ramajo.logs.system.services.EscritorPlanilha.imprimivel;
 import static com.ramajo.logs.system.services.EscritorPlanilha.inserirLogo;
 import static com.ramajo.logs.system.services.EscritorPlanilha.nome;
+import static com.ramajo.logs.system.services.EscritorPlanilha.posicoes;
 import static com.ramajo.logs.system.services.EscritorPlanilha.rotulo;
 import static com.ramajo.logs.system.services.EscritorPlanilha.situacaoDaEtapa;
 import static com.ramajo.logs.system.services.EscritorPlanilha.situacaoDaOrdem;
@@ -36,6 +37,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -186,7 +188,28 @@ public class PlanilhaOrdemServicoService {
             porCarga.computeIfAbsent(log.getCarga().getId(), id -> new ArrayList<>())
                     .add(log);
         }
-        return porCarga;
+        return ordenarPorSetor(porCarga);
+    }
+
+    /**
+     * Os blocos agrupados por SETOR, na ordem canônica das posições.
+     *
+     * Cada bloco é uma carga, e cada carga está num setor só — então numa OS
+     * que roda em dois (V19) isto junta o trabalho de cada lado da fábrica em
+     * vez de o intercalar, que é como se lê o relatório dela.
+     *
+     * Ordenação ESTÁVEL e só pelo setor: dentro de um mesmo setor os blocos
+     * ficam na ordem em que já estavam (cronológica, a do primeiro passo de
+     * cada carga). Numa OS de um setor só — o caso normal — todas as cargas
+     * empatam e a ordem não muda absolutamente nada.
+     */
+    private Map<Long, List<Log>> ordenarPorSetor(Map<Long, List<Log>> porCarga) {
+        Map<Long, List<Log>> ordenado = new LinkedHashMap<>();
+        porCarga.entrySet().stream()
+                .sorted(Comparator.comparingInt(
+                        entrada -> entrada.getValue().get(0).getCarga().getPosicao().ordinal()))
+                .forEach(entrada -> ordenado.put(entrada.getKey(), entrada.getValue()));
+        return ordenado;
     }
 
     private void titulo(XSSFWorkbook wb, Sheet aba, EstilosPlanilha e, int[] linha) {
@@ -213,8 +236,11 @@ public class PlanilhaOrdemServicoService {
                 "ID externo", os.getIdExterno() == null ? "" : String.valueOf(os.getIdExterno()));
 
         Row r = aba.createRow(linha[0] + 2);
-        rotulo(r, e, 0, "Posição");
-        valorTexto(r, e, 1, os.getPosicao().name());
+        // Plural quando a OS roda em mais de um setor (V19). O bloco de etapas
+        // abaixo já separa o trabalho por carga, e cada carga traz a sua
+        // posição — logo o detalhe por setor já se lê sem mudança nenhuma.
+        rotulo(r, e, 0, os.getPosicoes().size() > 1 ? "Posições" : "Posição");
+        valorTexto(r, e, 1, posicoes(os));
         rotulo(r, e, 3, "Duração total");
         valorDuracao(r, e, 4, DataHoraBr.duracaoNumerica(os.getIniciadaEm(), os.getFinalizadaEm()));
         mesclarValores(aba, linha[0] + 2);

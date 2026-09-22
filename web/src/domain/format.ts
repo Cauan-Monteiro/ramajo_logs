@@ -45,6 +45,33 @@ export function posLabel(k: Posicao | null | undefined): string {
   return POSICOES.find((p) => p.key === k)?.label ?? String(k ?? "—");
 }
 
+/**
+ * As posições na ordem canônica de POSICOES — a mesma do backend
+ * (OrdemServico.getPosicoesOrdenadas). A API já manda assim; reordenar aqui é
+ * barato e garante que uma lista montada no cliente não desminta a de lá.
+ */
+export const posOrdenadas = (ps: Posicao[]): Posicao[] =>
+  POSICOES.map((p) => p.key).filter((k) => ps.includes(k));
+
+/**
+ * Os setores de uma OS como rótulo: "Pendurado" no caso normal, "Pendurado +
+ * Automática" na OS que roda em dois.
+ *
+ * O "+" e não a vírgula de propósito: são dois sítios ao mesmo tempo, não uma
+ * enumeração. É também o que as colunas ordenáveis usam como valor — ordenar
+ * por este texto agrupa as OS de dois setores junto das suas iguais, em vez de
+ * as baralhar com as de um setor só.
+ */
+export const posLabels = (ps: Posicao[] | null | undefined): string =>
+  !ps || ps.length === 0 ? "—" : posOrdenadas(ps).map(posLabel).join(" + ");
+
+/**
+ * O valor de POSICAO no histórico de alterações vem como o backend o gravou:
+ * "PENDURADO, AUTOMATICA". Traduz cada parte sem perder as que não reconhecer.
+ */
+export const posLabelLista = (texto: string | null | undefined): string =>
+  !texto ? "—" : texto.split(",").map((s) => posLabel(s.trim() as Posicao)).join(" + ");
+
 export const ETAPAS: { key: Etapa; label: string }[] = [
   { key: "PRE_TRATAMENTO", label: "Pré-tratamento" },
   { key: "TRATAMENTO", label: "Tratamento" },

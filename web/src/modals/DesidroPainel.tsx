@@ -4,7 +4,7 @@ import { Modal, Vazio } from "../components/Modal";
 import {
   COR_NIVEL, JANELA_ESTOURADA_MIN, ROTULO_NIVEL, emCurso, nivel, porUrgencia, progresso,
 } from "../domain/desidro";
-import { hhmm, minutos, osNum, posLabel } from "../domain/format";
+import { hhmm, minutos, osNum, posLabels } from "../domain/format";
 import { useAgora } from "../state/useAgora";
 import type { Ctx } from "./tipos";
 
@@ -77,7 +77,7 @@ function LinhaDesidro({
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="os-cli">{d.nome}</div>
         <div className="os-tv">
-          {posLabel(d.posicao)} · {hhmm(d.iniciadaEm)} → {hhmm(d.finalizadaEm)}
+          {posLabels(d.posicoes)} · {hhmm(d.iniciadaEm)} → {hhmm(d.finalizadaEm)}
         </div>
 
         {/* A barra repete em forma o que o número diz em texto: de relance, o
