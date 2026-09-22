@@ -33,6 +33,12 @@ public interface LogRepository extends JpaRepository<Log, UUID> {
     // apagar a linha do operador levaria o passo junto (ou estouraria a FK).
     long countByResponsavelId(Long operadorId);
 
+    // O mesmo pelo outro lado: quantos passos este operador FECHOU. Desde a
+    // V21 finalizado_por_id também referencia operadores, então apagar a linha
+    // do operador estouraria a FK — a recusa de OperadorService.excluir soma
+    // as duas contagens.
+    long countByFinalizadoPorId(Long operadorId);
+
     // O passo em aberto da carga, se houver. ux_logs_carga_aberto garante que
     // é no máximo um, então Optional (e não List) é o tipo honesto. Devolve a
     // entidade, não um boolean, para o erro poder citar o passo que trava.
@@ -49,6 +55,7 @@ public interface LogRepository extends JpaRepository<Log, UUID> {
               join fetch l.carga
               join fetch l.processo
               join fetch l.responsavel
+              left join fetch l.finalizadoPor
              where l.ordemServico.id = :osId
              order by l.iniciadoEm asc, l.id asc
             """)
@@ -65,6 +72,7 @@ public interface LogRepository extends JpaRepository<Log, UUID> {
               join fetch l.carga
               join fetch l.processo
               join fetch l.responsavel
+              left join fetch l.finalizadoPor
              where l.ordemServico.id in :ids
              order by l.ordemServico.id asc, l.iniciadoEm asc, l.id asc
             """)
@@ -84,6 +92,7 @@ public interface LogRepository extends JpaRepository<Log, UUID> {
               join fetch l.carga
               join fetch l.processo
               join fetch l.responsavel
+              left join fetch l.finalizadoPor
               join fetch l.ordemServico o
               join fetch o.cliente
              where :osId member of l.ordensAcopladas
@@ -99,6 +108,7 @@ public interface LogRepository extends JpaRepository<Log, UUID> {
               join fetch l.carga
               join fetch l.processo
               join fetch l.responsavel
+              left join fetch l.finalizadoPor
               join fetch l.ordemServico o
               join fetch o.cliente
              where exists (select a from Log l2 join l2.ordensAcopladas a

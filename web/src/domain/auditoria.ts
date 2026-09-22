@@ -59,10 +59,10 @@ export interface Evento {
   processoDescricao: string | null;
   etapa: Etapa | null;
   /**
-   * Quem assinou. `null` quando a API não regista o autor — é o caso de
-   * ETAPA_FECHADA: `PATCH /api/ordens/logs/{id}/finalizar` não recebe operador
-   * e `LogDTO` não tem `finalizadoPorNome`. Nunca preencher com o responsável
-   * da abertura: seria inventar uma assinatura que ninguém deu.
+   * Quem assinou. `null` só quando não há assinatura gravada — hoje isso é o
+   * histórico anterior à V21, em que o fecho de etapa não registava o autor.
+   * Nunca preencher com o responsável da abertura: seria inventar uma
+   * assinatura que ninguém deu.
    */
   autor: string | null;
   duracaoMs: number | null;
@@ -72,7 +72,10 @@ export interface Barra {
   logId: string;
   cargaNome: string;
   processoDescricao: string;
+  /** Quem abriu a etapa. Quem a fechou está em `finalizadoPorNome`. */
   responsavelNome: string;
+  /** Quem fechou; `null` na etapa aberta e no histórico anterior à V21. */
+  finalizadoPorNome: string | null;
   etapa: Etapa | null;
   /** Início/fim reais, sem corte — é o que o painel de detalhe mostra. */
   iniciadoEm: string;
@@ -288,7 +291,9 @@ export function eventosDoDia(f: FonteDia): Evento[] {
           id: `LOG_FIM:${l.id}`,
           tipo: "ETAPA_FECHADA",
           em: ate,
-          autor: null, // ver o comentário de `Evento.autor`
+          // Quem fechou, que raramente é quem abriu: fecham a etapa seguinte,
+          // o encerramento em massa, o acoplamento ou a expedição.
+          autor: l.finalizadoPorNome,
           duracaoMs: de === null ? null : ate - de,
         }, acoplada);
       }
@@ -342,6 +347,7 @@ export function faixasDoDia(f: FonteDia): Grupo[] {
         cargaNome: l.cargaNome,
         processoDescricao: l.processoDescricao,
         responsavelNome: l.responsavelNome,
+        finalizadoPorNome: l.finalizadoPorNome,
         etapa: etapaDoLog(l, f.processos),
         iniciadoEm: l.iniciadoEm,
         finalizadoEm: l.finalizadoEm,
@@ -426,6 +432,12 @@ export function fracao(t: number, de: number, ate: number): number {
 export interface ResumoOperador {
   nome: string;
   etapasAbertas: number;
+  /**
+   * Etapas que ele FECHOU — não as que abriu e terminaram. As duas contagens
+   * convivem porque são trabalhos diferentes: quem abre põe a carga no tanque,
+   * quem fecha tira-a de lá, e é raro ser a mesma pessoa.
+   */
+  etapasFechadas: number;
   osAbertas: number;
   osEncerradas: number;
   lotes: number;
@@ -436,16 +448,19 @@ export interface ResumoOperador {
  * Quem fez o quê. Agrupa por *nome* porque é só isso que os DTOs trazem —
  * `responsavelNome`, `iniciadaPorNome`, `finalizadaPorNome` e
  * `finalizadoPorNome` nunca vêm acompanhados do id do operador. Eventos sem
- * autor (o fecho de etapa) ficam de fora: não há a quem atribuí-los.
+ * autor ficam de fora: não há a quem atribuí-los, e hoje isso é só o fecho de
+ * etapa anterior à V21.
  */
 export function porOperador(eventos: Evento[]): ResumoOperador[] {
   const mapa = new Map<string, ResumoOperador>();
   for (const e of eventos) {
     if (!e.autor) continue;
     const r = mapa.get(e.autor) ?? {
-      nome: e.autor, etapasAbertas: 0, osAbertas: 0, osEncerradas: 0, lotes: 0, total: 0,
+      nome: e.autor, etapasAbertas: 0, etapasFechadas: 0,
+      osAbertas: 0, osEncerradas: 0, lotes: 0, total: 0,
     };
     if (e.tipo === "ETAPA_ABERTA") r.etapasAbertas++;
+    else if (e.tipo === "ETAPA_FECHADA") r.etapasFechadas++;
     else if (e.tipo === "OS_ABERTA") r.osAbertas++;
     else if (e.tipo === "OS_EXPEDIDA" || e.tipo === "OS_CANCELADA") r.osEncerradas++;
     else if (e.tipo === "LOTE_FECHADO") r.lotes++;
@@ -593,7 +608,10 @@ export function rankingComCadastro(
   for (const nome of nomes) {
     if (vistos.has(nome)) continue;
     vistos.add(nome);
-    out.push({ nome, etapasAbertas: 0, osAbertas: 0, osEncerradas: 0, lotes: 0, total: 0 });
+    out.push({
+      nome, etapasAbertas: 0, etapasFechadas: 0,
+      osAbertas: 0, osEncerradas: 0, lotes: 0, total: 0,
+    });
   }
   return out.sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome, "pt-BR"));
 }
@@ -615,11 +633,17 @@ export interface AtividadeOperador {
   /** OS distintas em que mexeu. */
   osTocadas: number;
   /**
-   * Etapas que ele **abriu** e que já fecharam. Não é "etapas que ele
-   * concluiu": a API não regista quem fecha um passo (ver `Evento.autor`), por
-   * isso o fecho pode ter sido de outra pessoa.
+   * Etapas que ele **abriu** e que já fecharam. Não é "etapas que ele fechou":
+   * quem carregou no botão do fecho pode ter sido outra pessoa, e essas estão
+   * em `etapasFechadas`.
    */
   etapasConcluidas: number;
+  /**
+   * Etapas que ele **fechou**, tenha-as aberto ou não. Sai dos eventos e não
+   * das barras: a barra pertence ao swimlane de quem abriu. Zero no histórico
+   * anterior à V21, quando o autor do fecho não era registado.
+   */
+  etapasFechadas: number;
 }
 
 /**
@@ -669,5 +693,6 @@ export function atividadeDoOperador(
     cargas,
     osTocadas: podados.length,
     etapasConcluidas,
+    etapasFechadas: meus.filter((e) => e.tipo === "ETAPA_FECHADA").length,
   };
 }

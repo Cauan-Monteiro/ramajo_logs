@@ -179,7 +179,7 @@ function Autor({ nome }: { nome: string | null }) {
   return nome ? (
     <span className="aud-quem">{nome}</span>
   ) : (
-    <span className="aud-quem sem" title="A API não regista o autor desta ação">—</span>
+    <span className="aud-quem sem" title="Ação sem autor registado">—</span>
   );
 }
 
@@ -197,8 +197,8 @@ function QuemFez({ operadores }: { operadores: ReturnType<typeof porOperador> })
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ font: "600 16px 'Barlow Condensed'" }}>{o.nome}</div>
             <div className="os-tv">
-              {o.etapasAbertas} etapas · {o.osAbertas} OS abertas · {o.lotes} lotes ·{" "}
-              {o.osEncerradas} expedições
+              {o.etapasAbertas} etapas abertas · {o.etapasFechadas} fechadas ·{" "}
+              {o.osAbertas} OS abertas · {o.lotes} lotes · {o.osEncerradas} expedições
             </div>
             <div className="aud-op-bar">
               <i style={{ width: `${(o.total / topo) * 100}%` }} />

@@ -117,10 +117,17 @@ class PlanilhaOrdemServicoServiceTest {
             // o subtotal é fórmula, e a faixa somada exclui a linha cancelada
             Cell subtotal = primeiroSubtotal(relatorio);
             assertThat(subtotal.getCellType()).isEqualTo(CellType.FORMULA);
-            assertThat(subtotal.getCellFormula()).matches("SUM\\(F\\d+:F\\d+\\)");
+            assertThat(subtotal.getCellFormula()).matches("SUM\\(G\\d+:G\\d+\\)");
 
             // etapa cancelada e etapa em andamento não escrevem duração
             assertThat(celulasDeDuracaoPreenchidas(relatorio)).isEqualTo(2);
+
+            // quem abriu e quem fechou são pessoas diferentes, e a planilha
+            // mostra as duas; a etapa em andamento não tem quem a fechasse
+            assertThat(cabecalho(relatorio)).containsSubsequence(
+                    "Responsável", "Início", "Fim", "Fechado por", "Duração");
+            assertThat(colunaDaEtapa(relatorio, 2)).contains("João").doesNotContain("Maria");
+            assertThat(colunaDaEtapa(relatorio, 5)).contains("Maria").doesNotContain("João");
 
             // o logo do classpath entra como figura ancorada no topo
             assertThat(relatorio.getDrawingPatriarch().getShapes()).hasSize(1);
@@ -170,10 +177,10 @@ class PlanilhaOrdemServicoServiceTest {
 
             // A aba plana traz os dois passos, separados pela última coluna.
             Sheet dados = wb.getSheet("Dados");
-            assertThat(dados.getRow(0).getCell(11).getStringCellValue()).isEqualTo("Acoplada à OS");
+            assertThat(dados.getRow(0).getCell(12).getStringCellValue()).isEqualTo("Acoplada à OS");
             assertThat(dados.getLastRowNum()).isEqualTo(2);
-            assertThat(dados.getRow(1).getCell(11).getCellType()).isEqualTo(CellType.BLANK);
-            assertThat(dados.getRow(2).getCell(11).getStringCellValue()).isEqualTo("99");
+            assertThat(dados.getRow(1).getCell(12).getCellType()).isEqualTo(CellType.BLANK);
+            assertThat(dados.getRow(2).getCell(12).getStringCellValue()).isEqualTo("99");
         }
     }
 
@@ -292,9 +299,40 @@ class PlanilhaOrdemServicoServiceTest {
                 .toList();
     }
 
+    /** Os títulos da primeira tabela de etapas da aba. */
+    private List<String> cabecalho(Sheet aba) {
+        for (Row r : aba) {
+            Cell c = r.getCell(0);
+            if (c != null && c.getCellType() == CellType.STRING
+                    && "Processo".equals(c.getStringCellValue())) {
+                List<String> titulos = new java.util.ArrayList<>();
+                for (Cell t : r) {
+                    titulos.add(t.getStringCellValue());
+                }
+                return titulos;
+            }
+        }
+        throw new AssertionError("cabeçalho das etapas não encontrado");
+    }
+
+    /**
+     * Os valores de uma coluna nas LINHAS DE ETAPA — as que têm processo na
+     * coluna 0 e não são o cabeçalho, o subtítulo da carga nem o subtotal.
+     */
+    private List<String> colunaDaEtapa(Sheet aba, int coluna) {
+        List<String> valores = new java.util.ArrayList<>();
+        for (Row r : aba) {
+            Cell fim = r.getCell(4);
+            Cell alvo = r.getCell(coluna);
+            if (fim == null || fim.getCellType() != CellType.NUMERIC || alvo == null) continue;
+            valores.add(alvo.getStringCellValue());
+        }
+        return valores;
+    }
+
     private Cell primeiroSubtotal(Sheet aba) {
         for (Row r : aba) {
-            Cell c = r.getCell(5);
+            Cell c = r.getCell(6);
             if (c != null && c.getCellType() == CellType.FORMULA) {
                 return c;
             }
@@ -305,9 +343,9 @@ class PlanilhaOrdemServicoServiceTest {
     private long celulasDeDuracaoPreenchidas(Sheet aba) {
         long total = 0;
         for (Row r : aba) {
-            Cell c = r.getCell(5);
-            if (c != null && c.getCellType() == CellType.NUMERIC && r.getCell(6) != null
-                    && r.getCell(6).getCellType() == CellType.STRING) {
+            Cell c = r.getCell(6);
+            if (c != null && c.getCellType() == CellType.NUMERIC && r.getCell(7) != null
+                    && r.getCell(7).getCellType() == CellType.STRING) {
                 total++;
             }
         }
@@ -333,7 +371,13 @@ class PlanilhaOrdemServicoServiceTest {
         return c;
     }
 
-    /** minutoInicio/minutoFim relativos a T0; fim negativo = etapa em andamento. */
+    /**
+     * minutoInicio/minutoFim relativos a T0; fim negativo = etapa em andamento.
+     *
+     * Quem fecha é a MARIA, nunca o `op` que abriu: é o caso comum no chão de
+     * fábrica (a etapa seguinte, ou o encerramento em massa, fecham o passo de
+     * outrem) e é o que faz as duas colunas se distinguirem na planilha.
+     */
     private Log log(OrdemServico os, Operador op, Carga carga, String processo,
                     Etapa etapa, int minutoInicio, int minutoFim, boolean cancelado)
             throws Exception {
@@ -342,6 +386,7 @@ class PlanilhaOrdemServicoServiceTest {
         set(l, "iniciadoEm", T0.plus(minutoInicio, ChronoUnit.MINUTES));
         if (minutoFim >= 0) {
             l.setFinalizadoEm(T0.plus(minutoFim, ChronoUnit.MINUTES));
+            l.setFinalizadoPor(new Operador("Maria", Permissao.FUNCIONARIO, "T2"));
         }
         l.setCancelado(cancelado);
         return l;

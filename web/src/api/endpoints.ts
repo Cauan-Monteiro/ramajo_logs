@@ -194,8 +194,12 @@ export const iniciarLog = (
 ) => http.post<LogDTO>(`/api/ordens/${osId}/logs`,
   { cargaId, processoId, responsavelId });
 
-export const finalizarLog = (logId: string) =>
-  http.patch<LogDTO>(`/api/ordens/logs/${logId}/finalizar`);
+/**
+ * Fecha a etapa. `operadorId` é quem FECHA, e o passo o guarda ao lado de quem
+ * o abriu: quase nunca são a mesma pessoa.
+ */
+export const finalizarLog = (logId: string, operadorId: number) =>
+  http.patch<LogDTO>(`/api/ordens/logs/${logId}/finalizar`, { operadorId });
 
 /**
  * Acopla uma OS à CARGA: as peças dela entram no tanque onde as da titular já
@@ -206,8 +210,8 @@ export const finalizarLog = (logId: string) =>
  * saíram da carga dela. Isso NÃO se desfaz — `logs` é append-only, então
  * desacoplar depois não reabre o passo fechado aqui.
  */
-export const acoplarNaCarga = (cargaId: number, osId: number) =>
-  http.post<CargaDTO>(`/api/ordens/cargas/${cargaId}/acopladas/${osId}`);
+export const acoplarNaCarga = (cargaId: number, osId: number, operadorId: number) =>
+  http.post<CargaDTO>(`/api/ordens/cargas/${cargaId}/acopladas/${osId}`, { operadorId });
 
 /**
  * Desfaz um acoplamento: as peças daquela OS não estão nesta carga. Sai da

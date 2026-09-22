@@ -211,7 +211,7 @@ public class OrdemServicoService {
         // Depois do laço, não dentro dele: acoplarNaCarga exige a carga já
         // vinculada, e o passo inicial já aberto é onde a carona entra. Uma
         // carga que não está nesta OS é recusada lá com CARGA_NAO_VINCULADA.
-        aplicarAcoplamentos(acopladasPorCarga);
+        aplicarAcoplamentos(acopladasPorCarga, operador);
 
         return new OrdemCriada(salva, logs, false);
 
@@ -248,7 +248,7 @@ public class OrdemServicoService {
             }
         }
 
-        aplicarAcoplamentos(acopladasPorCarga);
+        aplicarAcoplamentos(acopladasPorCarga, operador);
 
         return new OrdemCriada(os, logs, true);
     }
@@ -257,14 +257,17 @@ public class OrdemServicoService {
      * Aplica um mapa carga -> OS caronas, ignorando entradas vazias. Serve à
      * criação da OS e ao vínculo de carga: nos dois casos a composição chega
      * junto com o vínculo, e é uma chamada a acoplarNaCarga por par.
+     *
+     * `op` é quem faz o vínculo, e é em nome dele que os passos abertos das
+     * caronas fecham lá dentro.
      */
-    private void aplicarAcoplamentos(Map<Long, List<Long>> acopladasPorCarga){
+    private void aplicarAcoplamentos(Map<Long, List<Long>> acopladasPorCarga, Operador op){
         if (acopladasPorCarga == null) return;
 
         acopladasPorCarga.forEach((cargaId, osIds) -> {
             if (osIds == null) return;
             for (Long osId : new LinkedHashSet<>(osIds)){
-                acoplarNaCarga(cargaId, osId);
+                acoplar(cargaId, osId, op);
             }
         });
     }
@@ -286,18 +289,21 @@ public class OrdemServicoService {
     @Transactional
     public void liberarCargas(Long osId, Long operadorId, List<Long> cargaIds){
         carregarAberta(osId);
-        exigirOperadorAtivo(operadorId);
+        Operador op = exigirOperadorAtivo(operadorId);
 
         // Um instante só para todos os passos: são o mesmo evento, e datas
         // diferentes sujariam o relatório de duração.
-        liberar(osId, cargaIds, Instant.now());
+        liberar(osId, cargaIds, Instant.now(), op);
     }
 
     /**
      * O laço de liberação em si, compartilhado com finalizarLote(). `cargaIds`
      * nulo é no-op — a chamada "só avança o lote" passa por aqui sem efeito.
+     *
+     * `op` é quem assina o fecho dos passos: quem carregou em "encerrar
+     * etapas" ou em "expedição parcial", não quem os tinha aberto.
      */
-    private void liberar(Long osId, List<Long> cargaIds, Instant at){
+    private void liberar(Long osId, List<Long> cargaIds, Instant at, Operador op){
         if (cargaIds == null) return;
 
         for (Long cargaId : new LinkedHashSet<>(cargaIds)){
@@ -314,7 +320,7 @@ public class OrdemServicoService {
             // qualquer passo futuro, em qualquer OS. Mesma regra de
             // finalizar(); nem toda carga tem um, daí o ifPresent.
             logRepo.findByCargaIdAndFinalizadoEmIsNull(cargaId)
-                    .ifPresent(aberto -> fecharPasso(aberto, at));
+                    .ifPresent(aberto -> fecharPasso(aberto, at, op));
 
             // Encerrar a etapa desfaz a composição: as peças da carona saem
             // do tanque junto com as da titular, e a carga volta ao pool
@@ -374,7 +380,7 @@ public class OrdemServicoService {
         // o mesmo evento, e datas diferentes sujariam o relatório de duração.
         Instant at = Instant.now();
 
-        liberar(osId, cargaIds, at);
+        liberar(osId, cargaIds, at, op);
 
         Lote atual = loteRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(osId)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Lote aberto da OS", osId));
@@ -420,7 +426,7 @@ public class OrdemServicoService {
         // além de a gravar na carga, e assim a etapa inicial já vale para
         // todas as OS envolvidas.
         aplicarAcoplamentos(Map.of(cargaId, ordensAcopladasIds == null
-                ? List.<Long>of() : ordensAcopladasIds));
+                ? List.<Long>of() : ordensAcopladasIds), operador);
 
         return passo;
     }
@@ -655,7 +661,7 @@ public class OrdemServicoService {
         for (Log aberto : logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(osId)){
             if (!removidas.contains(aberto.getCarga().getPosicao())) continue;
             aberto.setCancelado(true);
-            fecharPasso(aberto, at);
+            fecharPasso(aberto, at, admin);
         }
         // Os UPDATEs dos passos antes dos INSERTs dos novos: no flush
         // automático o Hibernate faria o contrário. Hoje as cargas são outras e
@@ -833,13 +839,11 @@ public class OrdemServicoService {
         // Todas as recusas ficam ACIMA daqui de propósito: não se encerra o
         // passo anterior de uma movimentação que vai ser rejeitada.
         logRepo.findByCargaIdAndFinalizadoEmIsNull(carga.getId()).ifPresent(anterior -> {
-            // O relógio do JVM pode estar atrás do relógio do Postgres, que é
-            // quem carimba iniciado_em (clock_timestamp). Sem este piso,
-            // ck_logs_janela rejeitaria finalizado_em < iniciado_em e a
-            // movimentação morreria num 500. Duração zero é melhor que erro.
-            Instant fim = Instant.now();
-            anterior.setFinalizadoEm(
-                    fim.isBefore(anterior.getIniciadoEm()) ? anterior.getIniciadoEm() : fim);
+            // Fecha em nome de quem abre o passo NOVO: é quem está a mover a
+            // carga, e é o gesto dele que encerra o anterior. fecharPasso trata
+            // do clock skew (o relógio do JVM pode estar atrás do do Postgres,
+            // que carimba iniciado_em).
+            fecharPasso(anterior, Instant.now(), op);
 
             // O flush é OBRIGATÓRIO, não é otimização — mesmo motivo do
             // loteRepo.flush() em finalizarLote(). No flush automático o
@@ -992,8 +996,13 @@ public class OrdemServicoService {
                 .orElseThrow(()-> new RecursoNaoEncontradoException("Operador com tag", tagId));
     }
 
+    /**
+     * O fecho à mão, da lista de etapas em andamento. `operadorId` é quem
+     * carregou no botão — não se deduz do responsável da abertura, que muitas
+     * vezes é outra pessoa (foi ele que abriu, não que fechou).
+     */
     @Transactional
-    public Log finalizarLog(UUID logId){
+    public Log finalizarLog(UUID logId, Long operadorId){
         Log log = logRepo.findById(logId)
                 .orElseThrow(()-> new RecursoNaoEncontradoException("Log", logId));
 
@@ -1001,12 +1010,14 @@ public class OrdemServicoService {
             throw new PassoJaFinalizadoException(logId);
         }
 
+        Operador op = exigirOperadorAtivo(operadorId);
+
         Instant at = Instant.now();
         if (at.isBefore(log.getIniciadoEm())){
             throw new IllegalArgumentException("O Log não pode ser finalizado agora, verifique os fusos!");
         }
 
-        log.setFinalizadoEm(at);
+        fecharPasso(log, at, op);
         return log;
     }
 
@@ -1028,7 +1039,18 @@ public class OrdemServicoService {
      * reabre o passo que foi fechado aqui.
      */
     @Transactional
-    public Carga acoplarNaCarga(Long cargaId, Long osId){
+    public Carga acoplarNaCarga(Long cargaId, Long osId, Long operadorId){
+        return acoplar(cargaId, osId, exigirOperadorAtivo(operadorId));
+    }
+
+    /**
+     * O acoplamento em si, com o operador já resolvido: é assim que a criação
+     * da OS e o vínculo de carga o chamam, sem reabrir o cadastro do operador
+     * a cada par.
+     *
+     * `op` assina o fecho dos passos da carona — o gesto de acoplar é dele.
+     */
+    private Carga acoplar(Long cargaId, Long osId, Operador op){
         Carga carga = cargaRepo.findById(cargaId)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Carga", cargaId));
 
@@ -1086,7 +1108,7 @@ public class OrdemServicoService {
         Instant at = Instant.now();
         logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(osId).stream()
                 .filter(aberto -> aberto.getCarga().getPosicao() == carga.getPosicao())
-                .forEach(aberto -> fecharPasso(aberto, at));
+                .forEach(aberto -> fecharPasso(aberto, at, op));
 
         carga.getOrdensAcopladas().add(osId);
 
@@ -1126,12 +1148,18 @@ public class OrdemServicoService {
     }
 
     /**
-     * Fecha o intervalo de um passo protegendo contra clock skew: relógio
-     * atrasado devolveria um `finalizadoEm` anterior ao `iniciadoEm` e o
-     * ck_logs_janela recusaria o UPDATE. Mesmo tratamento de abrirLog.
+     * O ÚNICO lugar que fecha um passo. Carimba a hora e quem fechou — que
+     * quase nunca é quem abriu: fecha a etapa seguinte, a liberação da carga,
+     * o acoplamento, a expedição ou o cancelamento da OS, cada um em nome de
+     * quem estava no terminal.
+     *
+     * Protege contra clock skew: relógio atrasado devolveria um `finalizadoEm`
+     * anterior ao `iniciadoEm` e o ck_logs_janela recusaria o UPDATE. Mesmo
+     * tratamento de abrirLog.
      */
-    private void fecharPasso(Log log, Instant at){
+    private void fecharPasso(Log log, Instant at, Operador por){
         log.setFinalizadoEm(at.isBefore(log.getIniciadoEm()) ? log.getIniciadoEm() : at);
+        log.setFinalizadoPor(por);
     }
 
     @Transactional
@@ -1165,7 +1193,7 @@ public class OrdemServicoService {
         // ux_logs_carga_aberto ele impediria a carga — já liberada logo
         // abaixo — de iniciar qualquer passo futuro, em qualquer OS.
         for(Log aberto : logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(osId)){
-            fecharPasso(aberto, at);
+            fecharPasso(aberto, at, op);
         }
 
         // Antes de soltar: quais cargas estavam aqui. É o único registo do
@@ -1358,7 +1386,7 @@ public class OrdemServicoService {
         // senão a carga fica com um passo aberto eterno.
         for(Log aberto : logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(osId)){
             aberto.setCancelado(true);
-            fecharPasso(aberto, at);
+            fecharPasso(aberto, at, op);
         }
 
         for(Carga c : os.getCargas()){

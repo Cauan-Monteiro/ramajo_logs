@@ -174,9 +174,19 @@ export interface LogDTO {
   cargaId: number;
   cargaNome: string;
   processoDescricao: string;
+  /** Quem ABRIU o passo. Quem o fechou está em `finalizadoPorNome`. */
   responsavelNome: string;
   iniciadoEm: string;
   finalizadoEm: string | null;
+  /**
+   * Quem fechou a etapa — a etapa seguinte, o encerramento em massa, o
+   * acoplamento, a expedição ou o cancelamento fecham em nome de quem estava
+   * no terminal, e raramente é quem abriu.
+   *
+   * `null` no passo ainda aberto e nos fechados antes da V21, quando o autor
+   * do fecho não era registado.
+   */
+  finalizadoPorNome: string | null;
   cancelado: boolean;
   /**
    * Outras OS cujas peças estavam na MESMA carga neste passo.

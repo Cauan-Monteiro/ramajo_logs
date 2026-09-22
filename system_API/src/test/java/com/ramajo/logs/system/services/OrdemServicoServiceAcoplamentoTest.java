@@ -88,7 +88,8 @@ class OrdemServicoServiceAcoplamentoTest {
                 .thenReturn(List.of(passoDaCarona));
         when(logRepo.findByCargaIdAndFinalizadoEmIsNull(10L)).thenReturn(Optional.empty());
 
-        assertThat(service.acoplarNaCarga(10L, 2L)).isSameAs(carga);
+        operadorNoTerminal();
+        assertThat(service.acoplarNaCarga(10L, 2L, 7L)).isSameAs(carga);
 
         assertThat(carga.getOrdensAcopladas()).containsExactly(2L);
         // As peças saíram da carga própria: o passo dela não continua correndo.
@@ -114,7 +115,8 @@ class OrdemServicoServiceAcoplamentoTest {
         when(logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(2L)).thenReturn(List.of());
         when(logRepo.findByCargaIdAndFinalizadoEmIsNull(10L)).thenReturn(Optional.of(emCurso));
 
-        service.acoplarNaCarga(10L, 2L);
+        operadorNoTerminal();
+        service.acoplarNaCarga(10L, 2L, 7L);
 
         assertThat(emCurso.getOrdensAcopladas()).containsExactly(2L);
         assertThat(emCurso.getFinalizadoEm()).isNull();
@@ -136,7 +138,8 @@ class OrdemServicoServiceAcoplamentoTest {
         when(logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(2L)).thenReturn(List.of());
         when(logRepo.findByCargaIdAndFinalizadoEmIsNull(10L)).thenReturn(Optional.of(cancelado));
 
-        service.acoplarNaCarga(10L, 2L);
+        operadorNoTerminal();
+        service.acoplarNaCarga(10L, 2L, 7L);
 
         // A carga recebe a carona — o próximo passo real será dela também.
         assertThat(carga.getOrdensAcopladas()).containsExactly(2L);
@@ -156,7 +159,8 @@ class OrdemServicoServiceAcoplamentoTest {
 
         when(cargaRepo.findById(10L)).thenReturn(Optional.of(carga));
 
-        assertThat(service.acoplarNaCarga(10L, 2L)).isSameAs(carga);
+        operadorNoTerminal();
+        assertThat(service.acoplarNaCarga(10L, 2L, 7L)).isSameAs(carga);
 
         assertThat(carga.getOrdensAcopladas()).containsExactly(2L);
         verify(logRepo, never()).findByOrdemServicoIdAndFinalizadoEmIsNull(any());
@@ -170,7 +174,8 @@ class OrdemServicoServiceAcoplamentoTest {
 
         when(cargaRepo.findById(10L)).thenReturn(Optional.of(carga));
 
-        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L))
+        operadorNoTerminal();
+        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L, 7L))
                 .isInstanceOf(CargaNaoVinculadaException.class);
         assertThat(carga.getOrdensAcopladas()).isEmpty();
         verifyNoInteractions(osRepo);
@@ -184,7 +189,8 @@ class OrdemServicoServiceAcoplamentoTest {
 
         when(cargaRepo.findById(10L)).thenReturn(Optional.of(carga));
 
-        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L))
+        operadorNoTerminal();
+        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L, 7L))
                 .isInstanceOf(CargaInativaException.class);
         verifyNoInteractions(osRepo);
     }
@@ -196,7 +202,8 @@ class OrdemServicoServiceAcoplamentoTest {
 
         when(cargaRepo.findById(10L)).thenReturn(Optional.of(carga));
 
-        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 1L))
+        operadorNoTerminal();
+        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 1L, 7L))
                 .isInstanceOf(AcoplamentoInvalidoException.class)
                 .extracting("codigo").isEqualTo("ACOPLAMENTO_A_SI_MESMA");
         verifyNoInteractions(osRepo);
@@ -212,7 +219,8 @@ class OrdemServicoServiceAcoplamentoTest {
         when(cargaRepo.findById(10L)).thenReturn(Optional.of(carga));
         when(osRepo.findById(2L)).thenReturn(Optional.of(carona));
 
-        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L))
+        operadorNoTerminal();
+        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L, 7L))
                 .isInstanceOf(AcoplamentoInvalidoException.class)
                 .extracting("codigo").isEqualTo("ACOPLAMENTO_POSICAO_INCOMPATIVEL");
         assertThat(carga.getOrdensAcopladas()).isEmpty();
@@ -229,7 +237,8 @@ class OrdemServicoServiceAcoplamentoTest {
         when(cargaRepo.findById(10L)).thenReturn(Optional.of(carga));
         when(osRepo.findById(2L)).thenReturn(Optional.of(carona));
 
-        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L))
+        operadorNoTerminal();
+        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L, 7L))
                 .isInstanceOf(OrdemForaDeCirculacaoException.class);
         verify(logRepo, never()).findByOrdemServicoIdAndFinalizadoEmIsNull(any());
     }
@@ -248,7 +257,8 @@ class OrdemServicoServiceAcoplamentoTest {
         when(osRepo.findById(2L)).thenReturn(Optional.of(carona));
         when(cargaRepo.buscarAcoplamentosDe(2L)).thenReturn(List.of(outra));
 
-        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L))
+        operadorNoTerminal();
+        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L, 7L))
                 .isInstanceOf(AcoplamentoInvalidoException.class)
                 .extracting("codigo").isEqualTo("ACOPLAMENTO_EM_OUTRA_CARGA");
         assertThat(carga.getOrdensAcopladas()).isEmpty();
@@ -267,7 +277,8 @@ class OrdemServicoServiceAcoplamentoTest {
         when(cargaRepo.findById(10L)).thenReturn(Optional.of(carga));
         when(osRepo.findById(9L)).thenReturn(Optional.of(carona));
 
-        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 9L))
+        operadorNoTerminal();
+        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 9L, 7L))
                 .isInstanceOf(AcoplamentoInvalidoException.class)
                 .extracting("codigo").isEqualTo("ACOPLAMENTO_EXCEDE_LIMITE");
         assertThat(carga.getOrdensAcopladas()).doesNotContain(9L);
@@ -277,7 +288,8 @@ class OrdemServicoServiceAcoplamentoTest {
     void cargaInexistenteEhRecursoNaoEncontrado() {
         when(cargaRepo.findById(99L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.acoplarNaCarga(99L, 2L))
+        operadorNoTerminal();
+        assertThatThrownBy(() -> service.acoplarNaCarga(99L, 2L, 7L))
                 .isInstanceOf(RecursoNaoEncontradoException.class);
     }
 
@@ -532,7 +544,8 @@ class OrdemServicoServiceAcoplamentoTest {
         when(logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(2L)).thenReturn(List.of());
         when(logRepo.findByCargaIdAndFinalizadoEmIsNull(10L)).thenReturn(Optional.empty());
 
-        service.acoplarNaCarga(10L, 2L);
+        operadorNoTerminal();
+        service.acoplarNaCarga(10L, 2L, 7L);
 
         assertThat(carga.getOrdensAcopladas()).containsExactly(2L);
     }
@@ -548,7 +561,8 @@ class OrdemServicoServiceAcoplamentoTest {
         when(cargaRepo.findById(10L)).thenReturn(Optional.of(carga));
         when(osRepo.findById(2L)).thenReturn(Optional.of(carona));
 
-        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L))
+        operadorNoTerminal();
+        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L, 7L))
                 .isInstanceOf(AcoplamentoInvalidoException.class)
                 .extracting("codigo").isEqualTo("ACOPLAMENTO_POSICAO_INCOMPATIVEL");
         assertThat(carga.getOrdensAcopladas()).isEmpty();
@@ -575,7 +589,8 @@ class OrdemServicoServiceAcoplamentoTest {
         when(logRepo.findByOrdemServicoIdAndFinalizadoEmIsNull(2L)).thenReturn(List.of());
         when(logRepo.findByCargaIdAndFinalizadoEmIsNull(10L)).thenReturn(Optional.empty());
 
-        service.acoplarNaCarga(10L, 2L);
+        operadorNoTerminal();
+        service.acoplarNaCarga(10L, 2L, 7L);
 
         assertThat(naAutomatica.getOrdensAcopladas()).containsExactly(2L);
     }
@@ -594,7 +609,8 @@ class OrdemServicoServiceAcoplamentoTest {
         when(osRepo.findById(2L)).thenReturn(Optional.of(carona));
         when(cargaRepo.buscarAcoplamentosDe(2L)).thenReturn(List.of(outraDaAutomatica));
 
-        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L))
+        operadorNoTerminal();
+        assertThatThrownBy(() -> service.acoplarNaCarga(10L, 2L, 7L))
                 .isInstanceOf(AcoplamentoInvalidoException.class)
                 .extracting("codigo").isEqualTo("ACOPLAMENTO_EM_OUTRA_CARGA");
         assertThat(alvo.getOrdensAcopladas()).isEmpty();
@@ -624,7 +640,8 @@ class OrdemServicoServiceAcoplamentoTest {
                 .thenReturn(List.of(noMesmoSetor, noOutroSetor));
         when(logRepo.findByCargaIdAndFinalizadoEmIsNull(10L)).thenReturn(Optional.empty());
 
-        service.acoplarNaCarga(10L, 2L);
+        operadorNoTerminal();
+        service.acoplarNaCarga(10L, 2L, 7L);
 
         assertThat(noMesmoSetor.getFinalizadoEm())
                 .as("as peças saíram da carga deste setor").isNotNull();
@@ -677,6 +694,15 @@ class OrdemServicoServiceAcoplamentoTest {
         set(c, "id", id);
         c.setOrdemAtual(titular);
         return c;
+    }
+
+    /**
+     * Quem está no terminal ao acoplar — é em nome dele que os passos da
+     * carona fecham. Sempre o 7L, como no resto da suíte.
+     */
+    private void operadorNoTerminal() {
+        when(operadorRepo.findById(7L))
+                .thenReturn(Optional.of(new Operador("João", Permissao.FUNCIONARIO, "T1")));
     }
 
     private Log log(OrdemServico titular, Carga carga, String processo) throws Exception {

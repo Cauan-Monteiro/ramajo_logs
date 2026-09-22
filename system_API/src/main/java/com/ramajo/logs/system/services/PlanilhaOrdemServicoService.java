@@ -47,6 +47,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.util.CellRangeAddress;
+import org.apache.poi.ss.util.CellReference;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -81,10 +82,16 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class PlanilhaOrdemServicoService {
 
-    /** Colunas da aba Relatório: Processo, Etapa, Responsável, Início, Fim, Duração, Situação. */
-    private static final int COLUNAS = 7;
-    private static final int COL_DURACAO = 5;
-    private static final int[] LARGURAS = {32, 18, 24, 21, 21, 12, 15};
+    /**
+     * Colunas da aba Relatório: Processo, Etapa, Responsável, Início, Fim,
+     * Fechado por, Duração, Situação.
+     *
+     * "Responsável" é quem ABRIU a etapa; "Fechado por", quem a encerrou — e
+     * fica ao lado do carimbo de fim, que é onde se procura por ele.
+     */
+    private static final int COLUNAS = 8;
+    private static final int COL_DURACAO = 6;
+    private static final int[] LARGURAS = {32, 18, 24, 21, 21, 24, 12, 15};
     private static final double ALTURA_TITULO = 48;
     /** Mesma largura de logo nos dois relatórios, independente da coluna A. */
     private static final int LARGURA_LOGO = 224;
@@ -345,9 +352,8 @@ public class PlanilhaOrdemServicoService {
                 String.valueOf(emAberto),
                 String.valueOf(totalCargas)
         };
-        // Quatro indicadores em sete colunas: os três primeiros ocupam duas
-        // colunas cada, o último fica na sobra.
-        int[][] faixas = {{0, 1}, {2, 3}, {4, 5}, {6, 6}};
+        // Quatro indicadores em oito colunas: duas para cada um.
+        int[][] faixas = {{0, 1}, {2, 3}, {4, 5}, {6, 7}};
 
         Row rLegenda = aba.createRow(linha[0]);
         Row rValor = aba.createRow(linha[0] + 1);
@@ -385,7 +391,7 @@ public class PlanilhaOrdemServicoService {
         linha[0]++;
 
         cabecalhoTabela(aba, e, linha, "Processo", "Etapa", "Responsável",
-                "Início", "Fim", "Duração", "Situação");
+                "Início", "Fim", "Fechado por", "Duração", "Situação");
 
         int primeira = linha[0];
         boolean zebra = false;
@@ -397,12 +403,15 @@ public class PlanilhaOrdemServicoService {
             texto(r, e, 2, log.getResponsavel().getNome(), zebra, cancelada);
             data(r, e, 3, log.getIniciadoEm(), zebra, cancelada);
             data(r, e, 4, log.getFinalizadoEm(), zebra, cancelada);
+            // Vazio no passo aberto e nos fechados antes da V21, quando o autor
+            // do fecho ainda não era registado — ver Log.finalizadoPor.
+            texto(r, e, 5, nome(log.getFinalizadoPor()), zebra, cancelada);
             // Etapa cancelada não escreve duração: célula vazia é ignorada pelo
             // SOMA do subtotal, enquanto um zero entraria na conta.
             duracao(r, e, COL_DURACAO,
                     cancelada ? null : DataHoraBr.duracaoNumerica(log.getIniciadoEm(), log.getFinalizadoEm()),
                     zebra, cancelada);
-            texto(r, e, 6, situacaoDaEtapa(log), zebra, cancelada);
+            texto(r, e, 7, situacaoDaEtapa(log), zebra, cancelada);
             zebra = !zebra;
         }
         int ultima = linha[0] - 1;
@@ -425,9 +434,11 @@ public class PlanilhaOrdemServicoService {
                 : "Subtotal da carga");
         aba.addMergedRegion(new CellRangeAddress(linha[0] - 1, linha[0] - 1, 0, COL_DURACAO - 1));
         // Fórmula, não valor pronto: se alguém corrigir uma linha na mão, o
-        // subtotal acompanha.
+        // subtotal acompanha. A letra sai de COL_DURACAO: uma coluna nova antes
+        // dela não pode deixar o subtotal a somar a vizinha errada.
+        String col = CellReference.convertNumToColString(COL_DURACAO);
         r.getCell(COL_DURACAO).setCellFormula(
-                "SUM(F" + (primeira + 1) + ":F" + (ultima + 1) + ")");
+                "SUM(" + col + (primeira + 1) + ":" + col + (ultima + 1) + ")");
     }
 
     private void rodape(Sheet aba, EstilosPlanilha e, int[] linha, OrdemServico os) {
@@ -563,7 +574,7 @@ public class PlanilhaOrdemServicoService {
         int[] linha = {0};
         cabecalhoTabela(aba, e, linha, "ID", "Carga", "Tipo da carga", "Posição da carga",
                 "Processo", "Etapa", "Responsável", "Iniciado em", "Finalizado em",
-                "Duração", "Situação", "Acoplada à OS");
+                "Finalizado por", "Duração", "Situação", "Acoplada à OS");
         aba.createFreezePane(0, 1);
 
         boolean zebra = false;
@@ -576,8 +587,8 @@ public class PlanilhaOrdemServicoService {
             zebra = !zebra;
         }
         // Tabela contínua e sem subtotais: aqui o autofiltro não tem o que quebrar.
-        aba.setAutoFilter(new CellRangeAddress(0, Math.max(linha[0] - 1, 0), 0, 11));
-        ajustar(aba, 12);
+        aba.setAutoFilter(new CellRangeAddress(0, Math.max(linha[0] - 1, 0), 0, 12));
+        ajustar(aba, 13);
     }
 
     /**
@@ -631,12 +642,13 @@ public class PlanilhaOrdemServicoService {
         texto(r, e, 6, log.getResponsavel().getNome(), zebra, false);
         data(r, e, 7, log.getIniciadoEm(), zebra, false);
         data(r, e, 8, log.getFinalizadoEm(), zebra, false);
-        duracao(r, e, 9,
+        texto(r, e, 9, nome(log.getFinalizadoPor()), zebra, false);
+        duracao(r, e, 10,
                 DataHoraBr.duracaoNumerica(log.getIniciadoEm(), log.getFinalizadoEm()),
                 zebra, false);
-        texto(r, e, 10, situacaoDaEtapa(log), zebra, false);
+        texto(r, e, 11, situacaoDaEtapa(log), zebra, false);
         // Vazia no passo próprio: é o valor que o filtro usa para separar os dois.
-        texto(r, e, 11, titular == null ? null : String.valueOf(titular.getId()), zebra, false);
+        texto(r, e, 12, titular == null ? null : String.valueOf(titular.getId()), zebra, false);
     }
 
     // --------------------------------------------------------------- escrita

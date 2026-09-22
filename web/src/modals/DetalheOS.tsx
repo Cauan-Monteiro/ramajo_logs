@@ -426,7 +426,7 @@ function Acoplamento({ ctx, osId, cargas }: { ctx: Ctx; osId: number; cargas: Ca
 
   function acoplar(cargaId: number, quem: number, nomeCarga: string) {
     ctx.agir({
-      fazer: () => api.acoplarNaCarga(cargaId, quem),
+      fazer: () => api.acoplarNaCarga(cargaId, quem, ctx.operador.id),
       ok: `OS ${rotulo(quem)} acoplada à carga ${nomeCarga}.`,
       depois: () => setEscolhendo(null),
     });
@@ -769,7 +769,7 @@ function PassoAberto({ ctx, log, osId }: { ctx: Ctx; log: LogDTO; osId: number }
   function finalizar() {
     setConfirmando(false);
     ctx.agir({
-      fazer: () => api.finalizarLog(log.id),
+      fazer: () => api.finalizarLog(log.id, ctx.operador.id),
       ok: total > 1
         ? `Etapa "${log.processoDescricao}" finalizada para ${total} OS.`
         : `Etapa "${log.processoDescricao}" finalizada na carga ${log.cargaNome}.`,

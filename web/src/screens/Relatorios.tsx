@@ -650,7 +650,9 @@ function PainelOperador({
   ehHoje: boolean;
   agora: number;
 }) {
-  const { eventos, grupos, msEmEtapas, cargas, osTocadas, etapasConcluidas } = atividade;
+  const {
+    eventos, grupos, msEmEtapas, cargas, osTocadas, etapasConcluidas, etapasFechadas,
+  } = atividade;
   const conta = (t: TipoEvento) => eventos.filter((e) => e.tipo === t).length;
 
   const emCurso = useMemo(() => {
@@ -680,7 +682,10 @@ function PainelOperador({
       <div className="aud-kpis">
         <Kpi n={conta("OS_ABERTA")} label="OS abertas" />
         <Kpi n={conta("ETAPA_ABERTA")} label="Etapas iniciadas" />
+        {/* Abriu e fecharam × ele mesmo fechou: são trabalhos diferentes, e
+            quase nunca da mesma pessoa. */}
         <Kpi n={etapasConcluidas} label="Etapas concluídas" />
+        <Kpi n={etapasFechadas} label="Etapas fechadas por ele" />
         <Kpi n={conta("LOTE_FECHADO")} label="Lotes fechados" />
         <Kpi n={conta("DESIDRO_APLICADA")} label="Desidrogenizações" />
         <Kpi n={conta("OS_EXPEDIDA")} label="OS expedidas" />

@@ -4,6 +4,7 @@ import com.ramajo.logs.system.dtos.CargaDtos.CargaDTO;
 import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.AplicarDesidrogenizacaoDTO;
 import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.OrdemDesidrogenizacaoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.AcoplamentoDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.AcoplarDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.AdicionarPosicaoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.AvaliacaoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.SalvarAvaliacaoDTO;
@@ -11,6 +12,7 @@ import com.ramajo.logs.system.dtos.OrdemDtos.CancelarOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.CorrigirOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.CriarOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.EntregarOrdemDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.FinalizarLogDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.FinalizarLoteDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.FinalizarOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.IniciarLogDTO;
@@ -236,10 +238,12 @@ public class OrdemServicoController {
                 .body(LogDTO.from(log));
     }
 
-    // passo 2: fechar (fim do intervalo). Sem corpo: o service usa Instant.now().
+    // passo 2: fechar (fim do intervalo). A hora é a do servidor; o corpo traz
+    // só quem fechou — o passo passou a registar isso (ver Log.finalizadoPor).
     @PatchMapping("/logs/{logId}/finalizar")
-    public LogDTO finalizarLog(@PathVariable UUID logId) {
-        return LogDTO.from(service.finalizarLog(logId));
+    public LogDTO finalizarLog(
+            @PathVariable UUID logId, @Valid @RequestBody FinalizarLogDTO dto) {
+        return LogDTO.from(service.finalizarLog(logId, dto.operadorId()));
     }
 
     // As peças desta OS entraram no tanque de outra. O vínculo é com a CARGA,
@@ -251,8 +255,9 @@ public class OrdemServicoController {
     // que as rotas vizinhas, servida pelo mesmo service. O padrão já estava
     // posto por /api/ordens/logs/{logId}/finalizar.
     @PostMapping("/cargas/{cargaId}/acopladas/{osId}")
-    public CargaDTO acoplar(@PathVariable Long cargaId, @PathVariable Long osId) {
-        return CargaDTO.from(service.acoplarNaCarga(cargaId, osId));
+    public CargaDTO acoplar(@PathVariable Long cargaId, @PathVariable Long osId,
+                            @Valid @RequestBody AcoplarDTO dto) {
+        return CargaDTO.from(service.acoplarNaCarga(cargaId, osId, dto.operadorId()));
     }
 
     // Correção: as peças daquela OS não estão nesta carga. Sai da carga e do

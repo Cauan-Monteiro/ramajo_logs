@@ -92,7 +92,11 @@ public class OperadorService {
     public void excluir(Long id) {
         Operador operador = buscar(id);
 
-        long passos = logRepo.countByResponsavelId(id);
+        // Abertos por ele MAIS fechados por ele: desde a V21 as duas pontas do
+        // passo têm FK para operadores, e quem só fechou etapas também trava a
+        // exclusão. Sem `distinct` de propósito — o número serve à mensagem
+        // ("tem histórico"), não à contabilidade.
+        long passos = logRepo.countByResponsavelId(id) + logRepo.countByFinalizadoPorId(id);
         long ordens = ordemRepo.countByIniciadaPorIdOrFinalizadaPorId(id, id);
         long lotes = loteRepo.countByFinalizadoPorId(id);
         // Correções de OS assinadas: append-only e com FK, como os passos.

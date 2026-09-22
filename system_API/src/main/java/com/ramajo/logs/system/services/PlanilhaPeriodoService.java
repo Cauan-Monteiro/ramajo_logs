@@ -136,15 +136,18 @@ public class PlanilhaPeriodoService {
     // "Posição" logo depois do cliente, nas duas abas de apoio, como na
     // principal: o Nº é único só POR SETOR (V20), e sem ela filtrar "N° da OS =
     // 42" misturaria as linhas das duas irmãs sem campo que as separasse.
-    private static final int COLUNAS_ETAPAS = 17;
+    // "Responsável" é quem ABRIU a etapa; "Finalizado por", quem a fechou —
+    // ao lado do carimbo de fim, que é onde se procura por ele.
+    private static final int COLUNAS_ETAPAS = 18;
     private static final String[] CABECALHO_ETAPAS = {
             "N° da OS", "Cliente", "Posição",
             "OS iniciada em (data)", "OS iniciada em (hora)",
             "OS finalizada em (data)", "OS finalizada em (hora)",
             "Carga", "Tipo da carga", "Processo", "Etapa", "Responsável",
-            "Iniciado em", "Finalizado em", "Duração", "Situação", "Acoplada à OS"};
-    private static final int ET_COL_DURACAO = 14;
-    private static final int ET_COL_ACOPLADA = 16;
+            "Iniciado em", "Finalizado em", "Finalizado por", "Duração",
+            "Situação", "Acoplada à OS"};
+    private static final int ET_COL_DURACAO = 15;
+    private static final int ET_COL_ACOPLADA = 17;
 
     private static final int COLUNAS_DESIDRO = 9;
     private static final String[] CABECALHO_DESIDRO = {
@@ -796,6 +799,9 @@ public class PlanilhaPeriodoService {
             texto(r, e, 11, log.getResponsavel().getNome(), zebra, cancelada);
             data(r, e, 12, log.getIniciadoEm(), zebra, cancelada);
             data(r, e, 13, log.getFinalizadoEm(), zebra, cancelada);
+            // Vazio no passo aberto e nos fechados antes da V21, quando o autor
+            // do fecho ainda não era registado — ver Log.finalizadoPor.
+            texto(r, e, 14, nome(log.getFinalizadoPor()), zebra, cancelada);
             // Sem duração quando cancelada (não houve trabalho medível) e quando
             // acoplada (o tempo já está na linha da OS titular) — ver o cabeçalho.
             duracao(r, e, ET_COL_DURACAO,
@@ -803,7 +809,7 @@ public class PlanilhaPeriodoService {
                             ? null
                             : DataHoraBr.duracaoNumerica(log.getIniciadoEm(), log.getFinalizadoEm()),
                     zebra, cancelada);
-            texto(r, e, 15, situacaoDaEtapa(log), zebra, cancelada);
+            texto(r, e, 16, situacaoDaEtapa(log), zebra, cancelada);
             // Vazia no passo próprio: é o valor que separa os dois no filtro.
             //
             // Só o Nº, sem setor, e não é descuido: o acoplamento exige a mesma

@@ -102,10 +102,12 @@ class PlanilhaPeriodoServiceTest {
     private static final int ET_OS_FIM_DATA = 5;
     private static final int ET_OS_FIM_HORA = 6;
     private static final int ET_ETAPA = 10;
+    private static final int ET_RESPONSAVEL = 11;
     private static final int ET_FIM = 13;
-    private static final int ET_DURACAO = 14;
-    private static final int ET_SITUACAO = 15;
-    private static final int ET_ACOPLADA = 16;
+    private static final int ET_FINALIZADO_POR = 14;
+    private static final int ET_DURACAO = 15;
+    private static final int ET_SITUACAO = 16;
+    private static final int ET_ACOPLADA = 17;
 
     @Mock private OrdemServicoRepository osRepo;
     @Mock private LogRepository logRepo;
@@ -242,8 +244,18 @@ class PlanilhaPeriodoServiceTest {
                     .isEqualTo("Cancelada");
             assertThat(abaEtapas.getRow(3).getCell(ET_DURACAO).getCellType())
                     .isEqualTo(CellType.BLANK);
-            // etapa em andamento: sem fim e sem duração
+            // quem abriu e quem fechou, lado a lado; a etapa em andamento não
+            // tem quem a fechasse
+            assertThat(cabecalho(abaEtapas, ET_FINALIZADO_POR)).isEqualTo("Finalizado por");
+            assertThat(primeiraEtapa.getCell(ET_RESPONSAVEL).getStringCellValue())
+                    .isEqualTo("João");
+            assertThat(primeiraEtapa.getCell(ET_FINALIZADO_POR).getStringCellValue())
+                    .isEqualTo("Maria");
+
+            // etapa em andamento: sem fim, sem quem fechasse e sem duração
             assertThat(abaEtapas.getRow(4).getCell(ET_FIM).getCellType()).isEqualTo(CellType.BLANK);
+            assertThat(abaEtapas.getRow(4).getCell(ET_FINALIZADO_POR).getStringCellValue())
+                    .isEmpty();
             assertThat(abaEtapas.getRow(4).getCell(ET_DURACAO).getCellType())
                     .isEqualTo(CellType.BLANK);
 
@@ -462,6 +474,9 @@ class PlanilhaPeriodoServiceTest {
         set(l, "iniciadoEm", T0.plus(horaInicio, ChronoUnit.HOURS));
         if (horaFim >= 0) {
             l.setFinalizadoEm(T0.plus(horaFim, ChronoUnit.HOURS));
+            // Quem fecha não é quem abriu — é o caso comum, e é o que faz as
+            // duas colunas da aba Etapas se distinguirem.
+            l.setFinalizadoPor(new Operador("Maria", Permissao.FUNCIONARIO, "T2"));
         }
         l.setCancelado(cancelado);
         return l;

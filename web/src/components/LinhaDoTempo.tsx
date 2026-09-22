@@ -207,7 +207,10 @@ function Detalhe({ b }: { b: Barra }) {
         <span>Abriu <b>{b.responsavelNome}</b> às {hhmm(b.iniciadoEm)}</span>
         <span>
           {b.finalizadoEm
-            ? `Fechou às ${hhmm(b.finalizadoEm)}`
+            ? <>
+                Fechou {b.finalizadoPorNome && <b>{b.finalizadoPorNome} </b>}
+                às {hhmm(b.finalizadoEm)}
+              </>
             : b.cancelado ? "Cancelada" : "Ainda aberta"}
         </span>
         <span>{duracao(b.iniciadoEm, b.finalizadoEm)}</span>
@@ -223,8 +226,11 @@ function Detalhe({ b }: { b: Barra }) {
           Conta uma vez só na produção, atribuída à OS {b.acopladaA}.
         </div>
       )}
-      {/* A API não regista quem fecha um passo: só o responsável da abertura. */}
-      {b.finalizadoEm && <div className="os-tv">Quem fechou não é registado pela API.</div>}
+      {/* O histórico anterior à V21 não guardou quem fechou; dizer isso é
+          melhor do que uma frase que some sem explicação. */}
+      {b.finalizadoEm && !b.finalizadoPorNome && (
+        <div className="os-tv">Esta etapa é anterior ao registo de quem fecha.</div>
+      )}
     </div>
   );
 }
@@ -237,6 +243,7 @@ function textoMarco(m: Evento): string {
 function textoBarra(b: Barra): string {
   return (
     `${b.processoDescricao} · carga ${b.cargaNome} · abriu ${b.responsavelNome}` +
+    (b.finalizadoPorNome ? ` · fechou ${b.finalizadoPorNome}` : "") +
     ` · ${hhmm(b.iniciadoEm)}–${b.finalizadoEm ? hhmm(b.finalizadoEm) : "em aberto"}` +
     ` · ${duracao(b.iniciadoEm, b.finalizadoEm)}` +
     (b.acopladaA ? ` · acoplada à OS ${b.acopladaA}` : "")

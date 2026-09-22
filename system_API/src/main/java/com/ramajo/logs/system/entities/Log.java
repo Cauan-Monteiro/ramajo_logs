@@ -25,7 +25,8 @@ import org.hibernate.generator.EventType;
  *
  * Imutabilidade PARCIAL (garantida por trigger na migration): id, os,
  * responsável, carga, processo e iniciadoEm nunca mudam; DELETE é proibido.
- * Só se permite fechar o intervalo (finalizadoEm) e marcar `cancelado` uma vez.
+ * Só se permite fechar o intervalo (finalizadoEm + finalizadoPor, cada um uma
+ * vez só) e marcar `cancelado` uma vez.
  * Por isso NÃO usamos @Immutable do Hibernate (que bloquearia todo UPDATE).
  */
 @Entity
@@ -63,6 +64,19 @@ public class Log {
     // fechado e checa finalizadoEm >= iniciadoEm.
     @Column(name = "finalizado_em")
     private Instant finalizadoEm;
+
+    /**
+     * Quem fechou o passo — nem sempre quem o abriu: a etapa seguinte, a
+     * liberação da carga, o acoplamento, a expedição ou o cancelamento da OS
+     * fecham passos em nome de quem estava no terminal naquele momento.
+     *
+     * Null nos passos fechados antes da V21, e é assim que fica: não há de
+     * onde tirar o autor de um fecho que ninguém registou. Ver também
+     * ck_logs_finalizado_por — autor sem fecho é impossível.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "finalizado_por_id")
+    private Operador finalizadoPor;
 
     @Column(nullable = false)
     private boolean cancelado = false;
@@ -127,6 +141,14 @@ public class Log {
 
     public void setFinalizadoEm(Instant finalizadoEm) {
         this.finalizadoEm = finalizadoEm;
+    }
+
+    public Operador getFinalizadoPor() {
+        return finalizadoPor;
+    }
+
+    public void setFinalizadoPor(Operador finalizadoPor) {
+        this.finalizadoPor = finalizadoPor;
     }
 
     public Set<Long> getOrdensAcopladas() {

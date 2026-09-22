@@ -213,6 +213,22 @@ public final class OrdemDtos {
             @NotNull Long operadorId, @NotEmpty List<@NotNull Long> cargaIds) {
     }
 
+    /**
+     * Fecho de uma etapa. Só o operador: a hora é a do servidor, e o passo já
+     * diz a que carga e processo pertence. É quem FECHA — não se deduz do
+     * responsável da abertura, que muitas vezes é outra pessoa.
+     */
+    public record FinalizarLogDTO(@NotNull Long operadorId) {
+    }
+
+    /**
+     * Acoplamento de uma OS a uma carga. O par (carga, OS) vem na URL; o corpo
+     * traz só quem o declara — é em nome dele que os passos abertos da carona
+     * fecham.
+     */
+    public record AcoplarDTO(@NotNull Long operadorId) {
+    }
+
     // ------------------------------------------------------------------ saída
     /**
      * A OS como ela aparece nas LISTAS. Além do essencial, carrega o fecho —
@@ -361,17 +377,25 @@ public final class OrdemDtos {
      * um passo precisa de saber em qual tanque ele corre para poder desacoplar.
      * O nome sozinho obrigava o cliente a cruzar com GET /api/cargas.
      */
+    /**
+     * `responsavelNome` é quem ABRIU o passo; `finalizadoPorNome`, quem o
+     * fechou — quase nunca a mesma pessoa, e null nos passos fechados antes da
+     * V21, quando o autor do fecho não era registado.
+     */
     public record LogDTO(
             UUID id, Long ordemServicoId, Long cargaId, String cargaNome,
             String processoDescricao, String responsavelNome, Instant iniciadoEm,
-            Instant finalizadoEm, boolean cancelado, List<Long> ordensAcopladas) {
+            Instant finalizadoEm, String finalizadoPorNome, boolean cancelado,
+            List<Long> ordensAcopladas) {
 
         public static LogDTO from(Log log) {
             return new LogDTO(
                     log.getId(), log.getOrdemServico().getId(),
                     log.getCarga().getId(), log.getCarga().getNome(),
                     log.getProcesso().getDescricao(), log.getResponsavel().getNome(),
-                    log.getIniciadoEm(), log.getFinalizadoEm(), log.isCancelado(),
+                    log.getIniciadoEm(), log.getFinalizadoEm(),
+                    log.getFinalizadoPor() != null ? log.getFinalizadoPor().getNome() : null,
+                    log.isCancelado(),
                     List.copyOf(log.getOrdensAcopladas()));
         }
     }

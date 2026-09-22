@@ -174,7 +174,17 @@ export function pillOrdemStyle(o: OrdemResumoDTO): CSSProperties {
     : pillStyle(!o.emProcesso);
 }
 
-/** Sub-linha de um passo: "Carga T-07 · Rita Salgado · 42 min". */
+/**
+ * Sub-linha de um passo: "Carga T-07 · Rita Salgado · 42 min", e
+ * "· fechou Maria" quando quem fechou não foi quem abriu.
+ *
+ * Só quando difere: repetir o mesmo nome duas vezes na mesma linha não informa
+ * nada e rouba espaço à duração, que é o que se lê aqui. Passo aberto e
+ * histórico anterior à V21 não têm quem fechasse, e a linha fica como era.
+ */
 export function logSub(l: LogDTO, dur: string): string {
-  return `Carga ${l.cargaNome} · ${l.responsavelNome} · ${dur}`;
+  const fechou = l.finalizadoPorNome && l.finalizadoPorNome !== l.responsavelNome
+    ? ` · fechou ${l.finalizadoPorNome}`
+    : "";
+  return `Carga ${l.cargaNome} · ${l.responsavelNome}${fechou} · ${dur}`;
 }
