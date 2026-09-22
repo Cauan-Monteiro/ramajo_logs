@@ -3,7 +3,7 @@ import type {
   AvaliacaoDTO, AvaliacaoInput, CargaDTO, ClienteDTO, ConfigDesidrogenizacaoDTO, DesidroEmAndamentoDTO,
   DesidrogenizacaoDTO, Etapa,
   LogDTO, LoteDTO, OperadorDTO, OrdemAlteracaoDTO, OrdemDesidrogenizacaoDTO, Permissao,
-  OrdemDetalheDTO, OrdemResumoDTO, Posicao, ProcessoDTO, ProcessoInicialDTO,
+  OrdemAuditoriaDTO, OrdemDetalheDTO, OrdemResumoDTO, Posicao, ProcessoDTO, ProcessoInicialDTO,
   ReaberturaDTO, RevisaoDTO, TipoCarga,
 } from "./types";
 
@@ -156,6 +156,22 @@ export const listarOrdens = (emProcesso = false) =>
 
 export const buscarOrdem = (id: number) => http.get<OrdemDetalheDTO>(`/api/ordens/${id}`);
 export const historicoOrdem = (id: number) => http.get<LogDTO[]>(`/api/ordens/${id}/logs`);
+
+/**
+ * O histórico de VÁRIAS OS num pedido só — a rota acima, mas sem uma conexão
+ * por ordem. A Visão Geral chamava a singular uma vez por OS e passava de cem
+ * requisições; o browser só abre seis por origem.
+ *
+ * A resposta é PLANA: um passo de carona pertence a duas ou três ordens, e
+ * agrupá-lo por OS o repetiria. Quem lê reindexa pelo `ordemServicoId` e pelo
+ * `ordensAcopladas` de cada passo — ver `indexarLogs` em useAuditoriaDia.
+ */
+export const historicoDeOrdens = (ids: number[]) =>
+  http.get<LogDTO[]>(`/api/ordens/logs?ids=${ids.join(",")}`);
+
+/** Os campos de auditoria de várias OS de uma vez. Ver OrdemAuditoriaDTO. */
+export const auditoriaDeOrdens = (ids: number[]) =>
+  http.get<OrdemAuditoriaDTO[]>(`/api/ordens/auditoria?ids=${ids.join(",")}`);
 
 /** Baixa a OS inteira em .xlsx; o nome do arquivo vem do Content-Disposition. */
 export const planilhaOrdem = (id: number) =>

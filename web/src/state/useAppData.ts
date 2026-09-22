@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../api/endpoints";
+import { indexarLogs } from "../domain/derive";
 import type {
   CargaDTO, ClienteDTO, DesidroEmAndamentoDTO, DesidrogenizacaoDTO, LogDTO,
   OperadorDTO, OrdemResumoDTO, ProcessoDTO, ProcessoInicialDTO,
@@ -36,8 +37,9 @@ const VAZIO: AppData = {
  * otimista: quem manda no estado é a API, que aplica regras (fecha o passo
  * anterior, valida posição) que o cliente não tem como replicar fielmente.
  *
- * Os passos vêm num GET por ordem (N+1 assumido): não há rota que devolva os
- * logs de várias OS de uma vez, e o universo é o de uma posição de fábrica.
+ * Os passos vêm num GET só, para todas as ordens em processo. Já foram um GET
+ * por ordem — e como esta recarga corre a cada mutação e a cada evento do SSE,
+ * aquilo era um N+1 permanente, não só do arranque.
  *
  * `marca` é a revisão do servidor vigente quando estes dados foram lidos — é o
  * que useSync compara para saber se este terminal ficou para trás.
@@ -78,10 +80,18 @@ export function useAppData(onError: (e: unknown) => void) {
           api.listarOrdens(false),
         ]);
 
-      const emProcesso = ordens.filter((o) => o.emProcesso);
-      const historicos = await Promise.all(
-        emProcesso.map((o) => api.historicoOrdem(o.id).then((logs) => [o.id, logs] as const)),
-      );
+      /**
+       * Os passos das ordens em processo, num pedido só. Era um GET por ordem
+       * — e esta recarga corre inteira a cada mutação e a cada evento do SSE,
+       * portanto o N+1 não era do arranque, era de toda hora.
+       *
+       * A resposta vem plana, com o passo de carona uma vez só; `indexarLogs`
+       * reconstrói os dois lados.
+       */
+      const idsEmProcesso = ordens.filter((o) => o.emProcesso).map((o) => o.id);
+      const logsPorOrdem = idsEmProcesso.length === 0
+        ? {}
+        : indexarLogs(await api.historicoDeOrdens(idsEmProcesso), idsEmProcesso);
 
       // Uma recarga mais nova já respondeu: descartar esta.
       if (meu !== emVoo.current) return;
@@ -90,7 +100,7 @@ export function useAppData(onError: (e: unknown) => void) {
         clientes, operadores, processos, processosIniciais, cargas,
         desidrogenizacoes, temperaturaDesidro: configDesidro.temperatura,
         desidrosEmAndamento, ordens,
-        logsPorOrdem: Object.fromEntries(historicos),
+        logsPorOrdem,
       });
       setMarca(`${revisao.instancia}:${revisao.revisao}`);
       setPronto(true);

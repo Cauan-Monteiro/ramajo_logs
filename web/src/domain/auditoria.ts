@@ -1,5 +1,5 @@
 import type {
-  Etapa, LogDTO, OrdemDetalheDTO, OrdemResumoDTO, Posicao, ProcessoDTO,
+  DetalheDia, Etapa, LogDTO, OrdemResumoDTO, Posicao, ProcessoDTO,
   ProcessoInicialDTO,
 } from "../api/types";
 import { ehAcoplada, etapaDoLog } from "./derive";
@@ -105,7 +105,7 @@ export interface Faixa {
 
 export interface Grupo {
   ordem: OrdemResumoDTO;
-  detalhe: OrdemDetalheDTO | undefined;
+  detalhe: DetalheDia | undefined;
   faixas: Faixa[];
   /** Eventos da OS que não são de etapa — os marcos da faixa de topo. */
   marcos: Evento[];
@@ -114,7 +114,7 @@ export interface Grupo {
 export interface FonteDia {
   /** Já filtradas pela posição escolhida na barra de controlo. */
   ordens: OrdemResumoDTO[];
-  detalhes: Record<number, OrdemDetalheDTO>;
+  detalhes: Record<number, DetalheDia>;
   logs: Record<number, LogDTO[]>;
   processos: ProcessoDTO[];
   /** Dia auditado, em `yyyy-MM-dd`. */

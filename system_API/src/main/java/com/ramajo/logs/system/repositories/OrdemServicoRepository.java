@@ -6,7 +6,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface OrdemServicoRepository extends JpaRepository<OrdemServico, Long> {
     List<OrdemServico> findByEmProcessoTrue();
@@ -47,4 +49,41 @@ public interface OrdemServicoRepository extends JpaRepository<OrdemServico, Long
               left join fetch os.entreguePor
             """)
     List<OrdemServico> listarParaResumo();
+
+    /**
+     * Uma OS com os @ManyToOne que o OrdemDetalheDTO lê já resolvidos. Sem isto
+     * o findById puro dispara uma query por nome (cliente e os três operadores)
+     * na montagem do DTO — e o detalhe é pedido uma vez por OS ao abrir a Visão
+     * Geral.
+     *
+     * As COLEÇÕES (lotes, cargas, desidrogenizações, posições) ficam de fora de
+     * propósito: são quatro, e duas delas são List — duas bags no mesmo fetch
+     * levantam MultipleBagFetchException no boot. Quem as resolve é o
+     * @BatchSize delas na entidade, que já as traz em bloco.
+     */
+    @Query("""
+            select os from OrdemServico os
+              join fetch os.cliente
+              left join fetch os.iniciadaPor
+              left join fetch os.finalizadaPor
+              left join fetch os.entreguePor
+             where os.id = :id
+            """)
+    Optional<OrdemServico> buscarParaDetalhe(@Param("id") Long id);
+
+    /**
+     * Várias OSs com quem as abriu e quem as fechou já resolvidos — o que o
+     * OrdemAuditoriaDTO lê e o OrdemResumoDTO não carrega.
+     *
+     * Sem `cliente` no fetch de propósito: quem chama esta consulta já tem o
+     * resumo de cada OS, que traz o cliente. O chamador parte a lista de ids em
+     * blocos, como em PlanilhaPeriodoService.
+     */
+    @Query("""
+            select os from OrdemServico os
+              left join fetch os.iniciadaPor
+              left join fetch os.finalizadaPor
+             where os.id in :ids
+            """)
+    List<OrdemServico> buscarParaAuditoria(@Param("ids") Collection<Long> ids);
 }

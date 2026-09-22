@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import * as api from "../api/endpoints";
-import type { LogDTO, OrdemDesidrogenizacaoDTO, OrdemDetalheDTO } from "../api/types";
+import type { LogDTO, OrdemDesidrogenizacaoDTO } from "../api/types";
 import { BarraDia } from "../components/BarraDia";
 import { Corners } from "../components/Blueprint";
 import { Kpi } from "../components/Kpi";
@@ -59,7 +59,7 @@ export function Relatorios({ data, onErro }: { data: AppData; onErro: (e: unknow
       <div className="rel-main">
         {rel === 0 && <HistoricoOS data={data} onErro={onErro} />}
         {rel === 1 && <OSPorCliente data={data} />}
-        {rel === 2 && <TempoMedio data={data} onErro={onErro} />}
+        {rel === 2 && <TempoMedio data={data} />}
         {rel === 3 && <PlanilhaPeriodo onErro={onErro} />}
         {rel === 4 && <ProducaoOperador data={data} onErro={onErro} />}
       </div>
@@ -307,31 +307,17 @@ function OSPorCliente({ data }: { data: AppData }) {
 
 /* ── 3 · tempo médio de conclusão ───────────────────────────────────────── */
 
-function TempoMedio({ data, onErro }: { data: AppData; onErro: (e: unknown) => void }) {
-  const [detalhes, setDetalhes] = useState<OrdemDetalheDTO[]>([]);
-  const [carregando, setCarregando] = useState(true);
-
-  // OrdemResumoDTO não traz finalizadaEm nem o flag de cancelada: só o detalhe.
-  // Por isso este relatório busca uma vez cada OS já encerrada.
-  const encerradas = useMemo(() => data.ordens.filter((o) => !o.emProcesso), [data.ordens]);
-
-  useEffect(() => {
-    let vivo = true;
-    setCarregando(true);
-    Promise.all(encerradas.map((o) => api.buscarOrdem(o.id)))
-      .then((lista) => {
-        if (vivo) setDetalhes(lista);
-      })
-      .catch(onErro)
-      .finally(() => {
-        if (vivo) setCarregando(false);
-      });
-    return () => {
-      vivo = false;
-    };
-  }, [encerradas, onErro]);
-
-  const concluidas = detalhes.filter((o) => !o.cancelada && o.finalizadaEm);
+function TempoMedio({ data }: { data: AppData }) {
+  /**
+   * Tudo o que esta conta precisa — `finalizadaEm`, `cancelada`, `iniciadaEm` —
+   * já vem no OrdemResumoDTO que o useAppData carregou. Até a V17 não vinha, e
+   * este relatório buscava o detalhe de cada OS encerrada: um GET por ordem,
+   * refeito a cada evento de sincronismo. Agora é filtro em memória.
+   */
+  const concluidas = useMemo(
+    () => data.ordens.filter((o) => !o.emProcesso && !o.cancelada && o.finalizadaEm),
+    [data.ordens],
+  );
   const media =
     concluidas.length === 0
       ? null
@@ -353,59 +339,53 @@ function TempoMedio({ data, onErro }: { data: AppData; onErro: (e: unknown) => v
       <div className="reg-h" style={{ fontSize: 13 }}>
         Tempo médio de conclusão
       </div>
-      {carregando ? (
-        <div className="os-tv">Carregando ordens expedidas...</div>
-      ) : (
-        <>
-          <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-            <div className="bp" style={{ padding: "28px 34px", minWidth: 240 }}>
-              <Corners />
-              <div className="os-tv" style={{ marginBottom: 6 }}>
-                Média geral
-              </div>
-              <div style={{ font: "600 52px 'Barlow Condensed'", color: "#416180", lineHeight: 1 }}>
-                {mediaTexto}
-              </div>
-              <div className="os-tv" style={{ marginTop: 8 }}>
-                {concluidas.length} OS concluídas
-              </div>
-            </div>
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+        <div className="bp" style={{ padding: "28px 34px", minWidth: 240 }}>
+          <Corners />
+          <div className="os-tv" style={{ marginBottom: 6 }}>
+            Média geral
           </div>
-          <div className="bp" style={{ marginTop: 22 }}>
-            <Corners />
-            <div className="tblwrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th style={{ paddingLeft: 18 }}>OS</th>
-                    <th>Cliente</th>
-                    <th>Posição</th>
-                    <th>Aberta</th>
-                    <th style={{ paddingRight: 18 }}>Concluída em</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {concluidas.map((o) => (
-                    <tr key={o.id}>
-                      <td style={{ paddingLeft: 18, font: "600 17px 'Barlow Condensed'" }}>
-                        {osNum(o)}
-                      </td>
-                      <td>{o.clienteNome}</td>
-                      <td>{posLabels(o.posicoes)}</td>
-                      <td>{diaHora(o.iniciadaEm)}</td>
-                      <td style={{ paddingRight: 18 }}>
-                        {diaHora(o.finalizadaEm)} (
-                        {horasEntre(o.iniciadaEm, o.finalizadaEm as string)})
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {concluidas.length === 0 && <Vazio>Nenhuma OS concluída ainda.</Vazio>}
+          <div style={{ font: "600 52px 'Barlow Condensed'", color: "#416180", lineHeight: 1 }}>
+            {mediaTexto}
           </div>
-        </>
-      )}
+          <div className="os-tv" style={{ marginTop: 8 }}>
+            {concluidas.length} OS concluídas
+          </div>
+        </div>
+      </div>
+      <div className="bp" style={{ marginTop: 22 }}>
+        <Corners />
+        <div className="tblwrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th style={{ paddingLeft: 18 }}>OS</th>
+                <th>Cliente</th>
+                <th>Posição</th>
+                <th>Aberta</th>
+                <th style={{ paddingRight: 18 }}>Concluída em</th>
+              </tr>
+            </thead>
+            <tbody>
+              {concluidas.map((o) => (
+                <tr key={o.id}>
+                  <td style={{ paddingLeft: 18, font: "600 17px 'Barlow Condensed'" }}>
+                    {osNum(o)}
+                  </td>
+                  <td>{o.clienteNome}</td>
+                  <td>{posLabels(o.posicoes)}</td>
+                  <td>{diaHora(o.iniciadaEm)}</td>
+                  <td style={{ paddingRight: 18 }}>
+                    {diaHora(o.finalizadaEm)} (
+                    {horasEntre(o.iniciadaEm, o.finalizadaEm as string)})
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {concluidas.length === 0 && <Vazio>Nenhuma OS concluída ainda.</Vazio>}
+      </div>
     </>
   );
 }

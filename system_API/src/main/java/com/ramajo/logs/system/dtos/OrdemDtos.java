@@ -7,6 +7,7 @@ import com.ramajo.logs.system.entities.Lote;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.ramajo.logs.system.entities.OrdemAlteracao;
 import com.ramajo.logs.system.entities.OrdemAvaliacao;
+import com.ramajo.logs.system.entities.OrdemDesidrogenizacao;
 import com.ramajo.logs.system.entities.OrdemServico;
 import com.ramajo.logs.system.dtos.CargaDtos.CargaDTO;
 import com.ramajo.logs.system.enums.CampoAlterado;
@@ -29,7 +30,13 @@ import java.util.UUID;
  * Os métodos `from(...)` tocam relações LAZY (cliente, cargas, carga/processo/
  * responsavel do log). Devem ser chamados com a sessão de persistência aberta
  * — o que ocorre no controller graças ao open-in-view (ligado por padrão no
- * Spring Boot). Ver nota no fim da resposta se você desligar o open-in-view.
+ * Spring Boot).
+ *
+ * Essa dependência é justamente o que deixa um N+1 passar calado: o lazy load
+ * fora da transação vira query extra, sem erro nenhum. Para desligar o
+ * open-in-view — o que a transforma em LazyInitializationException, alta e na
+ * linha exata — há um plano com o inventário do que quebra em
+ * `system_API/OPEN-IN-VIEW.md`.
  */
 public final class OrdemDtos {
 
@@ -302,6 +309,38 @@ public final class OrdemDtos {
                     logsIniciados == null
                             ? null
                             : logsIniciados.stream().map(LogDTO::from).toList());
+        }
+    }
+
+    /**
+     * O que a Visão Geral precisa de uma OS e o OrdemResumoDTO não carrega.
+     *
+     * São só quatro campos: `finalizadaEm`, `cancelada`, `entregueEm` e
+     * `entreguePorNome` já vêm no resumo desde a V17, e a auditoria lê de lá.
+     * Por isso este DTO não é o OrdemDetalheDTO — aquele traz dezassete campos,
+     * incluindo `cargasVinculadas`, que é mais uma coleção LAZY por ordem, e a
+     * tela nunca a usa.
+     *
+     * Existe para ser pedido em lote: a aba montava-se com um GET de detalhe por
+     * OS, o que a fazia abrir com mais de cem requisições.
+     */
+    public record OrdemAuditoriaDTO(
+            Long ordemServicoId, String iniciadaPorNome, String finalizadaPorNome,
+            List<LoteDTO> lotes, List<OrdemDesidrogenizacaoDTO> desidrogenizacoes) {
+
+        /**
+         * Lotes e desidrogenizações entram já buscados, e não lidos da entidade:
+         * quem monta vários destes de uma vez traz as duas coleções numa
+         * consulta só. Ler `os.getLotes()` aqui reabriria o N+1 pelo outro lado.
+         */
+        public static OrdemAuditoriaDTO from(OrdemServico os, List<Lote> lotes,
+                                             List<OrdemDesidrogenizacao> desidros) {
+            return new OrdemAuditoriaDTO(
+                    os.getId(),
+                    os.getIniciadaPor() != null ? os.getIniciadaPor().getNome() : null,
+                    os.getFinalizadaPor() != null ? os.getFinalizadaPor().getNome() : null,
+                    lotes.stream().map(LoteDTO::from).toList(),
+                    desidros.stream().map(OrdemDesidrogenizacaoDTO::from).toList());
         }
     }
 

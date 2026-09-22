@@ -226,6 +226,38 @@ export interface OrdemDetalheDTO {
 }
 
 /**
+ * dtos/OrdemDtos.OrdemAuditoriaDTO — o que a Visão Geral precisa de uma OS e o
+ * resumo não traz. Quatro campos, pedidos em lote: a aba lia o detalhe inteiro
+ * de cada ordem, um GET por OS.
+ */
+export interface OrdemAuditoriaDTO {
+  ordemServicoId: number;
+  iniciadaPorNome: string | null;
+  finalizadaPorNome: string | null;
+  lotes: LoteDTO[];
+  desidrogenizacoes: OrdemDesidrogenizacaoDTO[];
+}
+
+/**
+ * A OS como a auditoria a lê: o lote de OrdemAuditoriaDTO mais os quatro campos
+ * de fecho que já vêm no OrdemResumoDTO desde a V17.
+ *
+ * Não é um DTO — é o que useAuditoriaDia monta juntando os dois. Existe porque
+ * `domain/auditoria.ts` lê estes oito campos e mais nenhum; o OrdemDetalheDTO,
+ * que a aba buscava antes, serve dezassete.
+ */
+export interface DetalheDia {
+  iniciadaPorNome: string | null;
+  finalizadaPorNome: string | null;
+  lotes: LoteDTO[];
+  desidrogenizacoes: OrdemDesidrogenizacaoDTO[];
+  finalizadaEm: string | null;
+  cancelada: boolean;
+  entregueEm: string | null;
+  entreguePorNome: string | null;
+}
+
+/**
  * Um ponto da avaliação da inspeção final: `null` = não avaliado, `true` =
  * avaliado sem observação, texto = avaliado com a observação daquele ponto.
  * `false` não existe — a API recusa.

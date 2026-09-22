@@ -139,7 +139,11 @@ public class OrdemServico {
 
     // Cargas ATUALMENTE vinculadas (as liberadas têm ordemAtual = null e somem
     // daqui). Logo, `cargas` == o que ainda está fisicamente na OS.
+    //
+    // @BatchSize pela mesma razão de `lotes`: o OrdemDetalheDTO lê esta coleção,
+    // e sem isto era uma query por OS em quem pede vários detalhes seguidos.
     @OneToMany(mappedBy = "ordemAtual", fetch = FetchType.LAZY)
+    @BatchSize(size = 100)
     private List<Carga> cargas = new ArrayList<>();
 
     // Partes em que a produção desta OS foi quebrada, na ordem. @BatchSize evita

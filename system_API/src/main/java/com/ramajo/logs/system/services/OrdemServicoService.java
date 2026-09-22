@@ -1439,6 +1439,21 @@ public class OrdemServicoService {
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Ordem de Serviço", osId));
     }
 
+    /**
+     * O mesmo que buscar(), para quem vai montar o OrdemDetalheDTO: traz os
+     * @ManyToOne que o DTO lê (cliente e os três operadores) já resolvidos.
+     *
+     * Separado de buscar() de propósito. Aquele é usado por dentro, pelas
+     * mutações (entregar, reabrir), que só precisam da linha — pagar quatro
+     * joins ali seria desperdício. Aqui a OS vai virar JSON, e sem os joins era
+     * uma query por nome, uma vez por OS pedida.
+     */
+    @Transactional(readOnly = true)
+    public OrdemServico buscarDetalhe(Long osId) {
+        return osRepo.buscarParaDetalhe(osId)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Ordem de Serviço", osId));
+    }
+
     @Transactional(readOnly = true)
     public List<OrdemServico> listarTodas() {
         return osRepo.listarParaResumo();

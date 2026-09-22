@@ -20,6 +20,7 @@ import com.ramajo.logs.system.dtos.OrdemDtos.IniciarLogPorTagDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.LiberarCargasDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.LogDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.LoteDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.OrdemAuditoriaDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.OrdemAlteracaoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.OrdemDetalheDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.OrdemResumoDTO;
@@ -30,6 +31,7 @@ import com.ramajo.logs.system.entities.Log;
 import com.ramajo.logs.system.entities.Lote;
 import com.ramajo.logs.system.entities.OrdemDesidrogenizacao;
 import com.ramajo.logs.system.entities.OrdemServico;
+import com.ramajo.logs.system.services.AuditoriaService;
 import com.ramajo.logs.system.services.DesidrogenizacaoService;
 import com.ramajo.logs.system.services.OrdemAvaliacaoService;
 import com.ramajo.logs.system.services.OrdemServicoService;
@@ -73,15 +75,18 @@ public class OrdemServicoController {
     private final PlanilhaOrdemServicoService planilhaService;
     private final DesidrogenizacaoService desidrogenizacaoService;
     private final OrdemAvaliacaoService avaliacaoService;
+    private final AuditoriaService auditoriaService;
 
     public OrdemServicoController(OrdemServicoService service,
                                   PlanilhaOrdemServicoService planilhaService,
                                   DesidrogenizacaoService desidrogenizacaoService,
-                                  OrdemAvaliacaoService avaliacaoService) {
+                                  OrdemAvaliacaoService avaliacaoService,
+                                  AuditoriaService auditoriaService) {
         this.service = service;
         this.planilhaService = planilhaService;
         this.desidrogenizacaoService = desidrogenizacaoService;
         this.avaliacaoService = avaliacaoService;
+        this.auditoriaService = auditoriaService;
     }
 
     /**
@@ -131,7 +136,7 @@ public class OrdemServicoController {
 
     @GetMapping("/{id}")
     public OrdemDetalheDTO buscar(@PathVariable Long id) {
-        return OrdemDetalheDTO.from(service.buscar(id));
+        return OrdemDetalheDTO.from(service.buscarDetalhe(id));
     }
 
     // Correção pelo ADMIN (Nº, cliente, setores). PUT porque o corpo traz os
@@ -169,6 +174,32 @@ public class OrdemServicoController {
     @GetMapping("/{id}/logs")
     public List<LogDTO> historico(@PathVariable Long id) {
         return service.historico(id).stream().map(LogDTO::from).toList();
+    }
+
+    /**
+     * A mesma coisa da rota acima, para VÁRIAS OS num pedido só — o que poupa a
+     * Visão Geral de abrir uma conexão por ordem.
+     *
+     * Devolve uma lista PLANA: um passo de carona pertence a duas ou três OS, e
+     * agrupá-lo por ordem o repetiria. Quem lê reexpande pelo `ordemServicoId` e
+     * pelo `ordensAcopladas` de cada LogDTO.
+     *
+     * `logs` é segmento literal e não colide com o @GetMapping("/{id}") acima:
+     * o Spring resolve o literal primeiro, como já acontece com /logs/tag.
+     */
+    @GetMapping("/logs")
+    public List<LogDTO> historicoDeOrdens(@RequestParam List<Long> ids) {
+        return auditoriaService.historicoDeOrdens(ids).stream().map(LogDTO::from).toList();
+    }
+
+    /**
+     * Os campos que a Visão Geral lê de cada OS e que o resumo da listagem não
+     * traz — quem abriu, quem fechou, lotes e desidrogenizações —, para várias
+     * ordens de uma vez. Substitui um GET de detalhe por OS.
+     */
+    @GetMapping("/auditoria")
+    public List<OrdemAuditoriaDTO> auditoriaDeOrdens(@RequestParam List<Long> ids) {
+        return auditoriaService.auditoriaDeOrdens(ids);
     }
 
     /**

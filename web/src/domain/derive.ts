@@ -82,6 +82,33 @@ export function logAbertoDaCarga(nome: string, logs: LogDTO[]): LogDTO | undefin
 export const ehAcoplada = (l: LogDTO, osId: number) => l.ordemServicoId !== osId;
 
 /**
+ * Reindexa por OS a lista PLANA que `GET /api/ordens/logs?ids=` devolve.
+ *
+ * As rotas em lote mandam cada passo UMA vez, mesmo quando ele pertence a três
+ * ordens: o `ordemServicoId` diz de quem é a carga e o `ordensAcopladas` diz
+ * quem pegou boleia. Reconstruir os dois lados aqui é o que faz o lote devolver,
+ * ordem a ordem, exactamente o que `GET /api/ordens/{id}/logs` devolvia — e é a
+ * mesma distinção que `ehAcoplada` faz acima, só que do lado de quem monta.
+ *
+ * A lista chega ordenada por (iniciadoEm, id), portanto cada grupo sai já na
+ * ordem certa sem um segundo sort. Toda OS pedida ganha uma entrada, ainda que
+ * vazia: quem lê distingue "sem passos" de "não carregada".
+ */
+export function indexarLogs(planos: LogDTO[], ids: number[]): Record<number, LogDTO[]> {
+  const doConjunto = new Set(ids);
+  const porOs: Record<number, LogDTO[]> = {};
+  for (const id of ids) porOs[id] = [];
+
+  for (const l of planos) {
+    if (doConjunto.has(l.ordemServicoId)) porOs[l.ordemServicoId].push(l);
+    for (const os of l.ordensAcopladas) {
+      if (os !== l.ordemServicoId && doConjunto.has(os)) porOs[os].push(l);
+    }
+  }
+  return porOs;
+}
+
+/**
  * A carga em que esta OS pega carona, se houver. Vale como "tem carga
  * vinculada": as peças dela estão dentro de um tanque alheio, e a OS não pode
  * ser tratada como pronta para inspeção.

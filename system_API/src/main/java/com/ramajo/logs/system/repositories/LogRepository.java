@@ -20,8 +20,18 @@ public interface LogRepository extends JpaRepository<Log, UUID> {
     // Só a leitura de tela usa esta visão ampliada. As consultas de relatório
     // abaixo continuam na titular de propósito: é o que faz um evento físico
     // ser contado uma vez, sem DISTINCT em cada agregado.
+    //
+    // Os fetches não são opcionais: LogDTO.from lê carga, processo, responsável
+    // e quem fechou em TODA linha. Sem eles eram 4 queries por passo, e esta
+    // rota é chamada uma vez por OS ao abrir a Visão Geral. `carga`, `processo`
+    // e `responsavel` são optional=false, daí o join fetch simples; só
+    // `finalizadoPor` é nullable (passo em aberto, ou fechado antes da V21).
     @Query("""
             select l from Log l
+              join fetch l.carga
+              join fetch l.processo
+              join fetch l.responsavel
+              left join fetch l.finalizadoPor
              where l.ordemServico.id = :osId
                 or :osId member of l.ordensAcopladas
              order by l.iniciadoEm asc, l.id asc
