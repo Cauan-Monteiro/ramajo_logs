@@ -3,6 +3,10 @@ package com.ramajo.logs.system.services;
 import java.math.BigDecimal;
 import java.util.List;
 
+import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.ConfigDesidrogenizacaoDTO;
+import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.DesidroEmAndamentoDTO;
+import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.DesidrogenizacaoDTO;
+import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.OrdemDesidrogenizacaoDTO;
 import com.ramajo.logs.system.entities.ConfigDesidrogenizacao;
 import com.ramajo.logs.system.entities.Desidrogenizacao;
 import com.ramajo.logs.system.entities.Operador;
@@ -58,33 +62,33 @@ public class DesidrogenizacaoService {
      * arquivado para ler o histórico.
      */
     @Transactional(readOnly = true)
-    public List<Desidrogenizacao> listar(boolean arquivadas) {
-        return arquivadas
+    public List<DesidrogenizacaoDTO> listar(boolean arquivadas) {
+        List<Desidrogenizacao> catalogo = arquivadas
                 ? desidroRepo.findAllByOrderByNomeAsc()
                 : desidroRepo.findByAtivoTrueOrderByNomeAsc();
+        return catalogo.stream().map(DesidrogenizacaoDTO::from).toList();
     }
 
     @Transactional(readOnly = true)
-    public Desidrogenizacao buscar(Long id) {
-        return desidroRepo.findById(id)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Desidrogenização", id));
+    public DesidrogenizacaoDTO buscar(Long id) {
+        return DesidrogenizacaoDTO.from(carregar(id));
     }
 
     @Transactional
-    public Desidrogenizacao criar(String nome, Integer duracaoMin, String observacao) {
+    public DesidrogenizacaoDTO criar(String nome, Integer duracaoMin, String observacao) {
         Desidrogenizacao d = new Desidrogenizacao(nome, duracaoMin);
         d.setObservacao(observacao);
-        return desidroRepo.save(d);
+        return DesidrogenizacaoDTO.from(desidroRepo.save(d));
     }
 
     @Transactional
-    public Desidrogenizacao atualizar(Long id, String nome, Integer duracaoMin,
-                                      String observacao) {
-        Desidrogenizacao d = buscar(id);
+    public DesidrogenizacaoDTO atualizar(Long id, String nome, Integer duracaoMin,
+                                         String observacao) {
+        Desidrogenizacao d = carregar(id);
         d.setNome(nome);
         d.setDuracaoMin(duracaoMin);
         d.setObservacao(observacao);
-        return d; // dirty checking
+        return DesidrogenizacaoDTO.from(d); // dirty checking
     }
 
     /**
@@ -95,29 +99,35 @@ public class DesidrogenizacaoService {
      */
     @Transactional
     public void arquivar(Long id) {
-        Desidrogenizacao d = buscar(id);
+        Desidrogenizacao d = carregar(id);
         d.setAtivo(false); // idempotente
     }
 
     @Transactional
-    public Desidrogenizacao reativar(Long id) {
-        Desidrogenizacao d = buscar(id);
+    public DesidrogenizacaoDTO reativar(Long id) {
+        Desidrogenizacao d = carregar(id);
         d.setAtivo(true);
-        return d;
+        return DesidrogenizacaoDTO.from(d);
+    }
+
+    /** Carga interna: entidade gerenciada, para os caminhos que a mutam. */
+    private Desidrogenizacao carregar(Long id) {
+        return desidroRepo.findById(id)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Desidrogenização", id));
     }
 
     // TEMPERATURA  ===========================================================
 
     @Transactional(readOnly = true)
-    public ConfigDesidrogenizacao configuracao() {
-        return carregarConfig();
+    public ConfigDesidrogenizacaoDTO configuracao() {
+        return ConfigDesidrogenizacaoDTO.from(carregarConfig());
     }
 
     @Transactional
-    public ConfigDesidrogenizacao definirTemperatura(BigDecimal temperatura) {
+    public ConfigDesidrogenizacaoDTO definirTemperatura(BigDecimal temperatura) {
         ConfigDesidrogenizacao cfg = carregarConfig();
         cfg.setTemperatura(temperatura); // dirty checking
-        return cfg;
+        return ConfigDesidrogenizacaoDTO.from(cfg);
     }
 
     // APLICAÇÃO  =============================================================
@@ -131,7 +141,7 @@ public class DesidrogenizacaoService {
      * do fato.
      */
     @Transactional
-    public OrdemDesidrogenizacao aplicar(Long osId, Long desidrogenizacaoId, Long operadorId) {
+    public OrdemDesidrogenizacaoDTO aplicar(Long osId, Long desidrogenizacaoId, Long operadorId) {
         OrdemServico os = osRepo.findById(osId)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Ordem de Serviço", osId));
         if (os.isFinalizada() || os.isCancelada()) {
@@ -144,7 +154,7 @@ public class DesidrogenizacaoService {
             throw new OperadorInativoException(operadorId);
         }
 
-        Desidrogenizacao receita = buscar(desidrogenizacaoId);
+        Desidrogenizacao receita = carregar(desidrogenizacaoId);
         // Arquivada não volta pela porta dos fundos — mesma guarda que
         // ProcessoInicialService faz com processo inativo.
         if (!receita.isAtivo()) {
@@ -163,12 +173,14 @@ public class DesidrogenizacaoService {
         // O lado dono da relação é a aplicação, então isto não gera insert —
         // só evita que o detalhe da OS, na mesma sessão, reporte a lista antiga.
         os.getDesidrogenizacoes().add(aplicacao);
-        return aplicacao;
+        return OrdemDesidrogenizacaoDTO.from(aplicacao);
     }
 
     @Transactional(readOnly = true)
-    public List<OrdemDesidrogenizacao> daOrdem(Long osId) {
-        return aplicacaoRepo.buscarDaOrdem(osId);
+    public List<OrdemDesidrogenizacaoDTO> daOrdem(Long osId) {
+        return aplicacaoRepo.buscarDaOrdem(osId).stream()
+                .map(OrdemDesidrogenizacaoDTO::from)
+                .toList();
     }
 
     /**
@@ -178,8 +190,13 @@ public class DesidrogenizacaoService {
      * mora a escala de cores (ver web/src/domain/desidro.ts).
      */
     @Transactional(readOnly = true)
-    public List<OrdemDesidrogenizacao> emAndamento() {
-        return aplicacaoRepo.buscarDeOrdensEmProcesso();
+    public List<DesidroEmAndamentoDTO> emAndamento() {
+        // getPosicoesOrdenadas() da OS é LAZY e a consulta não a traz; aqui
+        // dentro da transação o @BatchSize(100) de OrdemServico.posicoes
+        // resolve o conjunto em lote, não uma consulta por aplicação.
+        return aplicacaoRepo.buscarDeOrdensEmProcesso().stream()
+                .map(DesidroEmAndamentoDTO::from)
+                .toList();
     }
 
     /**

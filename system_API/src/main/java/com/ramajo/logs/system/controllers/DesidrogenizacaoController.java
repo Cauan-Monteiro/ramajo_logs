@@ -5,7 +5,6 @@ import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.CriarDesidrogenizacaoDTO
 import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.DefinirTemperaturaDTO;
 import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.DesidroEmAndamentoDTO;
 import com.ramajo.logs.system.dtos.DesidrogenizacaoDtos.DesidrogenizacaoDTO;
-import com.ramajo.logs.system.entities.Desidrogenizacao;
 import com.ramajo.logs.system.services.DesidrogenizacaoService;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -40,16 +39,16 @@ public class DesidrogenizacaoController {
     @GetMapping
     public List<DesidrogenizacaoDTO> listar(
             @RequestParam(defaultValue = "false") boolean arquivadas) {
-        return service.listar(arquivadas).stream().map(DesidrogenizacaoDTO::from).toList();
+        return service.listar(arquivadas);
     }
 
     @PostMapping
     public ResponseEntity<DesidrogenizacaoDTO> criar(
             @Valid @RequestBody CriarDesidrogenizacaoDTO dto) {
-        Desidrogenizacao d = service.criar(dto.nome(), dto.duracaoMin(), dto.observacao());
+        DesidrogenizacaoDTO d = service.criar(dto.nome(), dto.duracaoMin(), dto.observacao());
         return ResponseEntity
-                .created(URI.create("/api/desidrogenizacoes/" + d.getId()))
-                .body(DesidrogenizacaoDTO.from(d));
+                .created(URI.create("/api/desidrogenizacoes/" + d.id()))
+                .body(d);
     }
 
     /**
@@ -59,19 +58,18 @@ public class DesidrogenizacaoController {
      */
     @GetMapping("/em-andamento")
     public List<DesidroEmAndamentoDTO> emAndamento() {
-        return service.emAndamento().stream().map(DesidroEmAndamentoDTO::from).toList();
+        return service.emAndamento();
     }
 
     @GetMapping("/{id}")
     public DesidrogenizacaoDTO buscar(@PathVariable Long id) {
-        return DesidrogenizacaoDTO.from(service.buscar(id));
+        return service.buscar(id);
     }
 
     @PutMapping("/{id}")
     public DesidrogenizacaoDTO atualizar(
             @PathVariable Long id, @Valid @RequestBody CriarDesidrogenizacaoDTO dto) {
-        return DesidrogenizacaoDTO.from(
-                service.atualizar(id, dto.nome(), dto.duracaoMin(), dto.observacao()));
+        return service.atualizar(id, dto.nome(), dto.duracaoMin(), dto.observacao());
     }
 
     /** Arquivamento (soft-delete), não remoção física — igual ao DELETE de ProcessoController. */
@@ -83,7 +81,7 @@ public class DesidrogenizacaoController {
 
     @PostMapping("/{id}/reativar")
     public DesidrogenizacaoDTO reativar(@PathVariable Long id) {
-        return DesidrogenizacaoDTO.from(service.reativar(id));
+        return service.reativar(id);
     }
 
     // TEMPERATURA  ===========================================================
@@ -92,12 +90,12 @@ public class DesidrogenizacaoController {
 
     @GetMapping("/temperatura")
     public ConfigDesidrogenizacaoDTO temperatura() {
-        return ConfigDesidrogenizacaoDTO.from(service.configuracao());
+        return service.configuracao();
     }
 
     @PutMapping("/temperatura")
     public ConfigDesidrogenizacaoDTO definirTemperatura(
             @Valid @RequestBody DefinirTemperaturaDTO dto) {
-        return ConfigDesidrogenizacaoDTO.from(service.definirTemperatura(dto.temperatura()));
+        return service.definirTemperatura(dto.temperatura());
     }
 }

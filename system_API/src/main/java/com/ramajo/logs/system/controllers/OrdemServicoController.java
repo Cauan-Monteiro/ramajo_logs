@@ -335,18 +335,16 @@ public class OrdemServicoController {
     @PostMapping("/{id}/desidrogenizacoes")
     public ResponseEntity<OrdemDesidrogenizacaoDTO> aplicarDesidrogenizacao(
             @PathVariable Long id, @Valid @RequestBody AplicarDesidrogenizacaoDTO dto) {
-        OrdemDesidrogenizacao aplicada =
+        OrdemDesidrogenizacaoDTO aplicada =
                 desidrogenizacaoService.aplicar(id, dto.desidrogenizacaoId(), dto.operadorId());
         return ResponseEntity
                 .created(URI.create("/api/ordens/" + id + "/desidrogenizacoes"))
-                .body(OrdemDesidrogenizacaoDTO.from(aplicada));
+                .body(aplicada);
     }
 
     @GetMapping("/{id}/desidrogenizacoes")
     public List<OrdemDesidrogenizacaoDTO> desidrogenizacoes(@PathVariable Long id) {
-        return desidrogenizacaoService.daOrdem(id).stream()
-                .map(OrdemDesidrogenizacaoDTO::from)
-                .toList();
+        return desidrogenizacaoService.daOrdem(id);
     }
 
     // passo 3: expedição total (fecha a OS e o lote corrente junto). Com
