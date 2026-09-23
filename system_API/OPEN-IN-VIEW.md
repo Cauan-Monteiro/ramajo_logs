@@ -1,182 +1,148 @@
-# Desligar o `open-in-view`
+# `open-in-view` desligado
 
-Plano guardado. **Não está aplicado** — este documento existe para que a migração possa
-ser feita noutro momento sem refazer a investigação.
+**Aplicado.** `spring.jpa.open-in-view=false` está em `application.properties`.
 
-Levantamento feito em 2026-09-22, sobre o código logo após a otimização da aba Visão
-Geral (as rotas em lote `/api/ordens/logs` e `/api/ordens/auditoria` já existem).
+Levantamento feito em 2026-09-22, migração executada em 2026-09-23, na branch
+`refactor/open-in-view` — sete commits, um por controller.
 
-## O problema
+## A regra que passou a valer
 
-`spring.jpa.open-in-view` não está definido em `src/main/resources/application.properties`,
-logo vale `true`. Com ele ligado, a sessão do Hibernate fica aberta até a resposta HTTP ser
-serializada — e os DTOs são montados **no controller**, depois de o `@Transactional` do
-service já ter retornado:
+**Nenhum controller chama `DTO.from(...)`.** Todo mapeamento acontece dentro de um método
+`@Transactional` de service, que devolve o DTO pronto.
 
-```java
-// controllers/OrdemServicoController.java:139
-return OrdemDetalheDTO.from(service.buscarDetalhe(id));
-//     ^ toca associações LAZY aqui, fora de qualquer transação
+```bash
+# tem de voltar vazio
+grep -rn "DTO\.from\|DTO::from" src/main/java/com/ramajo/logs/system/controllers/
 ```
 
-Cada toque LAZY desses vira uma query extra, silenciosa. Sem exceção, sem log de erro. Só
-lentidão.
+Isto não é estilo. Com o open-in-view desligado a sessão do Hibernate fecha quando o
+service retorna, e um `from(...)` chamado depois disso estoura
+`LazyInitializationException` na linha exata. Antes, o mesmo toque LAZY virava uma query
+extra silenciosa — sem exceção, sem log, só lentidão.
 
-**Isto não é teórico.** Foi exatamente esse mecanismo que deixou o N+1 da Visão Geral
-passar despercebido por todo o desenvolvimento da aba: `LogRepository.buscarHistorico` não
-tinha `join fetch`, o `LogDTO.from` desreferenciava quatro `@ManyToOne` por passo, e a
-única evidência era a aba demorar. Com o open-in-view desligado, aquilo teria estourado
-`LazyInitializationException` na primeira execução.
+Foi esse mecanismo que deixou o N+1 da Visão Geral passar despercebido por todo o
+desenvolvimento da aba: `LogRepository.buscarHistorico` não tinha `join fetch`, o
+`LogDTO.from` desreferenciava quatro `@ManyToOne` por passo, e a única evidência era a aba
+demorar.
 
-Desligar não acelera nada por si só. **Converte uma classe inteira de bug invisível em
-falha alta, na linha exata, que o teste pega.** É trava, não motor.
+Desligar não acelerou nada por si só. Converteu uma classe inteira de bug invisível em
+falha alta, na linha exata, que o teste pega. É trava, não motor.
 
-## Inventário: o que quebra
+## O portão
 
-Das **52 chamadas `DTO.from`** em 7 controllers, **20 endpoints quebram**. O resto já está
-coberto — ou porque a consulta faz `join fetch`, ou porque a entidade é nova (recém-salva,
-coleções já inicializadas), ou porque o DTO não lê campo LAZY nenhum.
+`src/test/java/com/ramajo/logs/system/controllers/RotasSmokeTest.java` — `@SpringBootTest`
++ `@AutoConfigureMockMvc` contra um Postgres de verdade, percorrendo todas as rotas.
 
-> **`@BatchSize` não ajuda aqui.** Ele reduz o N+1 *enquanto a sessão está aberta*; com o
-> open-in-view desligado a sessão já fechou, e uma coleção com `@BatchSize` estoura
-> `LazyInitializationException` exatamente como uma sem. As anotações que existem em
-> `OrdemServico` e `Log` são irrelevantes para esta migração.
+Precisa do banco próprio, criado uma vez:
 
-### Por controller
+```bash
+docker exec ramajo-db-1 psql -U postgres -c "create database ramajo_smoke"
+```
 
-| Controller | Quebram | Causa raiz |
-|---|---|---|
-| `ClienteController` | **0** | `Cliente` não tem nenhuma associação LAZY |
-| `OperadorController` | **0** | `Operador` não tem nenhuma associação LAZY |
-| `ProcessoInicialController` | 1 | `ProcessoInicial.processo` |
-| `DesidrogenizacaoController` | 1 | `OrdemServico.posicoes` |
-| `ProcessoController` | 3 | `Processo.posicoes` |
-| `CargaController` | 5 | `Carga.ordensAcopladas` |
-| `OrdemServicoController` | 10 | misto — ver abaixo |
+Duas armadilhas, ambas documentadas na classe e nenhuma das duas óbvia:
 
-### Os 20 pontos
+- **`@WebMvcTest` não serve.** Substitui os services por mocks: não há sessão, não há lazy
+  load, e o teste passaria com todos os bugs no lugar. Era o que o plano original pedia.
+- **`@Transactional` na classe não serve.** A transação de teste manteria a sessão aberta
+  por toda a requisição e mascararia exatamente a exceção que se quer provocar — o
+  open-in-view voltaria pela porta dos fundos. Por isso o teste não desfaz o que escreve,
+  e por isso o banco é separado.
 
-| Endpoint | Controller:linha | Por que quebra |
-|---|---|---|
-| `listar` | `ProcessoInicialController.java:31` | `ProcessoInicialDTO.from` lê `pi.getProcesso().getDescricao()`; repositório é `findAll()` puro |
-| `listar` | `ProcessoController.java:46` | `Set.copyOf(p.getPosicoes())`; `ProcessoRepository` não tem **nenhuma** consulta com fetch |
-| `buscar` | `ProcessoController.java:51` | idem |
-| `reativar` | `ProcessoController.java:73` | idem — `buscar` + `setAtivo`, `posicoes` nunca tocada |
-| `atualizar` | `CargaController.java:40` | `CargaDTO.from` faz `List.copyOf(c.getOrdensAcopladas())` |
-| `listar` | `CargaController.java:46` | idem, uma vez por linha |
-| `buscar` | `CargaController.java:52` | idem |
-| `porTag` | `CargaController.java:58` | idem |
-| `reativar` | `CargaController.java:65` | idem |
-| `emAndamento` | `DesidrogenizacaoController.java:61` | `DesidroEmAndamentoDTO.from` chama `od.getOrdemServico().getPosicoesOrdenadas()`; a consulta faz fetch da OS mas não da coleção `posicoes` |
-| `criar` (caminho da OS irmã) | `OrdemServicoController.java:99` | `vincularNaIrma` → `findById`; só quebra quando o Nº já é de uma OS do mesmo setor |
-| `listar` | `OrdemServicoController.java:130` | `posicoes` e `lotes` nunca vêm no fetch, nos dois caminhos |
-| `buscar` | `OrdemServicoController.java:138` | `buscarParaDetalhe` cobre os quatro `@ManyToOne`, mas `posicoes`/`cargas`/`lotes`/`desidrogenizacoes` ficam de fora **de propósito** (`MultipleBagFetchException`) |
-| `corrigir` | `OrdemServicoController.java:147` | `carregarAberta` → `findById` |
-| `adicionarPosicao` | `OrdemServicoController.java:163` | idem |
-| `historico` | `OrdemServicoController.java:175` | tudo fetchado **exceto** `log.getOrdensAcopladas()` |
-| `historicoDeOrdens` | `OrdemServicoController.java:191` | mesma razão — rota nova, mesmo buraco |
-| `finalizarLog` | `OrdemServicoController.java:275` | `logRepo.findById(logId)` sem fetch: `carga`, `processo`, `responsavel` e `ordensAcopladas`, quatro proxies crus |
-| `lotes` | `OrdemServicoController.java:326` | usa `findByOrdemServicoIdOrderByNumeroAsc`, sem fetch — enquanto `LoteRepository.buscarParaRelatorio`, que **tem** o fetch, existe e não é usada aqui |
-| `reabrir` | `OrdemServicoController.java:385` | `ReaberturaDTO` → `CargaDTO.from` nas cargas sugeridas → `ordensAcopladas`. Latente: só dispara se sobrar alguma carga livre |
+A semeadura vai pela própria API, não pelos repositórios: assim as rotas de escrita que
+devolvem DTO entram no gate junto com os `GET`. O cenário monta as coleções LAZY que
+nenhuma consulta faz fetch — sobre tabelas vazias toda rota devolve lista vazia e o smoke
+não prova nada.
 
-### Dois padrões explicam quase tudo
+**Verificado por negativa:** reintroduzindo o mapeamento de `emAndamento` no controller, o
+teste falha com `LazyInitializationException` em `OrdemServico.posicoes (no session)`.
 
-1. **`@ElementCollection` LAZY lida por DTO.** `Carga.ordensAcopladas` (`Carga.java:76`),
-   `Log.ordensAcopladas` (`Log.java:93`), `OrdemServico.posicoes` (`OrdemServico.java:79`),
-   `Processo.posicoes` (`Processo.java:42`). Nenhuma consulta do projeto faz fetch de
-   nenhuma delas — e nem dá para juntá-las aos outros fetches sem produto cartesiano.
+## O padrão usado
 
-2. **Endpoint de escrita devolvendo a entidade do caminho de mutação.** `finalizarLog`,
-   `corrigir`, `adicionarPosicao`, `Carga.atualizar`/`reativar`, `Processo.reativar`: o
-   service carrega com `findById` para aplicar a regra, toca só o campo que muda, e o
-   controller depois pede ao DTO tudo o resto.
-
-### Os de maior impacto
-
-`GET /api/ordens` e `GET /api/ordens/{id}` (toda tela os carrega), `GET /api/cargas` (o
-pool do chão de fábrica) e `PATCH /api/ordens/logs/{logId}/finalizar` (quatro proxies não
-inicializados de uma vez).
-
-## O padrão da migração
-
-Mecânico. O service passa a devolver DTO em vez de entidade, e o mapeamento move-se para
-dentro do `@Transactional`:
+O service devolve DTO em vez de entidade. Onde nenhum teste dependia do retorno, o tipo de
+retorno mudou direto:
 
 ```java
 // antes — controller monta o DTO, já fora da transação
-@GetMapping
-public List<ProcessoInicialDTO> listar() {
-    return service.listar().stream().map(ProcessoInicialDTO::from).toList();
-}
+return service.listar().stream().map(ProcessoInicialDTO::from).toList();
 
-// depois — o service devolve pronto
-@GetMapping
-public List<ProcessoInicialDTO> listar() {
-    return service.listar();
+// depois
+return service.listar();
+```
+
+Onde um teste Mockito **inspeciona a entidade devolvida**, o núcleo ficou intacto e ganhou
+uma fachada — `criarEMapear`, `adicionarPosicaoEMapear`, `vincularCargaEMapear`,
+`iniciarLogEMapear`, `acoplarNaCargaEMapear`, `reabrirEMapear`,
+`avaliarComoAdminEMapear`. São sete, e existem para que os ~3.700 linhas de teste
+continuassem a passar sem uma alteração:
+
+```java
+@Transactional
+public OrdemCriadaDTO criarEMapear(...) {
+    return OrdemCriadaDTO.from(criar(...));
 }
 ```
 
-**O padrão já tem um exemplo no repositório**, e é o código mais novo:
-`services/AuditoriaService.java:102` (`auditoriaDeOrdens`) devolve `List<OrdemAuditoriaDTO>`
-montado dentro do `@Transactional(readOnly = true)`. É o único service que hoje devolve
-DTO — replicar aquilo, não inventar um padrão do zero. E é por isso que ele é o único
-endpoint de `OrdemServicoController` classificado como seguro.
+A self-invocation ignora o `@Transactional` do núcleo, mas o da fachada cobre tudo — que é
+o efeito desejado.
 
-**Alternativa descartada:** encher as consultas de `join fetch`. Resolve os 20 casos de
-hoje e não impede o vigésimo primeiro — o próximo DTO que tocar um campo novo volta ao
-silêncio. O que se quer é a trava, não o remendo.
+`AuditoriaService.auditoriaDeOrdens` já era assim antes da migração e serviu de modelo.
 
-## Ordem de execução
+**Alternativa descartada:** encher as consultas de `join fetch`. Resolveria os 20 casos de
+então e não impediria o vigésimo primeiro — o próximo DTO a tocar um campo novo voltaria
+ao silêncio. O que se queria era a trava, não o remendo.
 
-Um controller por commit, do menor para o maior. `Cliente` e `Operador` não aparecem: não
-têm nada a fazer.
+## O que mudou, por controller
 
-1. `ProcessoInicialController` — 1 ponto
-2. `ProcessoController` — 3 pontos
-3. `CargaController` — 5 pontos
-4. `DesidrogenizacaoController` — 1 ponto (mas mexe em `OrdemServico.posicoes`; deixar
-   colado ao passo 5)
-5. `OrdemServicoController` — 10 pontos, o grosso
-6. **Só então** `spring.jpa.open-in-view=false` em `application.properties`
+| Controller | Pontos que quebravam | Causa raiz |
+|---|---|---|
+| `ClienteController` | 0 | `Cliente` não tem associação LAZY — movido só pelo invariante |
+| `OperadorController` | 0 | idem |
+| `ProcessoInicialController` | 1 | `ProcessoInicial.processo` |
+| `DesidrogenizacaoController` | 1 | `OrdemServico.posicoes`, via `DesidroEmAndamentoDTO` |
+| `ProcessoController` | 3 | `Processo.posicoes` |
+| `CargaController` | 5 | `Carga.ordensAcopladas` |
+| `OrdemServicoController` | 10 | misto |
 
-Invertendo esta ordem — ligando a flag primeiro — a aplicação fica com 20 rotas quebradas
-ao mesmo tempo e não dá para trabalhar.
+Dois padrões explicavam quase tudo:
 
-## Portão de aceitação
+1. **`@ElementCollection` LAZY lida por DTO.** `Carga.ordensAcopladas`,
+   `Log.ordensAcopladas`, `OrdemServico.posicoes`, `Processo.posicoes`. Nenhuma consulta
+   fazia fetch de nenhuma delas — e nem dá para juntá-las aos outros fetches sem produto
+   cartesiano.
+2. **Endpoint de escrita devolvendo a entidade do caminho de mutação.** O service carrega
+   com `findById` para aplicar a regra, toca só o campo que muda, e o controller depois
+   pedia ao DTO tudo o resto.
 
-**Os testes atuais não pegam nada disto.** Os de `src/test/java/.../services/` são
-unitários com Mockito, sem banco, e nunca exercitam a serialização da resposta — que é
-onde o lazy load acontece.
+> **`@BatchSize` não ajudava.** Reduz o N+1 *enquanto a sessão está aberta*; com o
+> open-in-view desligado a sessão já fechou, e uma coleção com `@BatchSize` estoura
+> `LazyInitializationException` exatamente como uma sem. Dentro da transação, porém, ele
+> continua a fazer o seu trabalho — é o que segura `Log.ordensAcopladas` em `historico` e
+> `OrdemServico.posicoes` em `emAndamento`, onde não há `join fetch` possível.
 
-O que pega: `spring-boot-starter-webmvc-test` já está no `pom.xml:93` (não é dependência
-nova). Um smoke MockMvc que chame **todo `GET`** com `open-in-view=false` é o gate real.
-São **28 rotas** em 9 controllers:
+## `join fetch` que entraram junto
 
-```bash
-grep -rn "@GetMapping" src/main/java/com/ramajo/logs/system/controllers/
-```
+Onde a coleção passou a ser lida numa consulta de leitura pura, o fetch veio com ela:
 
-Três pedem tratamento à parte, por não devolverem JSON: `/api/ordens/{id}/planilha` e
-`/api/relatorios/periodo/planilha` (devolvem `byte[]`) e `/api/estado/stream` (SSE).
+- `ProcessoInicialRepository.buscarTodosComProcesso`
+- `ProcessoRepository.buscarTodosComPosicoes` / `buscarComPosicoes`
+- `CargaRepository.buscarTodasComAcopladas` / `buscarDisponiveisComAcopladas` /
+  `buscarComAcopladas` / `buscarPorTagComAcopladas` — `GET /api/cargas` é o pool do chão
+  de fábrica e pagava um SELECT por carga
+- `OrdemServicoService.lotes` trocou `findByOrdemServicoIdOrderByNumeroAsc` por
+  `LoteRepository.buscarParaRelatorio`, que **já tinha** o `left join fetch lo.finalizadoPor`
+  e não era usada ali
 
-Os `POST`/`PUT`/`PATCH` que devolvem DTO também precisam de cobertura — `finalizarLog` é o
-pior ponto da lista inteira e é um `PATCH`.
+Os caminhos de escrita continuam no `findById`: lá a entidade gerenciada é necessária para
+o dirty checking, e a coleção é tocada dentro da transação de qualquer forma. Nos services
+com os dois caminhos, o `buscar(id)` público virou leitura com fetch e um `carregar(id)`
+privado passou a servir as mutações.
 
-Complemento útil, o mesmo usado para medir a otimização da Visão Geral:
+## Medir
 
 ```properties
 logging.level.org.hibernate.SQL=DEBUG
 ```
 
-Contar statements por requisição antes e depois. Um endpoint que caia de N para 1 statement
-é a confirmação de que o `join fetch` certo entrou.
-
-## Custo, e quando não fazer
-
-20 endpoints, 5 controllers, e **zero ganho de performance por si só**. Se o objetivo for
-velocidade, a otimização da Visão Geral já entregou (126 requisições → 3). Esta migração
-compra outra coisa: que o próximo N+1 apareça como erro em vez de como reclamação de
-usuário.
-
-Vale quando houver espaço para uma refatoração transversal sem pressa. Não vale como
-resposta a "tal tela está lenta" — para isso, meça primeiro.
+Contar statements por requisição em `GET /api/ordens`, `GET /api/ordens/{id}`,
+`GET /api/cargas` e `PATCH /api/ordens/logs/{logId}/finalizar` — os quatro de maior
+impacto.
