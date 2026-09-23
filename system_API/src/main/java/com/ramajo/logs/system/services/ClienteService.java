@@ -3,6 +3,7 @@ package com.ramajo.logs.system.services;
 
 import java.util.List;
 
+import com.ramajo.logs.system.dtos.ClienteDtos.ClienteDTO;
 import com.ramajo.logs.system.entities.Cliente;
 import com.ramajo.logs.system.exceptions.RecursoNaoEncontradoException;
 import com.ramajo.logs.system.repositories.ClienteRepository;
@@ -23,23 +24,23 @@ public class ClienteService {
     }
 
     @Transactional
-    public Cliente sincronizar(Long id, String nome) {
-        return clienteRepo.findById(id)
+    public ClienteDTO sincronizar(Long id, String nome) {
+        return ClienteDTO.from(clienteRepo.findById(id)
                 .map(existente -> {
                     existente.setNome(nome); // dirty checking
                     return existente;
                 })
-                .orElseGet(() -> clienteRepo.save(new Cliente(id, nome)));
+                .orElseGet(() -> clienteRepo.save(new Cliente(id, nome))));
     }
 
     @Transactional(readOnly = true)
-    public Cliente buscar(Long id) {
-        return clienteRepo.findById(id)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Id", id));
+    public ClienteDTO buscar(Long id) {
+        return ClienteDTO.from(clienteRepo.findById(id)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Id", id)));
     }
 
     @Transactional(readOnly = true)
-    public List<Cliente> listar() {
-        return clienteRepo.findAll();
+    public List<ClienteDTO> listar() {
+        return clienteRepo.findAll().stream().map(ClienteDTO::from).toList();
     }
 }

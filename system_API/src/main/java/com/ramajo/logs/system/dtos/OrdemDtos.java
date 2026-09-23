@@ -29,15 +29,14 @@ import java.util.UUID;
  * DTOs de entrada e saída do fluxo de Ordem de Serviço e Log.
  *
  * Os métodos `from(...)` tocam relações LAZY (cliente, cargas, carga/processo/
- * responsavel do log). Devem ser chamados com a sessão de persistência aberta
- * — o que ocorre no controller graças ao open-in-view (ligado por padrão no
- * Spring Boot).
+ * responsavel do log), então só podem ser chamados de DENTRO de um método
+ * @Transactional de service — nunca do controller.
  *
- * Essa dependência é justamente o que deixa um N+1 passar calado: o lazy load
- * fora da transação vira query extra, sem erro nenhum. Para desligar o
- * open-in-view — o que a transforma em LazyInitializationException, alta e na
- * linha exata — há um plano com o inventário do que quebra em
- * `system_API/OPEN-IN-VIEW.md`.
+ * Isto não é convenção: `spring.jpa.open-in-view=false` fecha a sessão quando o
+ * service retorna, e um from(...) chamado depois disso estoura
+ * LazyInitializationException na linha exata. Era o contrário que deixava um
+ * N+1 passar calado — o lazy load fora da transação virava query extra, sem
+ * erro nenhum. Ver `system_API/OPEN-IN-VIEW.md`.
  */
 public final class OrdemDtos {
 

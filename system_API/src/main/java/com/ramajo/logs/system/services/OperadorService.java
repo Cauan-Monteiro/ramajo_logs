@@ -4,6 +4,7 @@ package com.ramajo.logs.system.services;
 import java.util.List;
 import java.util.Optional;
 
+import com.ramajo.logs.system.dtos.OperadorDtos.OperadorDTO;
 import com.ramajo.logs.system.entities.Operador;
 import com.ramajo.logs.system.enums.Permissao;
 import com.ramajo.logs.system.exceptions.OperadorEmUsoException;
@@ -44,13 +45,13 @@ public class OperadorService {
     }
 
     @Transactional
-    public Operador criar(String nome, Permissao permissao, String tagId) {
-        return operadorRepo.save(new Operador(nome, permissao, tagId));
+    public OperadorDTO criar(String nome, Permissao permissao, String tagId) {
+        return OperadorDTO.from(operadorRepo.save(new Operador(nome, permissao, tagId)));
     }
 
     @Transactional
-    public Operador atualizar(Long id, String nome, Permissao permissao, String tagId) {
-        Operador operador = buscar(id);
+    public OperadorDTO atualizar(Long id, String nome, Permissao permissao, String tagId) {
+        Operador operador = carregar(id);
         // Rebaixar o último admin tranca a aba de Ajustes por fora, tal como
         // desativá-lo — mesma recusa.
         if (permissao != Permissao.ADMIN) {
@@ -59,13 +60,13 @@ public class OperadorService {
         operador.setNome(nome);
         operador.setPermissao(permissao);
         operador.setTagId(tagId);
-        return operador; // dirty checking
+        return OperadorDTO.from(operador); // dirty checking
     }
 
     /** Soft-delete: preserva a autoria de logs e OSs já registrados. */
     @Transactional
     public void desativar(Long id) {
-        Operador operador = buscar(id);
+        Operador operador = carregar(id);
         if (!operador.isAtivo()) {
             return; // idempotente
         }
@@ -74,10 +75,10 @@ public class OperadorService {
     }
 
     @Transactional
-    public Operador reativar(Long id) {
-        Operador operador = buscar(id);
+    public OperadorDTO reativar(Long id) {
+        Operador operador = carregar(id);
         operador.setAtivo(true);
-        return operador;
+        return OperadorDTO.from(operador);
     }
 
     /**
@@ -90,7 +91,7 @@ public class OperadorService {
      */
     @Transactional
     public void excluir(Long id) {
-        Operador operador = buscar(id);
+        Operador operador = carregar(id);
 
         // Abertos por ele MAIS fechados por ele: desde a V21 as duas pontas do
         // passo têm FK para operadores, e quem só fechou etapas também trava a
@@ -114,19 +115,24 @@ public class OperadorService {
     }
 
     @Transactional(readOnly = true)
-    public Operador buscar(Long id) {
+    public OperadorDTO buscar(Long id) {
+        return OperadorDTO.from(carregar(id));
+    }
+
+    @Transactional(readOnly = true)
+    public List<OperadorDTO> listar() {
+        return operadorRepo.findAll().stream().map(OperadorDTO::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<OperadorDTO> buscarPorTag(String tagId) {
+        return operadorRepo.findByTagId(tagId).map(OperadorDTO::from);
+    }
+
+    /** Carga interna dos caminhos de escrita: entidade gerenciada, sem DTO. */
+    private Operador carregar(Long id) {
         return operadorRepo.findById(id)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Id", id));
-    }
-
-    @Transactional(readOnly = true)
-    public List<Operador> listar() {
-        return operadorRepo.findAll();
-    }
-
-    @Transactional(readOnly = true)
-    public Optional<Operador> buscarPorTag(String tagId) {
-        return operadorRepo.findByTagId(tagId);
     }
 
     /**

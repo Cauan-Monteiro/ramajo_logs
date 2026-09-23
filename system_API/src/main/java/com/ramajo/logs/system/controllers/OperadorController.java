@@ -2,7 +2,6 @@ package com.ramajo.logs.system.controllers;
 
 import com.ramajo.logs.system.dtos.OperadorDtos.CriarOperadorDTO;
 import com.ramajo.logs.system.dtos.OperadorDtos.OperadorDTO;
-import com.ramajo.logs.system.entities.Operador;
 import com.ramajo.logs.system.services.OperadorService;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -30,38 +29,38 @@ public class OperadorController {
 
     @PostMapping
     public ResponseEntity<OperadorDTO> criar(@Valid @RequestBody CriarOperadorDTO dto) {
-        Operador o = service.criar(dto.nome(), dto.permissao(), dto.tagId());
+        OperadorDTO o = service.criar(dto.nome(), dto.permissao(), dto.tagId());
         return ResponseEntity
-                .created(URI.create("/api/operadores/" + o.getId()))
-                .body(OperadorDTO.from(o));
+                .created(URI.create("/api/operadores/" + o.id()))
+                .body(o);
     }
 
     @PutMapping("/{id}")
     public OperadorDTO atualizar(@PathVariable Long id, @Valid @RequestBody CriarOperadorDTO dto) {
-        return OperadorDTO.from(service.atualizar(id, dto.nome(), dto.permissao(), dto.tagId()));
+        return service.atualizar(id, dto.nome(), dto.permissao(), dto.tagId());
     }
 
     @GetMapping
     public List<OperadorDTO> listar() {
-        return service.listar().stream().map(OperadorDTO::from).toList();
+        return service.listar();
     }
 
     @GetMapping("/{id}")
     public OperadorDTO buscar(@PathVariable Long id) {
-        return OperadorDTO.from(service.buscar(id));
+        return service.buscar(id);
     }
 
     // Identificação por crachá (login por RFID): ausência é caso normal -> 404.
     @GetMapping("/por-tag/{tagId}")
     public ResponseEntity<OperadorDTO> porTag(@PathVariable String tagId) {
         return service.buscarPorTag(tagId)
-                .map(o -> ResponseEntity.ok(OperadorDTO.from(o)))
+                .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @PostMapping("/{id}/reativar")
     public OperadorDTO reativar(@PathVariable Long id) {
-        return OperadorDTO.from(service.reativar(id));
+        return service.reativar(id);
     }
 
     /**

@@ -27,16 +27,16 @@ public class ClienteController {
     @PutMapping("/{id}")
     public ClienteDTO sincronizar(
             @PathVariable Long id, @Valid @RequestBody SincronizarClienteDTO dto) {
-        return ClienteDTO.from(service.sincronizar(id, dto.nome()));
+        return service.sincronizar(id, dto.nome());
     }
 
     @GetMapping
     public List<ClienteDTO> listar() {
-        return service.listar().stream().map(ClienteDTO::from).toList();
+        return service.listar();
     }
 
     @GetMapping("/{id}")
     public ClienteDTO buscar(@PathVariable Long id) {
-        return ClienteDTO.from(service.buscar(id));
+        return service.buscar(id);
     }
 }
