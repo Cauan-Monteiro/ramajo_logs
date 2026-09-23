@@ -2,7 +2,6 @@ package com.ramajo.logs.system.controllers;
 
 import com.ramajo.logs.system.dtos.CargaDtos.CargaDTO;
 import com.ramajo.logs.system.dtos.CargaDtos.CriarCargaDTO;
-import com.ramajo.logs.system.entities.Carga;
 import com.ramajo.logs.system.services.CargaService;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -30,40 +29,38 @@ public class CargaController {
 
     @PostMapping
     public ResponseEntity<CargaDTO> criar(@Valid @RequestBody CriarCargaDTO dto) {
-        Carga c = service.criar(dto.nome(), dto.tipo(), dto.posicao(), dto.tagId());
+        CargaDTO c = service.criar(dto.nome(), dto.tipo(), dto.posicao(), dto.tagId());
         return ResponseEntity
-                .created(URI.create("/api/cargas/" + c.getId()))
-                .body(CargaDTO.from(c));
+                .created(URI.create("/api/cargas/" + c.id()))
+                .body(c);
     }
 
     @PutMapping("/{id}")
     public CargaDTO atualizar(@PathVariable Long id, @Valid @RequestBody CriarCargaDTO dto) {
-        return CargaDTO.from(
-                service.atualizar(id, dto.nome(), dto.tipo(), dto.posicao(), dto.tagId()));
+        return service.atualizar(id, dto.nome(), dto.tipo(), dto.posicao(), dto.tagId());
     }
 
     @GetMapping
     public List<CargaDTO> listar(@RequestParam(defaultValue = "false") boolean disponiveis) {
-        List<Carga> lista = disponiveis ? service.listarDisponiveis() : service.listar();
-        return lista.stream().map(CargaDTO::from).toList();
+        return service.listar(disponiveis);
     }
 
     @GetMapping("/{id}")
     public CargaDTO buscar(@PathVariable Long id) {
-        return CargaDTO.from(service.buscar(id));
+        return service.buscar(id);
     }
 
     // Leitura de etiqueta/RFID: tag desconhecida é caso normal -> 404 limpo.
     @GetMapping("/por-tag/{tagId}")
     public ResponseEntity<CargaDTO> porTag(@PathVariable String tagId) {
         return service.buscarPorTag(tagId)
-                .map(c -> ResponseEntity.ok(CargaDTO.from(c)))
+                .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @PostMapping("/{id}/reativar")
     public CargaDTO reativar(@PathVariable Long id) {
-        return CargaDTO.from(service.reativar(id));
+        return service.reativar(id);
     }
 
     @DeleteMapping("/{id}") // desativação (soft-delete), não remoção física

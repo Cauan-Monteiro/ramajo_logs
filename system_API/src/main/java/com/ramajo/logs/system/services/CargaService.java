@@ -4,6 +4,7 @@ package com.ramajo.logs.system.services;
 import java.util.List;
 import java.util.Optional;
 
+import com.ramajo.logs.system.dtos.CargaDtos.CargaDTO;
 import com.ramajo.logs.system.entities.Carga;
 import com.ramajo.logs.system.enums.Posicao;
 import com.ramajo.logs.system.enums.TipoCarga;
@@ -27,10 +28,10 @@ public class CargaService {
     }
 
     @Transactional
-    public Carga criar(String nome, TipoCarga tipo, Posicao posicao, String tagId) {
+    public CargaDTO criar(String nome, TipoCarga tipo, Posicao posicao, String tagId) {
         Carga carga = new Carga(nome, tipo, posicao);
         carga.setTagId(tagId);
-        return cargaRepo.save(carga);
+        return CargaDTO.from(cargaRepo.save(carga));
     }
 
     /**
@@ -47,8 +48,9 @@ public class CargaService {
      * de uma carga em uso.
      */
     @Transactional
-    public Carga atualizar(Long id, String nome, TipoCarga tipo, Posicao posicao, String tagId) {
-        Carga carga = buscar(id);
+    public CargaDTO atualizar(Long id, String nome, TipoCarga tipo, Posicao posicao,
+                              String tagId) {
+        Carga carga = carregar(id);
 
         if (posicao != carga.getPosicao() && carga.getOrdemAtual() != null) {
             throw new CargaEmUsoException(
@@ -59,41 +61,50 @@ public class CargaService {
         carga.setTipo(tipo);
         carga.setPosicao(posicao);
         carga.setTagId(tagId);
-        return carga; // gerenciada na transação: persistido no commit (dirty checking)
+        // gerenciada na transação: persistido no commit (dirty checking)
+        return CargaDTO.from(carga);
     }
 
     /** Soft-delete: some do pool sem apagar o histórico de logs que gerou. */
     @Transactional
     public void desativar(Long id) {
-        buscar(id).setAtivo(false);
+        carregar(id).setAtivo(false);
     }
 
     /** Desfaz o soft-delete: a carga volta ao pool. Idempotente. */
     @Transactional
-    public Carga reativar(Long id) {
-        Carga carga = buscar(id);
+    public CargaDTO reativar(Long id) {
+        Carga carga = carregar(id);
         carga.setAtivo(true);
-        return carga; // dirty checking
+        return CargaDTO.from(carga); // dirty checking
     }
 
     @Transactional(readOnly = true)
-    public Carga buscar(Long id) {
+    public CargaDTO buscar(Long id) {
+        return CargaDTO.from(cargaRepo.buscarComAcopladas(id)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Id", id)));
+    }
+
+    /**
+     * A flag vinha do controller, que escolhia entre dois métodos e mapeava o
+     * resultado. Com o mapeamento aqui dentro, a escolha vem junto.
+     */
+    @Transactional(readOnly = true)
+    public List<CargaDTO> listar(boolean disponiveis) {
+        List<Carga> cargas = disponiveis
+                ? cargaRepo.buscarDisponiveisComAcopladas()
+                : cargaRepo.buscarTodasComAcopladas();
+        return cargas.stream().map(CargaDTO::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<CargaDTO> buscarPorTag(String tagId) {
+        return cargaRepo.buscarPorTagComAcopladas(tagId).map(CargaDTO::from);
+    }
+
+    /** Carga interna dos caminhos de escrita: entidade gerenciada, sem DTO. */
+    private Carga carregar(Long id) {
         return cargaRepo.findById(id)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Id", id));
-    }
-
-    @Transactional(readOnly = true)
-    public List<Carga> listar() {
-        return cargaRepo.findAll();
-    }
-
-    @Transactional(readOnly = true)
-    public List<Carga> listarDisponiveis() {
-        return cargaRepo.findByAtivoTrueAndOrdemAtualIsNull();
-    }
-
-    @Transactional(readOnly = true)
-    public Optional<Carga> buscarPorTag(String tagId) {
-        return cargaRepo.findByTagId(tagId);
     }
 }
