@@ -22,15 +22,12 @@ import com.ramajo.logs.system.dtos.OrdemDtos.LogDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.LoteDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.OrdemAuditoriaDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.OrdemAlteracaoDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.OrdemCriadaDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.OrdemDetalheDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.OrdemResumoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.ReaberturaDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.ReabrirOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.VincularCargaDTO;
-import com.ramajo.logs.system.entities.Log;
-import com.ramajo.logs.system.entities.Lote;
-import com.ramajo.logs.system.entities.OrdemDesidrogenizacao;
-import com.ramajo.logs.system.entities.OrdemServico;
 import com.ramajo.logs.system.services.AuditoriaService;
 import com.ramajo.logs.system.services.DesidrogenizacaoService;
 import com.ramajo.logs.system.services.OrdemAvaliacaoService;
@@ -97,18 +94,16 @@ public class OrdemServicoController {
      */
     @PostMapping
     public ResponseEntity<OrdemDetalheDTO> criar(@Valid @RequestBody CriarOrdemDTO dto) {
-        OrdemServicoService.OrdemCriada criada = service.criar(
+        OrdemCriadaDTO criada = service.criarEMapear(
                 dto.clienteId(), dto.operadorId(), dto.idExterno(), dto.posicao(),
                 dto.cargaIds(), acopladasPorCarga(dto.acoplamentos()));
 
-        OrdemDetalheDTO corpo = OrdemDetalheDTO.from(criada.ordem(), criada.logsIniciados());
-
         if (criada.vinculada()) {
-            return ResponseEntity.ok(corpo);
+            return ResponseEntity.ok(criada.ordem());
         }
         return ResponseEntity
-                .created(URI.create("/api/ordens/" + criada.ordem().getId()))
-                .body(corpo);
+                .created(URI.create("/api/ordens/" + criada.ordem().id()))
+                .body(criada.ordem());
     }
 
     /**
@@ -129,14 +124,12 @@ public class OrdemServicoController {
     @GetMapping
     public List<OrdemResumoDTO> listar(
             @RequestParam(defaultValue = "false") boolean emProcesso) {
-        List<OrdemServico> lista =
-                emProcesso ? service.listarEmProcesso() : service.listarTodas();
-        return lista.stream().map(OrdemResumoDTO::from).toList();
+        return service.listar(emProcesso);
     }
 
     @GetMapping("/{id}")
     public OrdemDetalheDTO buscar(@PathVariable Long id) {
-        return OrdemDetalheDTO.from(service.buscarDetalhe(id));
+        return service.buscarDetalhe(id);
     }
 
     // Correção pelo ADMIN (Nº, cliente, setores). PUT porque o corpo traz os
@@ -145,9 +138,9 @@ public class OrdemServicoController {
     // cancela os passos abertos nelas; acrescentar tem rota própria.
     @PutMapping("/{id}")
     public OrdemDetalheDTO corrigir(@PathVariable Long id, @Valid @RequestBody CorrigirOrdemDTO dto) {
-        return OrdemDetalheDTO.from(service.corrigir(
+        return service.corrigir(
                 id, dto.operadorId(), dto.idExterno(), dto.clienteId(), dto.posicoes(),
-                dto.cargaIds(), dto.motivo()));
+                dto.cargaIds(), dto.motivo());
     }
 
     /**
@@ -162,18 +155,17 @@ public class OrdemServicoController {
     @PostMapping("/{id}/posicoes")
     public OrdemDetalheDTO adicionarPosicao(
             @PathVariable Long id, @Valid @RequestBody AdicionarPosicaoDTO dto) {
-        return OrdemDetalheDTO.from(
-                service.adicionarPosicao(id, dto.posicao(), dto.operadorId()));
+        return service.adicionarPosicaoEMapear(id, dto.posicao(), dto.operadorId());
     }
 
     @GetMapping("/{id}/alteracoes")
     public List<OrdemAlteracaoDTO> alteracoes(@PathVariable Long id) {
-        return service.alteracoes(id).stream().map(OrdemAlteracaoDTO::from).toList();
+        return service.alteracoes(id);
     }
 
     @GetMapping("/{id}/logs")
     public List<LogDTO> historico(@PathVariable Long id) {
-        return service.historico(id).stream().map(LogDTO::from).toList();
+        return service.historico(id);
     }
 
     /**
@@ -189,7 +181,7 @@ public class OrdemServicoController {
      */
     @GetMapping("/logs")
     public List<LogDTO> historicoDeOrdens(@RequestParam List<Long> ids) {
-        return auditoriaService.historicoDeOrdens(ids).stream().map(LogDTO::from).toList();
+        return auditoriaService.historicoDeOrdens(ids);
     }
 
     /**
@@ -226,33 +218,33 @@ public class OrdemServicoController {
     @PostMapping("/{id}/cargas")
     public ResponseEntity<LogDTO> vincularCarga(
             @PathVariable Long id, @Valid @RequestBody VincularCargaDTO dto) {
-        Log log = service.vincularCarga(
+        LogDTO log = service.vincularCargaEMapear(
                 id, dto.cargaId(), dto.operadorId(), dto.ordensAcopladasIds());
         return ResponseEntity
-                .created(URI.create("/api/ordens/" + id + "/logs/" + log.getId()))
-                .body(LogDTO.from(log));
+                .created(URI.create("/api/ordens/" + id + "/logs/" + log.id()))
+                .body(log);
     }
 
     // passo 2: abrir
     @PostMapping("/{id}/logs")
     public ResponseEntity<LogDTO> iniciarLog(
             @PathVariable Long id, @Valid @RequestBody IniciarLogDTO dto) {
-        Log log = service.iniciarLog(
+        LogDTO log = service.iniciarLogEMapear(
                 id, dto.cargaId(), dto.processoId(), dto.responsavelId());
         return ResponseEntity
-                .created(URI.create("/api/ordens/" + id + "/logs/" + log.getId()))
-                .body(LogDTO.from(log));
+                .created(URI.create("/api/ordens/" + id + "/logs/" + log.id()))
+                .body(log);
     }
 
     // passo 2: abrir pelo leitor de tags, com a OS já escolhida na URL.
     @PostMapping("/{id}/logs/tag")
     public ResponseEntity<LogDTO> iniciarLogPorTag(
             @PathVariable Long id, @Valid @RequestBody IniciarLogPorTagDTO dto) {
-        Log log = service.iniciarLogPorTag(
+        LogDTO log = service.iniciarLogPorTag(
                 id, dto.cargaTagId(), dto.processoTagId(), dto.responsavelTagId());
         return ResponseEntity
-                .created(URI.create("/api/ordens/" + id + "/logs/" + log.getId()))
-                .body(LogDTO.from(log));
+                .created(URI.create("/api/ordens/" + id + "/logs/" + log.id()))
+                .body(log);
     }
 
     // passo 2: abrir só com as três tags — a OS vem do vínculo atual da carga.
@@ -261,12 +253,12 @@ public class OrdemServicoController {
     @PostMapping("/logs/tag")
     public ResponseEntity<LogDTO> iniciarLogPorTag(
             @Valid @RequestBody IniciarLogPorTagDTO dto) {
-        Log log = service.iniciarLogPorTag(
+        LogDTO log = service.iniciarLogPorTag(
                 dto.cargaTagId(), dto.processoTagId(), dto.responsavelTagId());
-        Long osId = log.getOrdemServico().getId();
         return ResponseEntity
-                .created(URI.create("/api/ordens/" + osId + "/logs/" + log.getId()))
-                .body(LogDTO.from(log));
+                .created(URI.create(
+                        "/api/ordens/" + log.ordemServicoId() + "/logs/" + log.id()))
+                .body(log);
     }
 
     // passo 2: fechar (fim do intervalo). A hora é a do servidor; o corpo traz
@@ -274,7 +266,7 @@ public class OrdemServicoController {
     @PatchMapping("/logs/{logId}/finalizar")
     public LogDTO finalizarLog(
             @PathVariable UUID logId, @Valid @RequestBody FinalizarLogDTO dto) {
-        return LogDTO.from(service.finalizarLog(logId, dto.operadorId()));
+        return service.finalizarLog(logId, dto.operadorId());
     }
 
     // As peças desta OS entraram no tanque de outra. O vínculo é com a CARGA,
@@ -288,7 +280,7 @@ public class OrdemServicoController {
     @PostMapping("/cargas/{cargaId}/acopladas/{osId}")
     public CargaDTO acoplar(@PathVariable Long cargaId, @PathVariable Long osId,
                             @Valid @RequestBody AcoplarDTO dto) {
-        return CargaDTO.from(service.acoplarNaCarga(cargaId, osId, dto.operadorId()));
+        return service.acoplarNaCargaEMapear(cargaId, osId, dto.operadorId());
     }
 
     // Correção: as peças daquela OS não estão nesta carga. Sai da carga e do
@@ -318,13 +310,12 @@ public class OrdemServicoController {
     @PostMapping("/{id}/lotes/finalizar")
     public LoteDTO finalizarLote(
             @PathVariable Long id, @Valid @RequestBody FinalizarLoteDTO dto) {
-        Lote proximo = service.finalizarLote(id, dto.operadorId(), dto.cargaIds());
-        return LoteDTO.from(proximo);
+        return service.finalizarLote(id, dto.operadorId(), dto.cargaIds());
     }
 
     @GetMapping("/{id}/lotes")
     public List<LoteDTO> lotes(@PathVariable Long id) {
-        return service.lotes(id).stream().map(LoteDTO::from).toList();
+        return service.lotes(id);
     }
 
     // DESIDROGENIZAÇÃO  ======================================================
@@ -365,14 +356,14 @@ public class OrdemServicoController {
     @GetMapping("/{id}/avaliacao")
     public ResponseEntity<AvaliacaoDTO> avaliacao(@PathVariable Long id) {
         return avaliacaoService.daOrdem(id)
-                .map(a -> ResponseEntity.ok(AvaliacaoDTO.from(a)))
+                .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @PutMapping("/{id}/avaliacao")
     public AvaliacaoDTO avaliar(@PathVariable Long id, @Valid @RequestBody SalvarAvaliacaoDTO dto) {
-        return AvaliacaoDTO.from(avaliacaoService.avaliarComoAdmin(
-                id, dto.operadorId(), dto.avaliacao().entrada()));
+        return avaliacaoService.avaliarComoAdminEMapear(
+                id, dto.operadorId(), dto.avaliacao().entrada());
     }
 
     // desfaz o passo 3: a OS expedida volta a produzir num lote NOVO, sem tocar
@@ -381,7 +372,7 @@ public class OrdemServicoController {
     // modal de vínculo, não vínculo já feito. Ver ReaberturaDTO.
     @PostMapping("/{id}/reabrir")
     public ReaberturaDTO reabrir(@PathVariable Long id, @Valid @RequestBody ReabrirOrdemDTO dto) {
-        return ReaberturaDTO.from(service.reabrir(id, dto.operadorId()));
+        return service.reabrirEMapear(id, dto.operadorId());
     }
 
     // passo 4: a entrega ao cliente. A expedição tira as peças da produção;

@@ -13,6 +13,7 @@ import com.ramajo.logs.system.dtos.CargaDtos.CargaDTO;
 import com.ramajo.logs.system.enums.CampoAlterado;
 import com.ramajo.logs.system.enums.Posicao;
 import com.ramajo.logs.system.services.OrdemAvaliacaoService;
+import com.ramajo.logs.system.services.OrdemServicoService;
 import com.ramajo.logs.system.services.OrdemServicoService.Reabertura;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -309,6 +310,24 @@ public final class OrdemDtos {
                     logsIniciados == null
                             ? null
                             : logsIniciados.stream().map(LogDTO::from).toList());
+        }
+    }
+
+    /**
+     * O corpo da criação mais a informação que decide o STATUS dela: `vinculada`
+     * distingue a OS aberta agora (201 com Location) da OS irmã que já existia e
+     * apenas recebeu as cargas (200, porque nada foi criado).
+     *
+     * Existe para que o controller não precise da entidade só para descobrir
+     * isso — era o último motivo de OrdemCriada, que traz entidades, sair do
+     * service.
+     */
+    public record OrdemCriadaDTO(OrdemDetalheDTO ordem, boolean vinculada) {
+
+        public static OrdemCriadaDTO from(OrdemServicoService.OrdemCriada criada) {
+            return new OrdemCriadaDTO(
+                    OrdemDetalheDTO.from(criada.ordem(), criada.logsIniciados()),
+                    criada.vinculada());
         }
     }
 

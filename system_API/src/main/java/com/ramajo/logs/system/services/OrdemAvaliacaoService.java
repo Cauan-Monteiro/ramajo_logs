@@ -1,5 +1,6 @@
 package com.ramajo.logs.system.services;
 
+import com.ramajo.logs.system.dtos.OrdemDtos.AvaliacaoDTO;
 import com.ramajo.logs.system.entities.ItemAvaliacao;
 import com.ramajo.logs.system.entities.Operador;
 import com.ramajo.logs.system.entities.OrdemAvaliacao;
@@ -54,11 +55,11 @@ public class OrdemAvaliacaoService {
     }
 
     @Transactional(readOnly = true)
-    public Optional<OrdemAvaliacao> daOrdem(Long osId) {
+    public Optional<AvaliacaoDTO> daOrdem(Long osId) {
         if (!osRepo.existsById(osId)) {
             throw new RecursoNaoEncontradoException("Ordem de Serviço", osId);
         }
-        return avaliacaoRepo.buscarDaOrdem(osId);
+        return avaliacaoRepo.buscarDaOrdem(osId).map(AvaliacaoDTO::from);
     }
 
     /**
@@ -83,6 +84,15 @@ public class OrdemAvaliacaoService {
         }
 
         return registrar(os, admin, entrada);
+    }
+
+    /**
+     * Fachada de DTO de avaliarComoAdmin: o mapeamento acontece dentro desta
+     * transação, não no controller. Ver system_API/OPEN-IN-VIEW.md.
+     */
+    @Transactional
+    public AvaliacaoDTO avaliarComoAdminEMapear(Long osId, Long operadorId, Entrada entrada) {
+        return AvaliacaoDTO.from(avaliarComoAdmin(osId, operadorId, entrada));
     }
 
     /**

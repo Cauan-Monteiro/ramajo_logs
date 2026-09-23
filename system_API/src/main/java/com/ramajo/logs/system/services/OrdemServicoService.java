@@ -1,5 +1,13 @@
 package com.ramajo.logs.system.services;
 
+import com.ramajo.logs.system.dtos.CargaDtos.CargaDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.LogDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.LoteDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.OrdemAlteracaoDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.OrdemCriadaDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.OrdemDetalheDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.OrdemResumoDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.ReaberturaDTO;
 import com.ramajo.logs.system.entities.*;
 import com.ramajo.logs.system.enums.CampoAlterado;
 import com.ramajo.logs.system.enums.Permissao;
@@ -218,6 +226,19 @@ public class OrdemServicoService {
     }
 
     /**
+     * O que o controller chama. O núcleo acima devolve entidades; o mapeamento
+     * para DTO tem de acontecer AQUI DENTRO, com a sessão viva — é isso que
+     * permite o open-in-view desligado. Ver system_API/OPEN-IN-VIEW.md.
+     */
+    @Transactional
+    public OrdemCriadaDTO criarEMapear(Long clienteId, Long operadorId, Long idExterno,
+                                       Posicao posicao, List<Long> cargaIds,
+                                       Map<Long, List<Long>> acopladasPorCarga){
+        return OrdemCriadaDTO.from(
+                criar(clienteId, operadorId, idExterno, posicao, cargaIds, acopladasPorCarga));
+    }
+
+    /**
      * A via do Nº que já existe NESTE setor: nada nasce — nem OS, nem lote. As
      * cargas entram na ordem que já estava lá e o resultado é indistinguível de
      * ter chamado vincularCarga() uma vez por carga.
@@ -371,7 +392,7 @@ public class OrdemServicoService {
      * operação inteira, sem lote meio-fechado.
      */
     @Transactional
-    public Lote finalizarLote(Long osId, Long operadorId, List<Long> cargaIds){
+    public LoteDTO finalizarLote(Long osId, Long operadorId, List<Long> cargaIds){
         OrdemServico os = carregarAberta(osId);
 
         Operador op = exigirOperadorAtivo(operadorId);
@@ -394,7 +415,7 @@ public class OrdemServicoService {
         // na mesma OS por um instante e ux_lotes_os_aberto rejeitaria o INSERT.
         loteRepo.flush();
 
-        return loteRepo.save(new Lote(os, (short) (atual.getNumero() + 1)));
+        return LoteDTO.from(loteRepo.save(new Lote(os, (short) (atual.getNumero() + 1))));
     }
 
     /**
@@ -429,6 +450,13 @@ public class OrdemServicoService {
                 ? List.<Long>of() : ordensAcopladasIds), operador);
 
         return passo;
+    }
+
+    /** Fachada de DTO de vincularCarga; ver criarEMapear. */
+    @Transactional
+    public LogDTO vincularCargaEMapear(Long osId, Long cargaId, Long operadorId,
+                                       List<Long> ordensAcopladasIds){
+        return LogDTO.from(vincularCarga(osId, cargaId, operadorId, ordensAcopladasIds));
     }
 
     /**
@@ -490,8 +518,8 @@ public class OrdemServicoService {
      * derrubam a correção inteira, histórico incluído.
      */
     @Transactional
-    public OrdemServico corrigir(Long osId, Long operadorId, Long idExterno, Long clienteId,
-                                 Set<Posicao> posicoes, List<Long> cargaIds, String motivo){
+    public OrdemDetalheDTO corrigir(Long osId, Long operadorId, Long idExterno, Long clienteId,
+                                    Set<Posicao> posicoes, List<Long> cargaIds, String motivo){
         OrdemServico os = carregarAberta(osId);
 
         Operador admin = exigirOperadorAtivo(operadorId);
@@ -576,7 +604,7 @@ public class OrdemServicoService {
         }
 
         alteracaoRepo.saveAll(alteracoes);
-        return os;
+        return OrdemDetalheDTO.from(os);
     }
 
     /**
@@ -620,6 +648,12 @@ public class OrdemServicoService {
                 MOTIVO_SETOR_ACRESCENTADO, operador));
 
         return os;
+    }
+
+    /** Fachada de DTO de adicionarPosicao; ver criarEMapear. */
+    @Transactional
+    public OrdemDetalheDTO adicionarPosicaoEMapear(Long osId, Posicao nova, Long operadorId){
+        return OrdemDetalheDTO.from(adicionarPosicao(osId, nova, operadorId));
     }
 
     /**
@@ -732,9 +766,11 @@ public class OrdemServicoService {
     }
 
     @Transactional(readOnly = true)
-    public List<OrdemAlteracao> alteracoes(Long osId){
+    public List<OrdemAlteracaoDTO> alteracoes(Long osId){
         buscar(osId);
-        return alteracaoRepo.buscarDaOrdem(osId);
+        return alteracaoRepo.buscarDaOrdem(osId).stream()
+                .map(OrdemAlteracaoDTO::from)
+                .toList();
     }
 
     /**
@@ -759,19 +795,25 @@ public class OrdemServicoService {
         return abrirLog(os, carga, processo, op);
     }
 
+    /** Fachada de DTO de iniciarLog; ver criarEMapear. */
+    @Transactional
+    public LogDTO iniciarLogEMapear(Long osId, Long cargaId, Long processoId, Long responsavelId){
+        return LogDTO.from(iniciarLog(osId, cargaId, processoId, responsavelId));
+    }
+
     /**
      * Mesma abertura de passo, mas identificando os três participantes pela tag
      * física (crachá do operador, etiqueta da carga e do processo). A OS ainda é
      * informada pela URL — use para o leitor posicionado numa OS já escolhida.
      */
     @Transactional
-    public Log iniciarLogPorTag(Long osId, String cargaTagId, String processoTagId, String responsavelTagId){
+    public LogDTO iniciarLogPorTag(Long osId, String cargaTagId, String processoTagId, String responsavelTagId){
         OrdemServico os = carregarAberta(osId);
 
-        return abrirLog(os,
+        return LogDTO.from(abrirLog(os,
                 cargaPorTag(cargaTagId),
                 processoPorTag(processoTagId),
-                operadorPorTag(responsavelTagId));
+                operadorPorTag(responsavelTagId)));
     }
 
     /**
@@ -780,7 +822,7 @@ public class OrdemServicoService {
      * carga estiver livre não há OS a inferir — 422, não 404.
      */
     @Transactional
-    public Log iniciarLogPorTag(String cargaTagId, String processoTagId, String responsavelTagId){
+    public LogDTO iniciarLogPorTag(String cargaTagId, String processoTagId, String responsavelTagId){
         Carga carga = cargaPorTag(cargaTagId);
 
         if (carga.getOrdemAtual() == null){
@@ -790,7 +832,8 @@ public class OrdemServicoService {
         // Revalida o estado da OS (finalizada/cancelada) pelo caminho normal.
         OrdemServico os = carregarAberta(carga.getOrdemAtual().getId());
 
-        return abrirLog(os, carga, processoPorTag(processoTagId), operadorPorTag(responsavelTagId));
+        return LogDTO.from(
+                abrirLog(os, carga, processoPorTag(processoTagId), operadorPorTag(responsavelTagId)));
     }
 
     /** Regras do passo, independentes de como carga/processo/operador chegaram. */
@@ -1002,7 +1045,7 @@ public class OrdemServicoService {
      * vezes é outra pessoa (foi ele que abriu, não que fechou).
      */
     @Transactional
-    public Log finalizarLog(UUID logId, Long operadorId){
+    public LogDTO finalizarLog(UUID logId, Long operadorId){
         Log log = logRepo.findById(logId)
                 .orElseThrow(()-> new RecursoNaoEncontradoException("Log", logId));
 
@@ -1018,7 +1061,7 @@ public class OrdemServicoService {
         }
 
         fecharPasso(log, at, op);
-        return log;
+        return LogDTO.from(log);
     }
 
     /**
@@ -1041,6 +1084,12 @@ public class OrdemServicoService {
     @Transactional
     public Carga acoplarNaCarga(Long cargaId, Long osId, Long operadorId){
         return acoplar(cargaId, osId, exigirOperadorAtivo(operadorId));
+    }
+
+    /** Fachada de DTO de acoplarNaCarga; ver criarEMapear. */
+    @Transactional
+    public CargaDTO acoplarNaCargaEMapear(Long cargaId, Long osId, Long operadorId){
+        return CargaDTO.from(acoplarNaCarga(cargaId, osId, operadorId));
     }
 
     /**
@@ -1341,6 +1390,12 @@ public class OrdemServicoService {
         return new Reabertura(loteRepo.save(new Lote(os, proximo)), sugeridas);
     }
 
+    /** Fachada de DTO de reabrir; ver criarEMapear. */
+    @Transactional
+    public ReaberturaDTO reabrirEMapear(Long osId, Long operadorId){
+        return ReaberturaDTO.from(reabrir(osId, operadorId));
+    }
+
     /**
      * As cargas soltas pela expedição que ainda fazem sentido oferecer de volta.
      *
@@ -1404,14 +1459,26 @@ public class OrdemServicoService {
         os.setEmProcesso(false);
     }
 
+    /**
+     * A flag vinha do controller, que escolhia entre duas consultas e mapeava o
+     * resultado depois. Com o mapeamento aqui dentro, a escolha vem junto.
+     */
     @Transactional(readOnly = true)
-    public List<OrdemServico> listarEmProcesso(){
-        return osRepo.findByEmProcessoTrue();
+    public List<OrdemResumoDTO> listar(boolean emProcesso){
+        List<OrdemServico> ordens = emProcesso
+                ? osRepo.findByEmProcessoTrue()
+                : osRepo.listarParaResumo();
+        return ordens.stream().map(OrdemResumoDTO::from).toList();
     }
 
+    /**
+     * buscarParaRelatorio e não findByOrdemServicoIdOrderByNumeroAsc: LoteDTO lê
+     * lo.getFinalizadoPor().getNome(), e só a primeira traz o operador no fetch.
+     * A consulta com o join já existia — esta rota é que não a usava.
+     */
     @Transactional(readOnly = true)
-    public List<Lote> lotes(Long osId){
-        return loteRepo.findByOrdemServicoIdOrderByNumeroAsc(osId);
+    public List<LoteDTO> lotes(Long osId){
+        return loteRepo.buscarParaRelatorio(osId).stream().map(LoteDTO::from).toList();
     }
 
     /**
@@ -1420,8 +1487,11 @@ public class OrdemServicoService {
      * relatório, que ficam na OS titular.
      */
     @Transactional(readOnly = true)
-    public List<Log> historico(Long osId){
-        return logRepo.buscarHistorico(osId);
+    public List<LogDTO> historico(Long osId){
+        // buscarHistorico cobre os quatro @ManyToOne do LogDTO, mas não
+        // l.ordensAcopladas — @ElementCollection não entra no mesmo fetch. O
+        // @BatchSize(100) de Log.ordensAcopladas resolve-a em lote, aqui dentro.
+        return logRepo.buscarHistorico(osId).stream().map(LogDTO::from).toList();
     }
 
     private OrdemServico carregarAberta(Long osId){
@@ -1449,13 +1519,8 @@ public class OrdemServicoService {
      * uma query por nome, uma vez por OS pedida.
      */
     @Transactional(readOnly = true)
-    public OrdemServico buscarDetalhe(Long osId) {
-        return osRepo.buscarParaDetalhe(osId)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Ordem de Serviço", osId));
-    }
-
-    @Transactional(readOnly = true)
-    public List<OrdemServico> listarTodas() {
-        return osRepo.listarParaResumo();
+    public OrdemDetalheDTO buscarDetalhe(Long osId) {
+        return OrdemDetalheDTO.from(osRepo.buscarParaDetalhe(osId)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Ordem de Serviço", osId)));
     }
 }

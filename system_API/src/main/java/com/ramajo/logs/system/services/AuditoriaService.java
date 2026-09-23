@@ -1,5 +1,6 @@
 package com.ramajo.logs.system.services;
 
+import com.ramajo.logs.system.dtos.OrdemDtos.LogDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.OrdemAuditoriaDTO;
 import com.ramajo.logs.system.entities.Log;
 import com.ramajo.logs.system.entities.Lote;
@@ -65,7 +66,7 @@ public class AuditoriaService {
      * da Visão Geral perderia as barras das ordens que andam de boleia.
      */
     @Transactional(readOnly = true)
-    public List<Log> historicoDeOrdens(Collection<Long> ids) {
+    public List<LogDTO> historicoDeOrdens(Collection<Long> ids) {
         List<Long> lista = List.copyOf(ids);
         if (lista.isEmpty()) {
             return List.of();   // `in ()` é SQL inválido — nem chega a consultar
@@ -88,7 +89,10 @@ public class AuditoriaService {
         // lista uma vez, e cada grupo sai já ordenado.
         List<Log> todos = new ArrayList<>(unicos.values());
         todos.sort(Comparator.comparing(Log::getIniciadoEm).thenComparing(Log::getId));
-        return todos;
+        // O mapeamento fica aqui dentro, como no auditoriaDeOrdens abaixo: as
+        // consultas cobrem os quatro @ManyToOne do LogDTO, mas ordensAcopladas
+        // continua LAZY e o @BatchSize(100) resolve-a nesta transação.
+        return todos.stream().map(LogDTO::from).toList();
     }
 
     /**
