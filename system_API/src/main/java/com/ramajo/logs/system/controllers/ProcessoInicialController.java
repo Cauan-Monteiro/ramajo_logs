@@ -29,12 +29,12 @@ public class ProcessoInicialController {
 
     @GetMapping
     public List<ProcessoInicialDTO> listar() {
-        return service.listar().stream().map(ProcessoInicialDTO::from).toList();
+        return service.listar();
     }
 
     @PutMapping("/{posicao}")
     public ProcessoInicialDTO definir(
             @PathVariable Posicao posicao, @Valid @RequestBody DefinirProcessoInicialDTO dto) {
-        return ProcessoInicialDTO.from(service.definir(posicao, dto.processoId()));
+        return service.definir(posicao, dto.processoId());
     }
 }

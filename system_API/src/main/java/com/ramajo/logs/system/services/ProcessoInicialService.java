@@ -2,6 +2,7 @@ package com.ramajo.logs.system.services;
 
 import java.util.List;
 
+import com.ramajo.logs.system.dtos.ProcessoInicialDtos.ProcessoInicialDTO;
 import com.ramajo.logs.system.entities.Processo;
 import com.ramajo.logs.system.entities.ProcessoInicial;
 import com.ramajo.logs.system.enums.Posicao;
@@ -36,7 +37,7 @@ public class ProcessoInicialService {
      * cadastro, é o momento certo.
      */
     @Transactional
-    public ProcessoInicial definir(Posicao posicao, Long processoId) {
+    public ProcessoInicialDTO definir(Posicao posicao, Long processoId) {
         Processo processo = processoRepo.findById(processoId)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Processo", processoId));
 
@@ -55,16 +56,20 @@ public class ProcessoInicialService {
         }
 
         // Upsert: a PK é a posição, então trocar é atualizar a linha existente.
-        return processoInicialRepo.findById(posicao)
+        ProcessoInicial pi = processoInicialRepo.findById(posicao)
                 .map(atual -> {
                     atual.setProcesso(processo); // dirty checking
                     return atual;
                 })
                 .orElseGet(() -> processoInicialRepo.save(new ProcessoInicial(posicao, processo)));
+
+        return ProcessoInicialDTO.from(pi);
     }
 
     @Transactional(readOnly = true)
-    public List<ProcessoInicial> listar() {
-        return processoInicialRepo.findAll();
+    public List<ProcessoInicialDTO> listar() {
+        return processoInicialRepo.buscarTodosComProcesso().stream()
+                .map(ProcessoInicialDTO::from)
+                .toList();
     }
 }
