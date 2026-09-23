@@ -4,6 +4,7 @@ package com.ramajo.logs.system.services;
 import java.util.List;
 import java.util.Set;
 
+import com.ramajo.logs.system.dtos.ProcessoDtos.ProcessoDTO;
 import com.ramajo.logs.system.entities.Processo;
 import com.ramajo.logs.system.entities.ProcessoInicial;
 import com.ramajo.logs.system.enums.Etapa;
@@ -35,22 +36,22 @@ public class ProcessoService {
     }
 
     @Transactional
-    public Processo criar(String descricao, Etapa etapa, String tagId, Set<Posicao> posicoes) {
+    public ProcessoDTO criar(String descricao, Etapa etapa, String tagId, Set<Posicao> posicoes) {
         Processo processo = new Processo(descricao, etapa);
         processo.setTagId(tagId);
         aplicarPosicoes(processo, posicoes);
-        return processoRepo.save(processo);
+        return ProcessoDTO.from(processoRepo.save(processo));
     }
 
     @Transactional
-    public Processo atualizar(Long id, String descricao, Etapa etapa, String tagId,
-                              Set<Posicao> posicoes) {
-        Processo processo = buscar(id);
+    public ProcessoDTO atualizar(Long id, String descricao, Etapa etapa, String tagId,
+                                 Set<Posicao> posicoes) {
+        Processo processo = carregar(id);
         processo.setDescricao(descricao);
         processo.setEtapa(etapa);
         processo.setTagId(tagId);
         aplicarPosicoes(processo, posicoes);
-        return processo; // dirty checking
+        return ProcessoDTO.from(processo); // dirty checking
     }
 
     /**
@@ -58,10 +59,10 @@ public class ProcessoService {
      * é gerenciada, o clear+addAll sincroniza a tabela processo_posicoes no commit.
      */
     @Transactional
-    public Processo definirPosicoes(Long id, Set<Posicao> posicoes) {
-        Processo processo = buscar(id);
+    public ProcessoDTO definirPosicoes(Long id, Set<Posicao> posicoes) {
+        Processo processo = carregar(id);
         aplicarPosicoes(processo, posicoes);
-        return processo;
+        return ProcessoDTO.from(processo);
     }
 
     /**
@@ -76,7 +77,7 @@ public class ProcessoService {
      */
     @Transactional
     public void arquivar(Long id) {
-        Processo processo = buscar(id);
+        Processo processo = carregar(id);
         if (!processo.isAtivo()) {
             return; // idempotente
         }
@@ -96,14 +97,20 @@ public class ProcessoService {
     }
 
     @Transactional
-    public Processo reativar(Long id) {
-        Processo processo = buscar(id);
+    public ProcessoDTO reativar(Long id) {
+        Processo processo = carregar(id);
         processo.setAtivo(true);
-        return processo;
+        return ProcessoDTO.from(processo);
     }
 
     @Transactional(readOnly = true)
-    public Processo buscar(Long id) {
+    public ProcessoDTO buscar(Long id) {
+        return ProcessoDTO.from(processoRepo.buscarComPosicoes(id)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Id", id)));
+    }
+
+    /** Carga interna dos caminhos de escrita: entidade gerenciada, sem DTO. */
+    private Processo carregar(Long id) {
         return processoRepo.findById(id)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Id", id));
     }
@@ -115,8 +122,8 @@ public class ProcessoService {
      * antigo. Quem oferece processo ao usuário é que filtra por `ativo`.
      */
     @Transactional(readOnly = true)
-    public List<Processo> listar() {
-        return processoRepo.findAll();
+    public List<ProcessoDTO> listar() {
+        return processoRepo.buscarTodosComPosicoes().stream().map(ProcessoDTO::from).toList();
     }
 
     private void aplicarPosicoes(Processo processo, Set<Posicao> posicoes) {
