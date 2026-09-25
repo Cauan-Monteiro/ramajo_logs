@@ -82,11 +82,14 @@ export function AcoplarCargas({
   const candidatas = useMemo(() => {
     const q = busca.trim().toLowerCase();
     const caronas = new Set(ctx.data.cargas.flatMap((c) => c.ordensAcopladas));
-    const abertas = ctx.data.ordens.filter((o) =>
-      o.emProcesso &&
-      rodaEm(o, posicao) &&
-      o.id !== osIdTitular &&
-      !caronas.has(o.id));
+    const chave = (o: OrdemResumoDTO) => o.idExterno ?? o.id;
+    const abertas = ctx.data.ordens
+      .filter((o) =>
+        o.emProcesso &&
+        rodaEm(o, posicao) &&
+        o.id !== osIdTitular &&
+        !caronas.has(o.id))
+      .sort((a, b) => chave(a) - chave(b));
     const marcadas = abertas.filter((o) => marcadasAqui.has(o.id));
     const resto = abertas
       .filter((o) => !marcadasAqui.has(o.id))

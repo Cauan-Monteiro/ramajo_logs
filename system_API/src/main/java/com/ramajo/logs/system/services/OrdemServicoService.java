@@ -1295,17 +1295,33 @@ public class OrdemServicoService {
      */
     @Transactional
     public void entregar(Long osId, Long operadorId){
-        // Sem carregarAberta(): aqui exige-se o oposto — a OS TEM de estar fora
-        // de circulação, e expedida em vez de cancelada.
+        Operador op = exigirOperadorAtivo(operadorId);
+        aplicarEntrega(osId, op, Instant.now());
+    }
+
+    /**
+     * Entrega em lote: N OS numa única transação, com o MESMO instante e o
+     * MESMO operador. Se qualquer uma falhar em `aplicarEntrega`, a exceção
+     * dispara o rollback e nenhuma fica carimbada — é essa a razão de existir
+     * do lote em vez de o front repetir /entregar em paralelo.
+     */
+    @Transactional
+    public void entregarLote(List<Long> osIds, Long operadorId){
+        Operador op = exigirOperadorAtivo(operadorId);
+        Instant agora = Instant.now();
+        for (Long osId : osIds) aplicarEntrega(osId, op, agora);
+    }
+
+    // Sem carregarAberta(): aqui exige-se o oposto — a OS TEM de estar fora de
+    // circulação, e expedida em vez de cancelada.
+    private void aplicarEntrega(Long osId, Operador op, Instant agora){
         OrdemServico os = buscar(osId);
 
         if (os.isCancelada())   throw EntregaInvalidaException.cancelada(osId);
         if (!os.isFinalizada()) throw EntregaInvalidaException.naoFinalizada(osId);
         if (os.isEntregue())    throw EntregaInvalidaException.jaEntregue(osId);
 
-        Operador op = exigirOperadorAtivo(operadorId);
-
-        os.setEntregueEm(Instant.now());
+        os.setEntregueEm(agora);
         os.setEntreguePor(op);
     }
 

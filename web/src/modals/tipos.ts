@@ -32,6 +32,12 @@ export type ModalState =
    * (sem a marca) o diálogo simplesmente fecha.
    */
   | { tipo: "entregar"; osId: number; deDetalhe?: boolean }
+  /**
+   * Entrega em lote das OS selecionadas na aba Entregas. Sem payload aqui: a
+   * seleção fica no estado da tela e é passada por prop ao modal — mesmo
+   * padrão de `passoLote`/`encerrarLote` no Dashboard.
+   */
+  | { tipo: "entregarLote" }
   | null;
 
 /** Tudo o que um modal precisa do app à volta. */

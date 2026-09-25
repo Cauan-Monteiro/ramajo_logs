@@ -1195,6 +1195,34 @@ body.is-mobile .ac-carga {
    grid-template-columns: 90px 1.3fr .8fr 1fr 1fr .9fr auto
 }
 
+/* Modo fila com seleção múltipla: uma coluna de checkbox à esquerda. Só na
+   fila — em "entregues" não há o que selecionar. */
+.entr-head.entr-sel,
+.entr-row.entr-sel {
+   grid-template-columns: 26px 90px 1.4fr .9fr 1fr auto
+}
+
+/* Linha marcada no modo de múltipla seleção — mesmo tom do .clrow.sel da
+   home, mais forte que o hover. */
+.entr-row.entr-sel.sel {
+   background: color-mix(in srgb, #5980a6 12%, transparent)
+}
+
+.entr-row .e-sel,
+.entr-head .e-sel {
+   display: flex;
+   align-items: center;
+   justify-content: center
+}
+
+.entr-row .e-sel input,
+.entr-head .e-sel input {
+   width: 16px;
+   height: 16px;
+   cursor: pointer;
+   accent-color: #5980a6
+}
+
 @media (hover:hover) {
    .entr-row:hover {
       background: color-mix(in srgb, #5980a6 7%, transparent)
@@ -2600,6 +2628,16 @@ body.is-mobile .entr-row.entr-full {
    grid-template-areas: "os cli acao" "pos exp exp" "ent ent por";
    gap: 4px 10px;
    padding: 12px 14px
+}
+
+body.is-mobile .entr-row.entr-sel {
+   grid-template-columns: 24px auto 1fr auto;
+   grid-template-areas: "sel os cli acao" "sel pos exp exp"
+}
+
+body.is-mobile .entr-row.entr-sel .e-sel {
+   grid-area: sel;
+   align-self: center
 }
 
 body.is-mobile .entr-row .e-os { grid-area: os }

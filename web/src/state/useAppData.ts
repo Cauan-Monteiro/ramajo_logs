@@ -126,6 +126,8 @@ export const logsDe = (data: AppData, osId: number): LogDTO[] =>
 export const cargasDe = (data: AppData, osId: number): CargaDTO[] =>
   data.cargas.filter((c) => c.ordemAtualId === osId);
 
-/** Cargas ativas, livres e na posição pedida. */
+/** Cargas ativas, livres e na posição pedida, em ordem crescente por nome. */
 export const cargasLivres = (data: AppData, posicao: string): CargaDTO[] =>
-  data.cargas.filter((c) => c.ativo && c.ordemAtualId === null && c.posicao === posicao);
+  data.cargas
+    .filter((c) => c.ativo && c.ordemAtualId === null && c.posicao === posicao)
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { numeric: true, sensitivity: "base" }));

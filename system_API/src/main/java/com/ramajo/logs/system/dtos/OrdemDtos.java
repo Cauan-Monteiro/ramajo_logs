@@ -168,6 +168,18 @@ public final class OrdemDtos {
     }
 
     /**
+     * Entrega em lote: várias OS expedidas viram entregues numa única
+     * transação. Se qualquer uma falhar na validação (cancelada, não
+     * finalizada, já entregue), NENHUMA é carimbada — é esse o ganho sobre
+     * repetir o /entregar em paralelo pelo front. O instante e o operador são
+     * os mesmos para todas.
+     */
+    public record EntregarLoteDTO(
+            @NotNull @NotEmpty List<@NotNull Long> osIds,
+            @NotNull Long operadorId) {
+    }
+
+    /**
      * Correção de OS pelo ADMIN. Os três campos vão inteiros — o que difere do
      * atual é o que muda —, e `idExterno` é obrigatório: a tela de correção
      * acha a OS por ele, e esvaziá-lo a tiraria de lá. (Acha pelo Nº e, havendo

@@ -310,6 +310,15 @@ export const reabrirOrdem = (osId: number, operadorId: number) =>
 export const entregarOrdem = (osId: number, operadorId: number) =>
   http.post<void>(`/api/ordens/${osId}/entregar`, { operadorId });
 
+/**
+ * Entrega em lote: várias OS numa única transação no servidor. Se qualquer
+ * uma falhar na validação (cancelada, não expedida, já entregue), NENHUMA é
+ * carimbada — é esse o ganho sobre repetir /entregar em paralelo. Instante e
+ * operador são os mesmos para todas.
+ */
+export const entregarOrdensLote = (osIds: number[], operadorId: number) =>
+  http.post<void>(`/api/ordens/entregar-lote`, { osIds, operadorId });
+
 export const cancelarOrdem = (osId: number, operadorId: number) =>
   http.post<void>(`/api/ordens/${osId}/cancelar`, { operadorId });
 

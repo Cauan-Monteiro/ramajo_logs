@@ -11,6 +11,7 @@ import com.ramajo.logs.system.dtos.OrdemDtos.SalvarAvaliacaoDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.CancelarOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.CorrigirOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.CriarOrdemDTO;
+import com.ramajo.logs.system.dtos.OrdemDtos.EntregarLoteDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.EntregarOrdemDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.FinalizarLogDTO;
 import com.ramajo.logs.system.dtos.OrdemDtos.FinalizarLoteDTO;
@@ -382,6 +383,15 @@ public class OrdemServicoController {
     public ResponseEntity<Void> entregar(
             @PathVariable Long id, @Valid @RequestBody EntregarOrdemDTO dto) {
         service.entregar(id, dto.operadorId());
+        return ResponseEntity.noContent().build();
+    }
+
+    // Entrega em lote: N OS numa única transação. Se qualquer uma falhar
+    // (cancelada, não expedida, já entregue) o rollback tira tudo — a lista
+    // vai inteira ou não vai. Instante e operador são os mesmos para todas.
+    @PostMapping("/entregar-lote")
+    public ResponseEntity<Void> entregarLote(@Valid @RequestBody EntregarLoteDTO dto) {
+        service.entregarLote(dto.osIds(), dto.operadorId());
         return ResponseEntity.noContent().build();
     }
 
